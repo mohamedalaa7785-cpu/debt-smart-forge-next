@@ -82,7 +82,7 @@ export async function getClientById(clientId: string) {
       calculateClientFinancialSummary(financialLoans);
 
     /* =========================
-       LAST ACTION
+       LAST ACTION DAYS
     ========================= */
     const lastActionDays = actions.length
       ? Math.floor(
@@ -93,7 +93,19 @@ export async function getClientById(clientId: string) {
       : 999;
 
     /* =========================
-       RISK ENGINE
+       AI SIGNALS FROM ACTIONS 🔥
+    ========================= */
+    const actionScore = actions.reduce((acc, a) => {
+      if (a.actionType === "CALL") return acc + 5;
+      if (a.actionType === "WHATSAPP") return acc + 3;
+      if (a.actionType === "PROMISE") return acc + 10;
+      if (a.actionType === "BROKEN_PROMISE") return acc - 10;
+      if (a.actionType === "PAID") return acc + 15;
+      return acc;
+    }, 0);
+
+    /* =========================
+       BASE RISK
     ========================= */
     const maxBucket =
       financialLoans.length > 0
@@ -110,14 +122,15 @@ export async function getClientById(clientId: string) {
       hasOsint: !!osint,
 
       lastActionDays,
-      aiSignalsScore: 0,
+      aiSignalsScore: actionScore,
     });
 
     /* =========================
-       AI ENGINE
+       AI ENGINE 🧠
     ========================= */
     const ai = await analyzeClient({
       clientName: client.name,
+
       totalAmountDue: financialSummary.totalAmountDue,
       totalBalance: financialSummary.totalBase,
 
@@ -134,10 +147,12 @@ export async function getClientById(clientId: string) {
       osintSummary: osint?.summary ?? null,
 
       loanTypes: loans.map((l) => l.loanType),
+
+      aiSignalsScore: actionScore,
     });
 
     /* =========================
-       UPDATE RISK WITH AI 🔥
+       FINAL RISK UPDATE 🔥
     ========================= */
     risk = calculateRisk({
       bucket: maxBucket,
@@ -149,8 +164,17 @@ export async function getClientById(clientId: string) {
       hasOsint: !!osint,
 
       lastActionDays,
-      aiSignalsScore: ai?.riskBoost ?? 0,
+      aiSignalsScore:
+        actionScore + (ai?.confidence || 0) / 5,
     });
+
+    /* =========================
+       PRIORITY SCORE 🔥
+    ========================= */
+    const priority =
+      financialSummary.totalAmountDue * 0.5 +
+      risk.score * 10 -
+      lastActionDays * 2;
 
     /* =========================
        FINAL RESPONSE
@@ -175,6 +199,8 @@ export async function getClientById(clientId: string) {
         riskScore: risk.score,
         riskLabel: risk.label,
 
+        priorityScore: Math.round(priority),
+
         lastActionDays,
       },
 
@@ -187,7 +213,7 @@ export async function getClientById(clientId: string) {
 }
 
 /* =========================
-   GET ALL CLIENTS (OPTIMIZED)
+   GET ALL CLIENTS (LIGHT)
 ========================= */
 export async function getAllClients() {
   try {
@@ -195,6 +221,7 @@ export async function getAllClients() {
       .select({
         id: clients.id,
         name: clients.name,
+        createdAt: clients.createdAt,
       })
       .from(clients)
       .orderBy(desc(clients.createdAt));
@@ -228,7 +255,7 @@ export async function createClientFull(data: {
 
     return await db.transaction(async (tx) => {
       /* =========================
-         CREATE CLIENT
+         CLIENT
       ========================= */
       const [client] = await tx
         .insert(clients)

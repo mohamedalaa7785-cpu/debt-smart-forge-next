@@ -1,6 +1,6 @@
 import { db } from "@/server/db";
 import { users, sessions } from "@/server/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -13,7 +13,7 @@ const SESSION_DURATION_DAYS = 7;
    HELPERS
 ========================= */
 function generateToken() {
-  return crypto.randomBytes(32).toString("hex");
+  return crypto.randomBytes(48).toString("hex");
 }
 
 function getExpiryDate() {
@@ -23,29 +23,29 @@ function getExpiryDate() {
 }
 
 /* =========================
-   REGISTER (ADMIN USE)
+   REGISTER 🔥
 ========================= */
-export async function registerUser(data: {
-  email: string;
-  password: string;
-  role?: "admin" | "agent";
-}) {
+export async function register(
+  email: string,
+  password: string,
+  role: "admin" | "agent" = "agent"
+) {
   const existing = await db.query.users.findFirst({
-    where: eq(users.email, data.email),
+    where: eq(users.email, email),
   });
 
   if (existing) {
-    throw new Error("User already exists");
+    throw new Error("Email already exists");
   }
 
-  const hashed = await bcrypt.hash(data.password, 10);
+  const hashed = await bcrypt.hash(password, 10);
 
   const [user] = await db
     .insert(users)
     .values({
-      email: data.email,
+      email,
       password: hashed,
-      role: data.role || "agent",
+      role,
     })
     .returning();
 
@@ -60,24 +60,22 @@ export async function login(email: string, password: string) {
     where: eq(users.email, email),
   });
 
-  if (!user) throw new Error("Invalid credentials");
+  if (!user || !user.isActive) {
+    throw new Error("Invalid credentials");
+  }
 
   const valid = await bcrypt.compare(password, user.password);
 
-  if (!valid) throw new Error("Invalid credentials");
-
-  /* =========================
-     DELETE OLD SESSIONS (OPTIONAL)
-  ========================= */
-  await db.delete(sessions).where(eq(sessions.userId, user.id));
+  if (!valid) {
+    throw new Error("Invalid credentials");
+  }
 
   const token = generateToken();
-  const expiresAt = getExpiryDate();
 
   await db.insert(sessions).values({
     userId: user.id,
     token,
-    expiresAt,
+    expiresAt: getExpiryDate(),
   });
 
   return {
@@ -102,49 +100,35 @@ export async function getUserFromToken(token: string) {
 
   if (!session) return null;
 
-  /* =========================
-     CHECK EXPIRATION
-  ========================= */
-  if (
-    session.expiresAt &&
-    new Date(session.expiresAt) < new Date()
-  ) {
-    await db.delete(sessions).where(eq(sessions.id, session.id));
+  if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
     return null;
   }
 
-  const user = await db.query.users.findFirst({
+  return db.query.users.findFirst({
     where: eq(users.id, session.userId),
   });
-
-  return user || null;
 }
 
 /* =========================
    LOGOUT
 ========================= */
 export async function logout(token: string) {
-  if (!token) return false;
-
-  await db.delete(sessions).where(eq(sessions.token, token));
-
-  return true;
+  try {
+    await db.delete(sessions).where(eq(sessions.token, token));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /* =========================
    CLEAN EXPIRED SESSIONS
-   (USE WITH CRON)
 ========================= */
 export async function cleanExpiredSessions() {
-  const now = new Date();
-
-  await db
-    .delete(sessions)
-    .where(
-      and(
-        sessions.expiresAt,
-        // drizzle condition workaround
-        // delete where expiresAt < now
-      )
-    );
+  try {
+    await db.execute(`
+      DELETE FROM sessions
+      WHERE expires_at < NOW()
+    `);
+  } catch {}
 }

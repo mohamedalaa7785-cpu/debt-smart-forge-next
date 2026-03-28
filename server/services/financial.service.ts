@@ -34,57 +34,115 @@ export interface FinancialResult {
 
   baseAmount: number;
   amountDue: number;
+
+  riskWeight: number;        // 🔥 مهم للـ priority
+  classification: string;    // 🔥 LOW / MEDIUM / HIGH / CRITICAL
 }
 
 /* =========================
-   DEFAULT PENALTY LOGIC
+   CONFIG (TUNABLE ENGINE)
 ========================= */
-function getDefaultPenaltyRate(type: LoanType) {
-  const t = type.toUpperCase();
+const CONFIG = {
+  penaltyRates: {
+    PIL: 0.1,
+    VSBL: 0.1,
+    AUTO: 0,
+    CC: 0,
+    WRITEOFF: 0,
+  },
 
-  // القروض اللي عليها غرامة
-  if (t === "PIL" || t === "VSBL") return 0.1;
+  classificationThresholds: {
+    CRITICAL: 50000,
+    HIGH: 20000,
+    MEDIUM: 5000,
+  },
+};
 
-  // بدون غرامة
-  return 0;
+/* =========================
+   SAFE NUMBER
+========================= */
+function safeNumber(val: any, fallback = 0) {
+  const n = parseNumber(val);
+  return isNaN(n) ? fallback : n;
 }
 
 /* =========================
-   MAIN CALCULATION
+   GET PENALTY RATE
+========================= */
+function getPenaltyRate(type: LoanType) {
+  const key = type.toUpperCase() as keyof typeof CONFIG.penaltyRates;
+  return CONFIG.penaltyRates[key] ?? 0;
+}
+
+/* =========================
+   CALCULATE PENALTY
+========================= */
+function calculatePenalty(
+  loanType: LoanType,
+  emi: number,
+  bucket: number,
+  penaltyEnabled: boolean,
+  penaltyAmount?: number
+) {
+  if (!penaltyEnabled) return 0;
+
+  if (penaltyAmount && penaltyAmount > 0) {
+    return penaltyAmount;
+  }
+
+  const rate = getPenaltyRate(loanType);
+
+  return emi * rate * bucket;
+}
+
+/* =========================
+   CLASSIFICATION
+========================= */
+function classify(amountDue: number) {
+  if (amountDue >= CONFIG.classificationThresholds.CRITICAL)
+    return "CRITICAL";
+
+  if (amountDue >= CONFIG.classificationThresholds.HIGH)
+    return "HIGH";
+
+  if (amountDue >= CONFIG.classificationThresholds.MEDIUM)
+    return "MEDIUM";
+
+  return "LOW";
+}
+
+/* =========================
+   MAIN ENGINE 🔥
 ========================= */
 export function calculateFinancials(
   input: FinancialInput
 ): FinancialResult {
-  const emi = parseNumber(input.emi);
-  const bucket = Math.max(1, parseNumber(input.bucket));
+  const emi = safeNumber(input.emi);
+  const bucket = Math.max(1, safeNumber(input.bucket, 1));
 
   const loanType = input.loanType;
 
   const penaltyEnabled = input.penaltyEnabled ?? false;
-  const explicitPenalty = parseNumber(input.penaltyAmount);
-
-  const defaultRate = getDefaultPenaltyRate(loanType);
-
-  let penaltyAmount = 0;
+  const explicitPenalty = safeNumber(input.penaltyAmount);
 
   /* =========================
-     PENALTY LOGIC
+     PENALTY
   ========================= */
-  if (penaltyEnabled) {
-    if (explicitPenalty > 0) {
-      penaltyAmount = explicitPenalty;
-    } else if (defaultRate > 0) {
-      penaltyAmount = emi * defaultRate;
-    }
-  }
+  const penaltyAmount = calculatePenalty(
+    loanType,
+    emi,
+    bucket,
+    penaltyEnabled,
+    explicitPenalty
+  );
 
   /* =========================
-     BASE AMOUNT
+     BASE
   ========================= */
   const baseAmount = emi * bucket;
 
   /* =========================
-     FINAL AMOUNT
+     CORE FORMULA
   ========================= */
   let amountDue = calculateLoanAmountDue({
     emi,
@@ -94,16 +152,27 @@ export function calculateFinancials(
   });
 
   /* =========================
-     CUSTOM FORMULA (ADVANCED)
+     CUSTOM FORMULA
   ========================= */
   if (input.customFormulaEnabled) {
     const multiplier = Math.max(
       1,
-      parseNumber(input.customMultiplier || 1)
+      safeNumber(input.customMultiplier, 1)
     );
 
-    amountDue = amountDue * multiplier;
+    amountDue *= multiplier;
   }
+
+  /* =========================
+     CLASSIFICATION
+  ========================= */
+  const classification = classify(amountDue);
+
+  /* =========================
+     RISK WEIGHT 🔥
+  ========================= */
+  const riskWeight =
+    amountDue / 1000 + bucket * 10;
 
   return {
     loanType,
@@ -113,55 +182,44 @@ export function calculateFinancials(
     penaltyAmount,
     baseAmount,
     amountDue,
+    riskWeight,
+    classification,
   };
 }
 
 /* =========================
-   CLIENT TOTAL SUMMARY
+   CLIENT SUMMARY (OPTIMIZED)
 ========================= */
 export function calculateClientFinancialSummary(
   loans: FinancialResult[]
 ) {
-  return loans.reduce(
-    (acc, loan) => {
-      acc.totalEMI += loan.emi;
-      acc.totalAmountDue += loan.amountDue;
-      acc.totalPenalty += loan.penaltyAmount;
-      acc.totalBase += loan.baseAmount;
+  let totalEMI = 0;
+  let totalAmountDue = 0;
+  let totalPenalty = 0;
+  let totalBase = 0;
 
-      return acc;
-    },
-    {
-      totalEMI: 0,
-      totalAmountDue: 0,
-      totalPenalty: 0,
-      totalBase: 0,
-    }
-  );
+  for (const loan of loans) {
+    totalEMI += loan.emi;
+    totalAmountDue += loan.amountDue;
+    totalPenalty += loan.penaltyAmount;
+    totalBase += loan.baseAmount;
+  }
+
+  return {
+    totalEMI,
+    totalAmountDue,
+    totalPenalty,
+    totalBase,
+  };
 }
 
 /* =========================
-   SMART CLASSIFICATION
-========================= */
-export function classifyLoan(loan: FinancialResult) {
-  const due = loan.amountDue;
-
-  if (due > 50000) return "CRITICAL";
-  if (due > 20000) return "HIGH";
-  if (due > 5000) return "MEDIUM";
-
-  return "LOW";
-}
-
-/* =========================
-   PRIORITY BOOST (FINANCIAL)
+   PRIORITY BOOST (ADVANCED)
 ========================= */
 export function calculateFinancialPriority(
-  amountDue: number,
-  bucket: number
+  loans: FinancialResult[]
 ) {
-  const dueScore = amountDue / 1000;
-  const bucketScore = bucket * 5;
-
-  return dueScore + bucketScore;
-  }
+  return loans.reduce((score, loan) => {
+    return score + loan.riskWeight;
+  }, 0);
+}

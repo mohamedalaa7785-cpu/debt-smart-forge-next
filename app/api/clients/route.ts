@@ -8,6 +8,39 @@ import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
 
 /* =========================
+   RATE LIMIT 🔥
+========================= */
+const rateMap = new Map<string, { count: number; time: number }>();
+
+function rateLimit(key: string, limit = 30) {
+  const now = Date.now();
+  const data = rateMap.get(key) || { count: 0, time: now };
+
+  if (now - data.time > 60000) {
+    data.count = 0;
+    data.time = now;
+  }
+
+  data.count++;
+
+  rateMap.set(key, data);
+
+  if (data.count > limit) {
+    throw new Error("Too many requests");
+  }
+}
+
+/* =========================
+   CACHE (LIGHT)
+========================= */
+const cache = new Map<
+  string,
+  { data: any; expiry: number }
+>();
+
+const TTL = 1000 * 30; // 30 sec
+
+/* =========================
    HELPERS
 ========================= */
 function success(data: any, meta?: any) {
@@ -29,12 +62,20 @@ function fail(error: string, status = 400) {
 }
 
 /* =========================
-   GET CLIENTS (SECURE + PAGINATION)
+   GET CLIENTS 🔥
 ========================= */
 export async function GET(req: NextRequest) {
   try {
     /* =========================
-       AUTH 🔐
+       RATE LIMIT
+    ========================= */
+    const ip =
+      req.headers.get("x-forwarded-for") || "unknown";
+
+    rateLimit(ip);
+
+    /* =========================
+       AUTH
     ========================= */
     const user = await requireUser(req);
 
@@ -43,28 +84,67 @@ export async function GET(req: NextRequest) {
     ========================= */
     const { page, limit, offset } = getPagination(req);
 
+    const cacheKey = `${page}-${limit}`;
+
+    /* =========================
+       CACHE HIT
+    ========================= */
+    const cached = cache.get(cacheKey);
+
+    if (cached && cached.expiry > Date.now()) {
+      return success(cached.data, {
+        page,
+        limit,
+        cached: true,
+      });
+    }
+
     /* =========================
        FETCH DATA
     ========================= */
-    const data = await db
-      .select({
-        id: clients.id,
-        name: clients.name,
-        email: clients.email,
-        company: clients.company,
-        createdAt: clients.createdAt,
-      })
-      .from(clients)
-      .orderBy(desc(clients.createdAt))
-      .limit(limit)
-      .offset(offset);
+    let data: any[] = [];
+
+    try {
+      data = await db
+        .select({
+          id: clients.id,
+          name: clients.name,
+          email: clients.email,
+          company: clients.company,
+          createdAt: clients.createdAt,
+        })
+        .from(clients)
+        .orderBy(desc(clients.createdAt))
+        .limit(limit + 1) // 🔥 مهم
+        .offset(offset);
+    } catch (err) {
+      console.error("DB ERROR:", err);
+      return fail("Database error", 500);
+    }
 
     /* =========================
-       LOGGING 📊
+       HAS MORE FIX 🔥
+    ========================= */
+    const hasMore = data.length > limit;
+
+    if (hasMore) {
+      data.pop(); // remove extra item
+    }
+
+    /* =========================
+       LOGGING
     ========================= */
     await logAction(user.id, "GET_CLIENTS", {
       page,
       limit,
+    });
+
+    /* =========================
+       CACHE SAVE
+    ========================= */
+    cache.set(cacheKey, {
+      data,
+      expiry: Date.now() + TTL,
     });
 
     /* =========================
@@ -74,14 +154,14 @@ export async function GET(req: NextRequest) {
       page,
       limit,
       count: data.length,
-      hasMore: data.length === limit,
+      hasMore,
     });
   } catch (error: any) {
     console.error("GET CLIENTS ERROR:", error);
 
     return fail(
       error?.message || "Unauthorized",
-      401
+      error?.message === "Too many requests" ? 429 : 401
     );
   }
 }

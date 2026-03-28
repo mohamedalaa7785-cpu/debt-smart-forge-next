@@ -19,6 +19,38 @@ import { calculateRisk } from "./risk.service";
 import { analyzeClient } from "./ai.service";
 
 /* =========================
+   HELPERS
+========================= */
+function calculateLastActionDays(actions: any[]) {
+  if (!actions.length) return 999;
+
+  return Math.floor(
+    (Date.now() -
+      new Date(actions[0].createdAt).getTime()) /
+      (1000 * 60 * 60 * 24)
+  );
+}
+
+function calculateActionScore(actions: any[]) {
+  return actions.reduce((acc, a) => {
+    switch (a.actionType) {
+      case "CALL":
+        return acc + 5;
+      case "WHATSAPP":
+        return acc + 3;
+      case "PROMISE":
+        return acc + 10;
+      case "BROKEN_PROMISE":
+        return acc - 10;
+      case "PAID":
+        return acc + 15;
+      default:
+        return acc;
+    }
+  }, 0);
+}
+
+/* =========================
    GET FULL CLIENT PROFILE 🔥
 ========================= */
 export async function getClientById(clientId: string) {
@@ -66,7 +98,7 @@ export async function getClientById(clientId: string) {
       ]);
 
     /* =========================
-       FINANCIAL ENGINE
+       FINANCIAL ENGINE 💰
     ========================= */
     const financialLoans = loans.map((loan) =>
       calculateFinancials({
@@ -82,30 +114,13 @@ export async function getClientById(clientId: string) {
       calculateClientFinancialSummary(financialLoans);
 
     /* =========================
-       LAST ACTION DAYS
+       ACTIONS ANALYSIS 🧠
     ========================= */
-    const lastActionDays = actions.length
-      ? Math.floor(
-          (Date.now() -
-            new Date(actions[0].createdAt).getTime()) /
-            (1000 * 60 * 60 * 24)
-        )
-      : 999;
+    const lastActionDays = calculateLastActionDays(actions);
+    const actionScore = calculateActionScore(actions);
 
     /* =========================
-       AI SIGNALS FROM ACTIONS 🔥
-    ========================= */
-    const actionScore = actions.reduce((acc, a) => {
-      if (a.actionType === "CALL") return acc + 5;
-      if (a.actionType === "WHATSAPP") return acc + 3;
-      if (a.actionType === "PROMISE") return acc + 10;
-      if (a.actionType === "BROKEN_PROMISE") return acc - 10;
-      if (a.actionType === "PAID") return acc + 15;
-      return acc;
-    }, 0);
-
-    /* =========================
-       BASE RISK
+       RISK ENGINE 📊
     ========================= */
     const maxBucket =
       financialLoans.length > 0
@@ -126,7 +141,7 @@ export async function getClientById(clientId: string) {
     });
 
     /* =========================
-       AI ENGINE 🧠
+       AI ENGINE 🤖
     ========================= */
     const ai = await analyzeClient({
       clientName: client.name,
@@ -169,9 +184,9 @@ export async function getClientById(clientId: string) {
     });
 
     /* =========================
-       PRIORITY SCORE 🔥
+       PRIORITY ENGINE ⚡
     ========================= */
-    const priority =
+    const priorityScore =
       financialSummary.totalAmountDue * 0.5 +
       risk.score * 10 -
       lastActionDays * 2;
@@ -199,7 +214,7 @@ export async function getClientById(clientId: string) {
         riskScore: risk.score,
         riskLabel: risk.label,
 
-        priorityScore: Math.round(priority),
+        priorityScore: Math.round(priorityScore),
 
         lastActionDays,
       },
@@ -254,9 +269,6 @@ export async function createClientFull(data: {
     }
 
     return await db.transaction(async (tx) => {
-      /* =========================
-         CLIENT
-      ========================= */
       const [client] = await tx
         .insert(clients)
         .values({
@@ -266,9 +278,6 @@ export async function createClientFull(data: {
         })
         .returning();
 
-      /* =========================
-         PHONES
-      ========================= */
       if (data.phones?.length) {
         await tx.insert(clientPhones).values(
           data.phones.map((phone) => ({
@@ -278,9 +287,6 @@ export async function createClientFull(data: {
         );
       }
 
-      /* =========================
-         ADDRESSES
-      ========================= */
       if (data.addresses?.length) {
         await tx.insert(clientAddresses).values(
           data.addresses.map((address) => ({
@@ -290,9 +296,6 @@ export async function createClientFull(data: {
         );
       }
 
-      /* =========================
-         LOANS
-      ========================= */
       if (data.loans?.length) {
         await tx.insert(clientLoans).values(
           data.loans.map((loan) => ({
@@ -313,4 +316,4 @@ export async function createClientFull(data: {
     console.error("createClientFull error:", error);
     throw error;
   }
-      }
+        }

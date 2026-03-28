@@ -16,128 +16,108 @@ import {
 } from "./financial.service";
 
 import { calculateRisk } from "./risk.service";
-
 import { analyzeClient } from "./ai.service";
 
 /* =========================
    GET FULL CLIENT PROFILE 🔥
 ========================= */
 export async function getClientById(clientId: string) {
-  /* =========================
-     BASIC DATA
-  ========================= */
-  const client = await db.query.clients.findFirst({
-    where: eq(clients.id, clientId),
-  });
+  try {
+    if (!clientId) return null;
 
-  if (!client) return null;
+    /* =========================
+       BASIC DATA
+    ========================= */
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, clientId),
+    });
 
-  /* =========================
-     RELATED DATA
-  ========================= */
-  const phones = await db
-    .select()
-    .from(clientPhones)
-    .where(eq(clientPhones.clientId, clientId));
+    if (!client) return null;
 
-  const addresses = await db
-    .select()
-    .from(clientAddresses)
-    .where(eq(clientAddresses.clientId, clientId));
+    /* =========================
+       PARALLEL FETCH 🚀
+    ========================= */
+    const [phones, addresses, loans, actions, osint] =
+      await Promise.all([
+        db
+          .select()
+          .from(clientPhones)
+          .where(eq(clientPhones.clientId, clientId)),
 
-  const loans = await db
-    .select()
-    .from(clientLoans)
-    .where(eq(clientLoans.clientId, clientId));
+        db
+          .select()
+          .from(clientAddresses)
+          .where(eq(clientAddresses.clientId, clientId)),
 
-  const actions = await db
-    .select()
-    .from(clientActions)
-    .where(eq(clientActions.clientId, clientId))
-    .orderBy(desc(clientActions.createdAt));
+        db
+          .select()
+          .from(clientLoans)
+          .where(eq(clientLoans.clientId, clientId)),
 
-  const osint = await db.query.osintResults.findFirst({
-    where: eq(osintResults.clientId, clientId),
-  });
+        db
+          .select()
+          .from(clientActions)
+          .where(eq(clientActions.clientId, clientId))
+          .orderBy(desc(clientActions.createdAt)),
 
-  /* =========================
-     FINANCIAL ENGINE
-  ========================= */
-  const financialLoans = loans.map((loan) =>
-    calculateFinancials({
-      loanType: loan.loanType,
-      emi: loan.emi,
-      bucket: loan.bucket,
-      penaltyEnabled: loan.penaltyEnabled,
-      penaltyAmount: loan.penaltyAmount,
-    })
-  );
+        db.query.osintResults.findFirst({
+          where: eq(osintResults.clientId, clientId),
+        }),
+      ]);
 
-  const financialSummary =
-    calculateClientFinancialSummary(financialLoans);
+    /* =========================
+       FINANCIAL ENGINE
+    ========================= */
+    const financialLoans = loans.map((loan) =>
+      calculateFinancials({
+        loanType: loan.loanType,
+        emi: Number(loan.emi),
+        bucket: loan.bucket,
+        penaltyEnabled: loan.penaltyEnabled,
+        penaltyAmount: Number(loan.penaltyAmount || 0),
+      })
+    );
 
-  /* =========================
-     RISK ENGINE
-  ========================= */
-  const lastActionDays = actions.length
-    ? Math.floor(
-        (Date.now() -
-          new Date(actions[0].createdAt).getTime()) /
-          (1000 * 60 * 60 * 24)
-      )
-    : 999;
+    const financialSummary =
+      calculateClientFinancialSummary(financialLoans);
 
-  const risk = calculateRisk({
-    bucket: Math.max(...financialLoans.map((l) => l.bucket), 1),
-    amountDue: financialSummary.totalAmountDue,
+    /* =========================
+       LAST ACTION
+    ========================= */
+    const lastActionDays = actions.length
+      ? Math.floor(
+          (Date.now() -
+            new Date(actions[0].createdAt).getTime()) /
+            (1000 * 60 * 60 * 24)
+        )
+      : 999;
 
-    hasPhone: phones.length > 0,
-    hasAddress: addresses.length > 0,
-    hasLoans: loans.length > 0,
-    hasOsint: !!osint,
+    /* =========================
+       RISK ENGINE
+    ========================= */
+    const maxBucket =
+      financialLoans.length > 0
+        ? Math.max(...financialLoans.map((l) => l.bucket))
+        : 1;
 
-    lastActionDays,
-    aiSignalsScore: 0, // هيتحدث بعد AI
-  });
+    let risk = calculateRisk({
+      bucket: maxBucket,
+      amountDue: financialSummary.totalAmountDue,
 
-  /* =========================
-     AI ENGINE
-  ========================= */
-  const ai = await analyzeClient({
-    clientName: client.name,
-    totalAmountDue: financialSummary.totalAmountDue,
-    totalBalance: financialSummary.totalBase,
-    riskScore: risk.score,
-    riskLabel: risk.label,
-    lastActionDays,
+      hasPhone: phones.length > 0,
+      hasAddress: addresses.length > 0,
+      hasLoans: loans.length > 0,
+      hasOsint: !!osint,
 
-    phonesCount: phones.length,
-    addressesCount: addresses.length,
-    loansCount: loans.length,
+      lastActionDays,
+      aiSignalsScore: 0,
+    });
 
-    osintConfidence: osint?.confidenceScore ?? 0,
-    osintSummary: osint?.summary ?? null,
-
-    loanTypes: loans.map((l) => l.loanType),
-  });
-
-  /* =========================
-     FINAL RESPONSE
-  ========================= */
-  return {
-    client,
-
-    phones,
-    addresses,
-
-    loans: financialLoans,
-
-    actions,
-
-    osint,
-
-    summary: {
-      totalEMI: financialSummary.totalEMI,
+    /* =========================
+       AI ENGINE
+    ========================= */
+    const ai = await analyzeClient({
+      clientName: client.name,
       totalAmountDue: financialSummary.totalAmountDue,
       totalBalance: financialSummary.totalBase,
 
@@ -145,26 +125,87 @@ export async function getClientById(clientId: string) {
       riskLabel: risk.label,
 
       lastActionDays,
-    },
 
-    ai,
-  };
+      phonesCount: phones.length,
+      addressesCount: addresses.length,
+      loansCount: loans.length,
+
+      osintConfidence: osint?.confidenceScore ?? 0,
+      osintSummary: osint?.summary ?? null,
+
+      loanTypes: loans.map((l) => l.loanType),
+    });
+
+    /* =========================
+       UPDATE RISK WITH AI 🔥
+    ========================= */
+    risk = calculateRisk({
+      bucket: maxBucket,
+      amountDue: financialSummary.totalAmountDue,
+
+      hasPhone: phones.length > 0,
+      hasAddress: addresses.length > 0,
+      hasLoans: loans.length > 0,
+      hasOsint: !!osint,
+
+      lastActionDays,
+      aiSignalsScore: ai?.riskBoost ?? 0,
+    });
+
+    /* =========================
+       FINAL RESPONSE
+    ========================= */
+    return {
+      client,
+
+      phones,
+      addresses,
+
+      loans: financialLoans,
+
+      actions,
+
+      osint,
+
+      summary: {
+        totalEMI: financialSummary.totalEMI,
+        totalAmountDue: financialSummary.totalAmountDue,
+        totalBalance: financialSummary.totalBase,
+
+        riskScore: risk.score,
+        riskLabel: risk.label,
+
+        lastActionDays,
+      },
+
+      ai,
+    };
+  } catch (error) {
+    console.error("getClientById error:", error);
+    return null;
+  }
 }
 
 /* =========================
-   GET ALL CLIENTS (LIGHT)
+   GET ALL CLIENTS (OPTIMIZED)
 ========================= */
 export async function getAllClients() {
-  const data = await db
-    .select()
-    .from(clients)
-    .orderBy(desc(clients.createdAt));
-
-  return data;
+  try {
+    return await db
+      .select({
+        id: clients.id,
+        name: clients.name,
+      })
+      .from(clients)
+      .orderBy(desc(clients.createdAt));
+  } catch (error) {
+    console.error("getAllClients error:", error);
+    return [];
+  }
 }
 
 /* =========================
-   CREATE CLIENT (FULL)
+   CREATE CLIENT (TRANSACTION) 🔥
 ========================= */
 export async function createClientFull(data: {
   name: string;
@@ -180,50 +221,69 @@ export async function createClientFull(data: {
     balance: number;
   }[];
 }) {
-  /* =========================
-     CREATE CLIENT
-  ========================= */
-  const [client] = await db
-    .insert(clients)
-    .values({
-      name: data.name,
-      email: data.email,
-      company: data.company,
-    })
-    .returning();
+  try {
+    if (!data.name) {
+      throw new Error("Name is required");
+    }
 
-  /* =========================
-     PHONES
-  ========================= */
-  for (const phone of data.phones) {
-    await db.insert(clientPhones).values({
-      clientId: client.id,
-      phone,
+    return await db.transaction(async (tx) => {
+      /* =========================
+         CREATE CLIENT
+      ========================= */
+      const [client] = await tx
+        .insert(clients)
+        .values({
+          name: data.name,
+          email: data.email,
+          company: data.company,
+        })
+        .returning();
+
+      /* =========================
+         PHONES
+      ========================= */
+      if (data.phones?.length) {
+        await tx.insert(clientPhones).values(
+          data.phones.map((phone) => ({
+            clientId: client.id,
+            phone,
+          }))
+        );
+      }
+
+      /* =========================
+         ADDRESSES
+      ========================= */
+      if (data.addresses?.length) {
+        await tx.insert(clientAddresses).values(
+          data.addresses.map((address) => ({
+            clientId: client.id,
+            address,
+          }))
+        );
+      }
+
+      /* =========================
+         LOANS
+      ========================= */
+      if (data.loans?.length) {
+        await tx.insert(clientLoans).values(
+          data.loans.map((loan) => ({
+            clientId: client.id,
+            loanType: loan.loanType,
+            emi: loan.emi.toString(),
+            balance: loan.balance.toString(),
+            bucket: 1,
+            penaltyEnabled: false,
+            penaltyAmount: "0",
+          }))
+        );
+      }
+
+      return client;
     });
+  } catch (error) {
+    console.error("createClientFull error:", error);
+    throw error;
   }
-
-  /* =========================
-     ADDRESSES
-  ========================= */
-  for (const address of data.addresses) {
-    await db.insert(clientAddresses).values({
-      clientId: client.id,
-      address,
-    });
-  }
-
-  /* =========================
-     LOANS
-  ========================= */
-  for (const loan of data.loans) {
-    await db.insert(clientLoans).values({
-      clientId: client.id,
-      loanType: loan.loanType,
-      emi: loan.emi.toString(),
-      balance: loan.balance.toString(),
-      bucket: 1,
-    });
-  }
-
-  return client;
-                                   }
+      }

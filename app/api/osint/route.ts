@@ -19,6 +19,7 @@ function rateLimit(key: string, limit = 10) {
   }
 
   data.count++;
+
   rateMap.set(key, data);
 
   if (data.count > limit) {
@@ -51,34 +52,43 @@ function sanitize(body: any) {
 }
 
 /* =========================
-   SAVE RESULT 🔥
+   SAVE RESULT 🔥 (FIXED)
 ========================= */
 async function saveResult(clientId: string, result: any) {
-  const existing = await db.query.osintResults.findFirst({
-    where: eq(osintResults.clientId, clientId),
-  });
+  try {
+    const existing = await db.query.osintResults.findFirst({
+      where: eq(osintResults.clientId, clientId),
+    });
 
-  const payload = {
-    summary: result.summary,
-    confidenceScore: result.confidence,
-    socialLinks: JSON.stringify(result.socialLinks || []),
-    workplace: JSON.stringify(result.workplace || []),
-    webResults: JSON.stringify(result.webResults || []),
-    imageResults: JSON.stringify(result.imageMatches || []),
-  };
+    const payload = {
+      summary: result.summary || null,
+      confidenceScore: result.confidence || 0,
 
-  if (existing) {
-    await db
-      .update(osintResults)
-      .set(payload)
-      .where(eq(osintResults.clientId, clientId));
-    return;
+      socialLinks: JSON.stringify(result.socialLinks || []),
+      workplace: JSON.stringify(result.workplace || []),
+      webResults: JSON.stringify(result.webResults || []),
+      imageResults: JSON.stringify(result.imageMatches || []),
+
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db
+        .update(osintResults)
+        .set(payload)
+        .where(eq(osintResults.clientId, clientId));
+
+      return;
+    }
+
+    await db.insert(osintResults).values({
+      clientId,
+      ...payload,
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    console.error("SAVE OSINT ERROR:", error);
   }
-
-  await db.insert(osintResults).values({
-    clientId,
-    ...payload,
-  });
 }
 
 /* =========================
@@ -90,7 +100,9 @@ export async function POST(req: Request) {
        RATE LIMIT
     ========================= */
     const ip =
-      req.headers.get("x-forwarded-for") || "unknown";
+      req.headers.get("x-forwarded-for") ||
+      req.headers.get("x-real-ip") ||
+      "unknown";
 
     rateLimit(ip);
 
@@ -131,10 +143,13 @@ export async function POST(req: Request) {
        FALLBACK
     ========================= */
     if (!result) {
-      return NextResponse.json({
-        success: false,
-        error: "OSINT temporarily unavailable",
-      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "OSINT temporarily unavailable",
+        },
+        { status: 503 }
+      );
     }
 
     /* =========================
@@ -152,12 +167,23 @@ export async function POST(req: Request) {
       data: result,
 
       meta: {
-        confidence: result.confidence,
+        confidence: result.confidence || 0,
         hasImage: !!clean.imageUrl,
       },
     });
   } catch (error: any) {
     console.error("OSINT ERROR:", error);
+
+    /* 🔥 RATE LIMIT ERROR */
+    if (error.message === "Too many requests") {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Too many requests",
+        },
+        { status: 429 }
+      );
+    }
 
     return NextResponse.json(
       {
@@ -167,4 +193,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-       }
+     }

@@ -5,7 +5,7 @@ import { Pool } from "pg";
 import * as schema from "./schema";
 
 /* =========================
-   GLOBAL POOL (PREVENT DUPLICATION)
+   GLOBAL POOL (SAFE FOR SERVERLESS)
 ========================= */
 declare global {
   // eslint-disable-next-line no-var
@@ -13,25 +13,39 @@ declare global {
 }
 
 /* =========================
-   DATABASE URL
+   CREATE POOL (LAZY)
 ========================= */
-const connectionString = process.env.DATABASE_URL;
+function createPool() {
+  const connectionString = process.env.DATABASE_URL;
 
-if (!connectionString) {
-  throw new Error("❌ DATABASE_URL is missing");
+  if (!connectionString) {
+    console.error("❌ DATABASE_URL is missing");
+    return null;
+  }
+
+  return new Pool({
+    connectionString,
+
+    /* 🔥 مهم لـ Supabase */
+    ssl: {
+      rejectUnauthorized: false,
+    },
+
+    max: 5, // serverless friendly
+    idleTimeoutMillis: 20000,
+    connectionTimeoutMillis: 10000,
+  });
 }
 
 /* =========================
-   CREATE POOL
+   GET POOL
 ========================= */
 const pool =
-  global.__dbPool ??
-  new Pool({
-    connectionString,
-    max: 10, // max connections
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000,
-  });
+  global.__dbPool ?? createPool();
+
+if (!pool) {
+  throw new Error("Database not initialized");
+}
 
 if (process.env.NODE_ENV !== "production") {
   global.__dbPool = pool;
@@ -45,8 +59,14 @@ export const db = drizzle(pool, {
 });
 
 /* =========================
-   HELPER (OPTIONAL)
+   HEALTH CHECK (OPTIONAL)
 ========================= */
-export async function getDb() {
-  return db;
+export async function checkDb() {
+  try {
+    await pool.query("SELECT 1");
+    return true;
+  } catch (error) {
+    console.error("DB ERROR:", error);
+    return false;
+  }
 }

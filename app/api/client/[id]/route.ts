@@ -9,8 +9,11 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const clientId = params.id;
+    const clientId = params.id?.trim();
 
+    /* =========================
+       VALIDATION
+    ========================= */
     if (!clientId) {
       return NextResponse.json(
         {
@@ -36,9 +39,52 @@ export async function GET(
       );
     }
 
+    /* =========================
+       FINAL STRUCTURE 🔥
+    ========================= */
     return NextResponse.json({
       success: true,
-      data,
+
+      data: {
+        /* BASIC */
+        client: data.client,
+
+        /* RELATIONS */
+        phones: data.phones,
+        addresses: data.addresses,
+        loans: data.loans,
+
+        /* TIMELINE */
+        actions: data.actions,
+
+        /* OSINT */
+        osint: data.osint,
+
+        /* SUMMARY */
+        summary: data.summary,
+
+        /* AI */
+        ai: data.ai,
+      },
+
+      /* =========================
+         META (DECISION LAYER)
+      ========================= */
+      meta: {
+        risk: data.summary?.riskLabel,
+        riskScore: data.summary?.riskScore,
+
+        totalDue: data.summary?.totalAmountDue,
+
+        hasOSINT: !!data.osint,
+        hasPhones: data.phones?.length > 0,
+
+        lastActionDays: data.summary?.lastActionDays,
+
+        priority:
+          (data.summary?.riskScore || 0) +
+          (data.summary?.totalAmountDue || 0) / 1000,
+      },
     });
   } catch (error) {
     console.error("GET CLIENT ERROR:", error);
@@ -51,4 +97,4 @@ export async function GET(
       { status: 500 }
     );
   }
-                  }
+       }

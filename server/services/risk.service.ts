@@ -32,11 +32,12 @@ export interface RiskResult {
   meta: {
     urgencyLevel: number;
     isActionRequired: boolean;
+    riskTrend: "increasing" | "stable" | "decreasing";
   };
 }
 
 /* =========================
-   CONFIG (TUNABLE ENGINE)
+   CONFIG
 ========================= */
 const CONFIG = {
   weights: {
@@ -44,13 +45,13 @@ const CONFIG = {
     amount: 0.001,
     missingData: 6,
     inactivity: 2,
-    ai: 5,
+    ai: 4,
   },
 
   caps: {
-    amount: 50,
-    inactivity: 30,
-    ai: 25,
+    amount: 60,
+    inactivity: 35,
+    ai: 30,
   },
 
   thresholds: {
@@ -130,13 +131,15 @@ export function calculateRisk(
   /* =========================
      FINAL SCORE
   ========================= */
-  const score = Math.round(
+  let score =
     bucketScore +
-      amountScore +
-      dataScore +
-      inactivityScore +
-      aiSignalScore
-  );
+    amountScore +
+    dataScore +
+    inactivityScore +
+    aiSignalScore;
+
+  // 🔥 normalize
+  score = Math.min(150, Math.round(score));
 
   /* =========================
      LABEL
@@ -148,9 +151,23 @@ export function calculateRisk(
   else if (score >= CONFIG.thresholds.MEDIUM) label = "MEDIUM";
 
   /* =========================
-     META INTELLIGENCE 🔥
+     RISK TREND 🔥 (جديد)
   ========================= */
-  const urgencyLevel = Math.min(100, score);
+  let riskTrend: RiskResult["meta"]["riskTrend"] = "stable";
+
+  if (lastActionDays > 7 && score > 80) {
+    riskTrend = "increasing";
+  } else if (lastActionDays < 2 && score < 50) {
+    riskTrend = "decreasing";
+  }
+
+  /* =========================
+     META INTELLIGENCE
+  ========================= */
+  const urgencyLevel = Math.min(
+    100,
+    score + lastActionDays * 2
+  );
 
   const isActionRequired =
     score >= CONFIG.thresholds.MEDIUM ||
@@ -171,6 +188,7 @@ export function calculateRisk(
     meta: {
       urgencyLevel,
       isActionRequired,
+      riskTrend,
     },
   };
 }
@@ -189,27 +207,21 @@ export function calculatePriority(input: {
   const inactivity = safeNumber(input.lastActionDays);
   const aiBoost = safeNumber(input.aiBoost);
 
-  /* =========================
-     NORMALIZED SCORES
-  ========================= */
   const amountScore = amount / 1000;
-  const riskScore = risk * 2;
-  const inactivityPenalty = inactivity * 1.5;
+  const riskScore = risk * 2.5;
+  const inactivityPenalty = inactivity * 2;
 
-  /* =========================
-     FINAL PRIORITY
-  ========================= */
   const priority =
     amountScore +
     riskScore -
     inactivityPenalty +
-    aiBoost * 5;
+    aiBoost * 6;
 
-  return Math.round(priority);
+  return Math.max(0, Math.round(priority));
 }
 
 /* =========================
-   SMART TAG (UI + AI)
+   SMART TAG
 ========================= */
 export function getRiskTag(score: number) {
   if (score >= 120) return "CRITICAL";

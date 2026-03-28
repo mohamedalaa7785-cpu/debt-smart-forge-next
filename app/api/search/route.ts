@@ -9,14 +9,14 @@ import { ilike, or, desc, eq } from "drizzle-orm";
 import { normalizePhone } from "@/lib/utils";
 
 /* =========================
-   SIMPLE CACHE 🔥
+   SIMPLE CACHE (BEST EFFORT)
 ========================= */
 const cache = new Map<
   string,
   { data: any; expiry: number }
 >();
 
-const TTL = 1000 * 60 * 3; // 3 min
+const TTL = 1000 * 60 * 3;
 
 /* =========================
    SANITIZE
@@ -31,13 +31,13 @@ function sanitizeQuery(q: string) {
 function buildConditions(q: string) {
   const phone = normalizePhone(q);
 
-  const conditions = [
+  const conditions: any[] = [
     ilike(clients.name, `%${q}%`),
     ilike(clients.email, `%${q}%`),
     ilike(clients.company, `%${q}%`),
   ];
 
-  if (phone) {
+  if (phone && phone.length >= 3) {
     conditions.push(
       ilike(clientPhones.phone, `%${phone}%`)
     );
@@ -54,6 +54,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const rawQuery = searchParams.get("q");
 
+    /* =========================
+       VALIDATION
+    ========================= */
     if (!rawQuery || rawQuery.trim().length < 2) {
       return NextResponse.json({
         success: true,
@@ -66,7 +69,7 @@ export async function GET(req: Request) {
     const cacheKey = q.toLowerCase();
 
     /* =========================
-       CACHE HIT 🔥
+       CACHE HIT
     ========================= */
     const cached = cache.get(cacheKey);
 
@@ -101,7 +104,7 @@ export async function GET(req: Request) {
       .limit(30);
 
     /* =========================
-       MERGE + CLEAN 🔥
+       MERGE RESULTS
     ========================= */
     const map = new Map<
       string,
@@ -110,7 +113,7 @@ export async function GET(req: Request) {
         name: string;
         email?: string;
         company?: string;
-        createdAt: string;
+        createdAt: Date;
         phones: string[];
       }
     >();
@@ -120,8 +123,8 @@ export async function GET(req: Request) {
         map.set(row.id, {
           id: row.id,
           name: row.name,
-          email: row.email,
-          company: row.company,
+          email: row.email ?? undefined,
+          company: row.company ?? undefined,
           createdAt: row.createdAt,
           phones: [],
         });
@@ -133,7 +136,7 @@ export async function GET(req: Request) {
     }
 
     /* =========================
-       FINAL FORMAT + RANK 🔥
+       FINAL FORMAT
     ========================= */
     const final = Array.from(map.values()).map((c) => ({
       ...c,
@@ -141,10 +144,9 @@ export async function GET(req: Request) {
     }));
 
     /* =========================
-       SMART SORT (IMPORTANT)
+       SMART SORT
     ========================= */
     final.sort((a, b) => {
-      // priority: more phones + recent
       const phoneScore =
         b.phones.length - a.phones.length;
 
@@ -181,4 +183,4 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
-    }
+        }

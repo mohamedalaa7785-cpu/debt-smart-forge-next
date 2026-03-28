@@ -1,4 +1,4 @@
-import { parseNumber, getRiskLabel } from "@/lib/utils";
+import { parseNumber } from "@/lib/utils";
 
 /* =========================
    TYPES
@@ -19,7 +19,7 @@ export interface RiskInput {
 
 export interface RiskResult {
   score: number;
-  label: "HIGH" | "MEDIUM" | "LOW";
+  label: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
 
   breakdown: {
     bucket: number;
@@ -28,57 +28,104 @@ export interface RiskResult {
     inactivity: number;
     ai: number;
   };
+
+  meta: {
+    urgencyLevel: number;
+    isActionRequired: boolean;
+  };
 }
 
 /* =========================
-   MAIN RISK CALCULATION
+   CONFIG (TUNABLE ENGINE)
 ========================= */
-export function calculateRisk(input: RiskInput): RiskResult {
-  const bucket = Math.max(1, parseNumber(input.bucket ?? 1));
-  const amountDue = Math.max(0, parseNumber(input.amountDue ?? 0));
+const CONFIG = {
+  weights: {
+    bucket: 10,
+    amount: 0.001,
+    missingData: 6,
+    inactivity: 2,
+    ai: 5,
+  },
 
+  caps: {
+    amount: 50,
+    inactivity: 30,
+    ai: 25,
+  },
+
+  thresholds: {
+    CRITICAL: 120,
+    HIGH: 80,
+    MEDIUM: 40,
+  },
+};
+
+/* =========================
+   SAFE NUMBER
+========================= */
+function safeNumber(val: any, fallback = 0) {
+  const n = parseNumber(val);
+  return isNaN(n) ? fallback : n;
+}
+
+/* =========================
+   MAIN RISK ENGINE 🔥
+========================= */
+export function calculateRisk(
+  input: RiskInput
+): RiskResult {
+  const bucket = Math.max(1, safeNumber(input.bucket, 1));
+  const amountDue = Math.max(0, safeNumber(input.amountDue));
   const lastActionDays = Math.max(
     0,
-    parseNumber(input.lastActionDays ?? 0)
+    safeNumber(input.lastActionDays)
+  );
+  const aiScore = Math.max(
+    0,
+    safeNumber(input.aiSignalsScore)
   );
 
-  const aiScore = Math.max(0, parseNumber(input.aiSignalsScore ?? 0));
+  /* =========================
+     BUCKET
+  ========================= */
+  const bucketScore = bucket * CONFIG.weights.bucket;
 
   /* =========================
-     BUCKET SCORE
+     AMOUNT
   ========================= */
-  const bucketScore = bucket * 8;
+  const rawAmountScore =
+    amountDue * CONFIG.weights.amount;
 
-  /* =========================
-     AMOUNT SCORE
-  ========================= */
-  const amountScore = Math.min(40, amountDue / 1000);
+  const amountScore = Math.min(
+    CONFIG.caps.amount,
+    rawAmountScore
+  );
 
   /* =========================
      DATA COMPLETENESS
   ========================= */
   let dataScore = 0;
 
-  if (!input.hasPhone) dataScore += 6;
-  if (!input.hasAddress) dataScore += 6;
-  if (!input.hasLoans) dataScore += 4;
-  if (!input.hasOsint) dataScore += 6;
+  if (!input.hasPhone) dataScore += CONFIG.weights.missingData;
+  if (!input.hasAddress) dataScore += CONFIG.weights.missingData;
+  if (!input.hasLoans) dataScore += CONFIG.weights.missingData;
+  if (!input.hasOsint) dataScore += CONFIG.weights.missingData;
 
   /* =========================
-     INACTIVITY SCORE
+     INACTIVITY
   ========================= */
-  let inactivityScore = 0;
-
-  if (lastActionDays <= 1) inactivityScore = 0;
-  else if (lastActionDays <= 3) inactivityScore = 5;
-  else if (lastActionDays <= 7) inactivityScore = 10;
-  else if (lastActionDays <= 14) inactivityScore = 15;
-  else inactivityScore = 20;
+  const inactivityScore = Math.min(
+    CONFIG.caps.inactivity,
+    lastActionDays * CONFIG.weights.inactivity
+  );
 
   /* =========================
      AI SIGNALS
   ========================= */
-  const aiSignalScore = Math.min(20, aiScore);
+  const aiSignalScore = Math.min(
+    CONFIG.caps.ai,
+    aiScore * CONFIG.weights.ai
+  );
 
   /* =========================
      FINAL SCORE
@@ -91,9 +138,27 @@ export function calculateRisk(input: RiskInput): RiskResult {
       aiSignalScore
   );
 
+  /* =========================
+     LABEL
+  ========================= */
+  let label: RiskResult["label"] = "LOW";
+
+  if (score >= CONFIG.thresholds.CRITICAL) label = "CRITICAL";
+  else if (score >= CONFIG.thresholds.HIGH) label = "HIGH";
+  else if (score >= CONFIG.thresholds.MEDIUM) label = "MEDIUM";
+
+  /* =========================
+     META INTELLIGENCE 🔥
+  ========================= */
+  const urgencyLevel = Math.min(100, score);
+
+  const isActionRequired =
+    score >= CONFIG.thresholds.MEDIUM ||
+    lastActionDays > 3;
+
   return {
     score,
-    label: getRiskLabel(score),
+    label,
 
     breakdown: {
       bucket: bucketScore,
@@ -102,38 +167,70 @@ export function calculateRisk(input: RiskInput): RiskResult {
       inactivity: inactivityScore,
       ai: aiSignalScore,
     },
+
+    meta: {
+      urgencyLevel,
+      isActionRequired,
+    },
   };
 }
 
 /* =========================
-   PRIORITY ENGINE 🔥
+   PRIORITY ENGINE 🔥🔥🔥
 ========================= */
 export function calculatePriority(input: {
   amountDue?: number | string;
   riskScore?: number | string;
   lastActionDays?: number | string;
+  aiBoost?: number | string;
 }) {
-  const amount = parseNumber(input.amountDue ?? 0);
-  const risk = parseNumber(input.riskScore ?? 0);
-  const inactivity = parseNumber(input.lastActionDays ?? 0);
+  const amount = safeNumber(input.amountDue);
+  const risk = safeNumber(input.riskScore);
+  const inactivity = safeNumber(input.lastActionDays);
+  const aiBoost = safeNumber(input.aiBoost);
 
   /* =========================
-     PRIORITY FORMULA
+     NORMALIZED SCORES
   ========================= */
-  return (
-    amount * 0.5 + // الفلوس أهم حاجة
-    risk * 10 - // الخطر
-    inactivity * 2 // التأخير يقلل الأولوية
-  );
+  const amountScore = amount / 1000;
+  const riskScore = risk * 2;
+  const inactivityPenalty = inactivity * 1.5;
+
+  /* =========================
+     FINAL PRIORITY
+  ========================= */
+  const priority =
+    amountScore +
+    riskScore -
+    inactivityPenalty +
+    aiBoost * 5;
+
+  return Math.round(priority);
 }
 
 /* =========================
-   RISK TAG (ADVANCED UI)
+   SMART TAG (UI + AI)
 ========================= */
 export function getRiskTag(score: number) {
-  if (score >= 90) return "CRITICAL";
-  if (score >= 70) return "VERY HIGH";
-  if (score >= 50) return "HIGH";
-  if (score >= 30) return "MEDIUM";
+  if (score >= 120) return "CRITICAL";
+  if (score >= 90) return "VERY HIGH";
+  if (score >= 70) return "HIGH";
+  if (score >= 40) return "MEDIUM";
   return "LOW";
 }
+
+/* =========================
+   ACTION DECISION 🔥
+========================= */
+export function getActionDecision({
+  riskScore,
+  lastActionDays,
+}: {
+  riskScore: number;
+  lastActionDays: number;
+}) {
+  if (riskScore > 120) return "CALL_NOW";
+  if (riskScore > 80) return "CALL_TODAY";
+  if (lastActionDays > 3) return "FOLLOW_UP";
+  return "MONITOR";
+     }

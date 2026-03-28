@@ -1,5 +1,15 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getUserFromToken } from "@/server/services/auth.service";
+
+/* =========================
+   HELPERS
+========================= */
+function fail(error: string, status = 401) {
+  return NextResponse.json(
+    { success: false, error },
+    { status }
+  );
+}
 
 /* =========================
    EXTRACT TOKEN
@@ -48,20 +58,36 @@ export function requireRole(
 }
 
 /* =========================
-   SAFE WRAPPER (PRODUCTION)
+   SAFE WRAPPER 🔥🔥🔥
 ========================= */
 export async function withAuth(
   req: NextRequest,
-  handler: (user: any) => Promise<any>
+  handler: (user: any) => Promise<NextResponse>
 ) {
   try {
     const user = await requireUser(req);
+
     return await handler(user);
   } catch (error: any) {
-    return {
-      success: false,
-      error: error.message || "Unauthorized",
-      status: 401,
-    };
+    return fail(error?.message || "Unauthorized", 401);
+  }
+}
+
+/* =========================
+   ROLE WRAPPER 🔥
+========================= */
+export async function withRole(
+  req: NextRequest,
+  roles: ("admin" | "agent")[],
+  handler: (user: any) => Promise<NextResponse>
+) {
+  try {
+    const user = await requireUser(req);
+
+    requireRole(user, roles);
+
+    return await handler(user);
+  } catch (error: any) {
+    return fail(error?.message || "Forbidden", 403);
   }
 }

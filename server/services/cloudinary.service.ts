@@ -1,28 +1,30 @@
 import { v2 as cloudinary } from "cloudinary";
 
 /* =========================
-   ENV VALIDATION 🔥
+   LAZY CONFIG 🔥
 ========================= */
-const REQUIRED_ENV = [
-  "NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME",
-  "CLOUDINARY_API_KEY",
-  "CLOUDINARY_API_SECRET",
-];
+let isConfigured = false;
 
-REQUIRED_ENV.forEach((key) => {
-  if (!process.env[key]) {
-    throw new Error(`❌ Missing ENV: ${key}`);
+function ensureCloudinary() {
+  if (isConfigured) return;
+
+  const cloud_name = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const api_key = process.env.CLOUDINARY_API_KEY;
+  const api_secret = process.env.CLOUDINARY_API_SECRET;
+
+  if (!cloud_name || !api_key || !api_secret) {
+    console.error("❌ Cloudinary ENV missing");
+    throw new Error("Cloudinary not configured");
   }
-});
 
-/* =========================
-   CONFIG
-========================= */
-cloudinary.config({
-  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+  cloudinary.config({
+    cloud_name,
+    api_key,
+    api_secret,
+  });
+
+  isConfigured = true;
+}
 
 /* =========================
    TYPES
@@ -37,37 +39,44 @@ export interface UploadResult {
 }
 
 /* =========================
-   INTERNAL HELPERS
+   HELPERS
 ========================= */
 function calculateSizeKB(bytes: number) {
   return Math.round(bytes / 1024);
 }
 
+function isBase64Image(file: string) {
+  return file.startsWith("data:image");
+}
+
 /* =========================
    UPLOAD IMAGE 🔥
-   (Base64 / URL)
 ========================= */
 export async function uploadImage(
   file: string,
   folder = "debt-smart/clients"
 ): Promise<UploadResult> {
   try {
+    ensureCloudinary();
+
+    if (!file) {
+      throw new Error("No file provided");
+    }
+
+    if (!isBase64Image(file) && !file.startsWith("http")) {
+      throw new Error("Invalid image format");
+    }
+
     const res = await cloudinary.uploader.upload(file, {
       folder,
       resource_type: "image",
 
-      /* =========================
-         OPTIMIZATION 🔥
-      ========================= */
       transformation: [
         { width: 1000, height: 1000, crop: "limit" },
         { quality: "auto" },
         { fetch_format: "auto" },
       ],
 
-      /* =========================
-         PERFORMANCE
-      ========================= */
       use_filename: true,
       unique_filename: true,
     });
@@ -91,6 +100,8 @@ export async function uploadImage(
 ========================= */
 export async function deleteImage(publicId: string) {
   try {
+    ensureCloudinary();
+
     if (!publicId) return false;
 
     const res = await cloudinary.uploader.destroy(publicId);
@@ -103,13 +114,15 @@ export async function deleteImage(publicId: string) {
 }
 
 /* =========================
-   BULK DELETE 🔥
+   BULK DELETE
 ========================= */
 export async function deleteMultipleImages(
   publicIds: string[]
 ) {
   try {
-    if (!publicIds.length) return false;
+    ensureCloudinary();
+
+    if (!publicIds?.length) return false;
 
     await cloudinary.api.delete_resources(publicIds);
 
@@ -121,7 +134,7 @@ export async function deleteMultipleImages(
 }
 
 /* =========================
-   OPTIMIZED URL 🔥
+   OPTIMIZED URL
 ========================= */
 export function getOptimizedImageUrl(
   publicId: string,
@@ -142,13 +155,15 @@ export function getOptimizedImageUrl(
 }
 
 /* =========================
-   THUMBNAIL URL 🔥
+   THUMBNAIL
 ========================= */
 export function getThumbnail(publicId: string) {
+  if (!publicId) return "";
+
   return cloudinary.url(publicId, {
     width: 150,
     height: 150,
     crop: "fill",
     quality: "auto",
   });
-       }
+   }

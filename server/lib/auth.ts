@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserFromToken } from "@/server/services/auth.service";
 
 /* =========================
+   TYPES 🔥
+========================= */
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: "admin" | "agent";
+}
+
+/* =========================
    HELPERS
 ========================= */
 function fail(error: string, status = 401) {
@@ -12,57 +21,66 @@ function fail(error: string, status = 401) {
 }
 
 /* =========================
-   EXTRACT TOKEN
+   EXTRACT TOKEN 🔥 (SAFE)
 ========================= */
 function extractToken(req: NextRequest): string | null {
   const authHeader = req.headers.get("authorization");
 
   if (!authHeader) return null;
 
-  if (authHeader.startsWith("Bearer ")) {
-    return authHeader.replace("Bearer ", "");
+  const clean = authHeader.trim();
+
+  if (clean.toLowerCase().startsWith("bearer ")) {
+    return clean.slice(7).trim();
   }
 
-  return authHeader;
+  return clean;
 }
 
 /* =========================
-   REQUIRE USER 🔐
+   REQUIRE USER 🔐 (SAFE)
 ========================= */
-export async function requireUser(req: NextRequest) {
+export async function requireUser(
+  req: NextRequest
+): Promise<AuthUser> {
   const token = extractToken(req);
 
   if (!token) {
+    console.warn("⚠️ Missing token");
     throw new Error("Unauthorized");
   }
 
   const user = await getUserFromToken(token);
 
   if (!user) {
+    console.warn("⚠️ Invalid session");
     throw new Error("Invalid session");
   }
 
-  return user;
+  return user as AuthUser;
 }
 
 /* =========================
    REQUIRE ROLE 🧠
 ========================= */
 export function requireRole(
-  user: any,
+  user: AuthUser,
   roles: ("admin" | "agent")[]
 ) {
   if (!roles.includes(user.role)) {
+    console.warn(
+      `⚠️ Forbidden access by user ${user.id} role=${user.role}`
+    );
     throw new Error("Forbidden");
   }
 }
 
 /* =========================
-   SAFE WRAPPER 🔥🔥🔥
+   WITH AUTH WRAPPER 🔥🔥🔥
 ========================= */
 export async function withAuth(
   req: NextRequest,
-  handler: (user: any) => Promise<NextResponse>
+  handler: (user: AuthUser) => Promise<NextResponse>
 ) {
   try {
     const user = await requireUser(req);
@@ -74,12 +92,12 @@ export async function withAuth(
 }
 
 /* =========================
-   ROLE WRAPPER 🔥
+   WITH ROLE WRAPPER 🔥
 ========================= */
 export async function withRole(
   req: NextRequest,
   roles: ("admin" | "agent")[],
-  handler: (user: any) => Promise<NextResponse>
+  handler: (user: AuthUser) => Promise<NextResponse>
 ) {
   try {
     const user = await requireUser(req);

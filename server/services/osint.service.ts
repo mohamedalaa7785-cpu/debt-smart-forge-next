@@ -2,9 +2,21 @@ import axios from "axios";
 import { uniqueArray } from "@/lib/utils";
 
 /* =========================
-   CACHE (MEMORY)
+   CACHE (TTL SAFE)
 ========================= */
-const cache = new Map<string, any>();
+const cache = new Map<
+  string,
+  { data: any; expiry: number }
+>();
+
+const TTL = 1000 * 60 * 10; // 10 min
+
+/* =========================
+   ENV CHECK
+========================= */
+if (!process.env.SERPAPI_API_KEY) {
+  console.warn("⚠️ SERPAPI_API_KEY missing");
+}
 
 /* =========================
    TYPES
@@ -28,7 +40,7 @@ export interface OSINTResult {
 }
 
 /* =========================
-   GENERATE QUERIES
+   GENERATE QUERIES (LIMITED)
 ========================= */
 function generateQueries(input: OSINTInput): string[] {
   const queries: string[] = [];
@@ -41,28 +53,23 @@ function generateQueries(input: OSINTInput): string[] {
 
   if (input.phone) {
     queries.push(input.phone);
-    queries.push(`${input.name} ${input.phone}`);
   }
 
   if (input.company) {
     queries.push(`${input.name} ${input.company}`);
   }
 
-  if (input.city) {
-    queries.push(`${input.name} ${input.city}`);
-  }
-
-  return uniqueArray(queries);
+  return uniqueArray(queries).slice(0, 5); // 🔥 LIMIT
 }
 
 /* =========================
-   SAFE REQUEST (TIMEOUT)
+   SAFE REQUEST
 ========================= */
 async function safeRequest(url: string, params: any) {
   try {
     const res = await axios.get(url, {
       params,
-      timeout: 8000, // 🔥 مهم
+      timeout: 7000,
     });
 
     return res.data;
@@ -83,13 +90,15 @@ async function searchWeb(query: string) {
     }
   );
 
-  return data?.organic_results || [];
+  return data?.organic_results?.slice(0, 5) || []; // 🔥 LIMIT
 }
 
 /* =========================
-   IMAGE SEARCH
+   IMAGE SEARCH (CONTROLLED)
 ========================= */
 async function searchImage(imageUrl: string) {
+  if (!imageUrl) return [];
+
   const data = await safeRequest(
     "https://serpapi.com/search.json",
     {
@@ -99,11 +108,11 @@ async function searchImage(imageUrl: string) {
     }
   );
 
-  return data?.visual_matches || [];
+  return data?.visual_matches?.slice(0, 5) || [];
 }
 
 /* =========================
-   EXTRACT DATA (SMART)
+   EXTRACT DATA
 ========================= */
 function extractData(results: any[]) {
   const social = new Set<string>();
@@ -141,14 +150,14 @@ function extractData(results: any[]) {
   }
 
   return {
-    social: Array.from(social),
-    workplace: Array.from(workplace),
-    links: Array.from(links),
+    social: Array.from(social).slice(0, 5),
+    workplace: Array.from(workplace).slice(0, 5),
+    links: Array.from(links).slice(0, 10),
   };
 }
 
 /* =========================
-   SUMMARY ENGINE
+   SUMMARY
 ========================= */
 function buildSummary(data: {
   social: string[];
@@ -171,7 +180,7 @@ function buildSummary(data: {
 }
 
 /* =========================
-   CONFIDENCE ENGINE 🔥
+   CONFIDENCE
 ========================= */
 function calculateConfidence(data: {
   social: string[];
@@ -188,7 +197,7 @@ function calculateConfidence(data: {
 }
 
 /* =========================
-   MAIN FUNCTION 🔥🔥🔥
+   MAIN FUNCTION 🔥
 ========================= */
 export async function runOSINT(
   input: OSINTInput
@@ -196,10 +205,12 @@ export async function runOSINT(
   const key = JSON.stringify(input);
 
   /* =========================
-     CACHE HIT
+     CACHE
   ========================= */
-  if (cache.has(key)) {
-    return cache.get(key);
+  const cached = cache.get(key);
+
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data;
   }
 
   const queries = generateQueries(input);
@@ -226,7 +237,7 @@ export async function runOSINT(
   }
 
   /* =========================
-     SUMMARY
+     SUMMARY + CONFIDENCE
   ========================= */
   const summary = buildSummary({
     social: extracted.social,
@@ -234,9 +245,6 @@ export async function runOSINT(
     images: imageMatches,
   });
 
-  /* =========================
-     CONFIDENCE
-  ========================= */
   const confidence = calculateConfidence({
     social: extracted.social,
     workplace: extracted.workplace,
@@ -255,7 +263,10 @@ export async function runOSINT(
   /* =========================
      SAVE CACHE
   ========================= */
-  cache.set(key, result);
+  cache.set(key, {
+    data: result,
+    expiry: Date.now() + TTL,
+  });
 
   return result;
-}
+   }

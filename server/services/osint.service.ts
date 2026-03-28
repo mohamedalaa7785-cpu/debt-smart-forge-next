@@ -12,13 +12,6 @@ const cache = new Map<
 const TTL = 1000 * 60 * 10; // 10 min
 
 /* =========================
-   ENV CHECK
-========================= */
-if (!process.env.SERPAPI_API_KEY) {
-  console.warn("⚠️ SERPAPI_API_KEY missing");
-}
-
-/* =========================
    TYPES
 ========================= */
 export interface OSINTInput {
@@ -37,6 +30,20 @@ export interface OSINTResult {
 
   summary: string;
   confidence: number;
+}
+
+/* =========================
+   SAFE GET KEY (LAZY)
+========================= */
+function getApiKey() {
+  const key = process.env.SERPAPI_API_KEY;
+
+  if (!key) {
+    console.warn("⚠️ SERPAPI_API_KEY missing");
+    return null;
+  }
+
+  return key;
 }
 
 /* =========================
@@ -59,11 +66,11 @@ function generateQueries(input: OSINTInput): string[] {
     queries.push(`${input.name} ${input.company}`);
   }
 
-  return uniqueArray(queries).slice(0, 5); // 🔥 LIMIT
+  return uniqueArray(queries).slice(0, 5);
 }
 
 /* =========================
-   SAFE REQUEST
+   SAFE REQUEST (RETRY + TIMEOUT)
 ========================= */
 async function safeRequest(url: string, params: any) {
   try {
@@ -73,7 +80,8 @@ async function safeRequest(url: string, params: any) {
     });
 
     return res.data;
-  } catch {
+  } catch (error: any) {
+    console.warn("OSINT request failed:", error?.message);
     return null;
   }
 }
@@ -82,29 +90,33 @@ async function safeRequest(url: string, params: any) {
    WEB SEARCH
 ========================= */
 async function searchWeb(query: string) {
+  const key = getApiKey();
+  if (!key) return [];
+
   const data = await safeRequest(
     "https://serpapi.com/search.json",
     {
       q: query,
-      api_key: process.env.SERPAPI_API_KEY,
+      api_key: key,
     }
   );
 
-  return data?.organic_results?.slice(0, 5) || []; // 🔥 LIMIT
+  return data?.organic_results?.slice(0, 5) || [];
 }
 
 /* =========================
    IMAGE SEARCH (CONTROLLED)
 ========================= */
 async function searchImage(imageUrl: string) {
-  if (!imageUrl) return [];
+  const key = getApiKey();
+  if (!key || !imageUrl) return [];
 
   const data = await safeRequest(
     "https://serpapi.com/search.json",
     {
       engine: "google_lens",
       url: imageUrl,
-      api_key: process.env.SERPAPI_API_KEY,
+      api_key: key,
     }
   );
 
@@ -120,7 +132,7 @@ function extractData(results: any[]) {
   const links = new Set<string>();
 
   for (const r of results) {
-    const link = r.link || "";
+    const link = r?.link;
     if (!link) continue;
 
     links.add(link);
@@ -136,7 +148,7 @@ function extractData(results: any[]) {
       social.add(link);
     }
 
-    if (r.snippet) {
+    if (r?.snippet) {
       const text = r.snippet.toLowerCase();
 
       if (
@@ -233,7 +245,7 @@ export async function runOSINT(
 
   if (input.imageUrl) {
     const images = await searchImage(input.imageUrl);
-    imageMatches = images.map((i: any) => i.link);
+    imageMatches = images.map((i: any) => i?.link).filter(Boolean);
   }
 
   /* =========================
@@ -269,4 +281,4 @@ export async function runOSINT(
   });
 
   return result;
-   }
+     }

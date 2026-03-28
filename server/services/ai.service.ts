@@ -43,62 +43,88 @@ export interface AIResult {
   confidence: number;
   redFlags: string[];
   strengths: string[];
+
+  /* 🔥 ENTERPRISE ADDITIONS */
+  riskBoost: number;
+  urgency: number;
 }
 
 /* =========================
-   FALLBACK ENGINE (SMART)
+   SAFE NUMBER
+========================= */
+function safeNumber(val: any, fallback = 0) {
+  const n = parseNumber(val);
+  return isNaN(n) ? fallback : n;
+}
+
+/* =========================
+   FALLBACK ENGINE 🔥 (SMART)
 ========================= */
 function fallbackAI(input: AIInput): AIResult {
-  const risk = parseNumber(input.riskScore ?? 0);
-  const osint = parseNumber(input.osintConfidence ?? 0);
-  const inactivity = parseNumber(input.lastActionDays ?? 0);
+  const risk = safeNumber(input.riskScore);
+  const osint = safeNumber(input.osintConfidence);
+  const inactivity = safeNumber(input.lastActionDays);
 
   let probability = 50;
 
-  probability += osint * 0.2;
-  probability -= risk * 0.4;
+  probability += osint * 0.3;
+  probability -= risk * 0.5;
   probability -= inactivity * 2;
 
-  probability += (input.phonesCount ?? 0) * 3;
+  probability += (input.phonesCount ?? 0) * 4;
   probability += (input.addressesCount ?? 0) * 2;
 
   probability = Math.max(0, Math.min(100, Math.round(probability)));
 
+  /* =========================
+     TONE ENGINE
+  ========================= */
   let tone: Tone = "balanced";
 
-  if (risk > 80) tone = "aggressive";
-  else if (risk > 60) tone = "firm";
+  if (risk > 90) tone = "aggressive";
+  else if (risk > 70) tone = "firm";
   else if (probability > 70) tone = "soft";
 
-  const behaviorPrediction =
-    probability > 70
-      ? "Likely to pay quickly with minimal pressure"
-      : probability > 40
-        ? "May pay after follow-up"
-        : "High chance of delay or avoidance";
+  /* =========================
+     DECISION ENGINE
+  ========================= */
+  let behaviorPrediction = "";
+  let strategy = "";
+  let nextAction = "";
 
-  const strategy =
-    probability > 70
-      ? "Quick close call"
-      : probability > 40
-        ? "Structured follow-up"
-        : "Pressure and escalation";
+  if (probability > 75) {
+    behaviorPrediction = "High likelihood of immediate payment";
+    strategy = "Close quickly with minimal friction";
+    nextAction = "Confirm payment and follow up";
+  } else if (probability > 45) {
+    behaviorPrediction = "Moderate chance of payment with follow-up";
+    strategy = "Consistent reminders and structured negotiation";
+    nextAction = "Call + WhatsApp follow-up";
+  } else {
+    behaviorPrediction = "High risk of avoidance or delay";
+    strategy = "Apply pressure and escalate if needed";
+    nextAction = "Firm call and log outcome";
+  }
 
-  const nextAction =
-    probability > 70
-      ? "Confirm payment date"
-      : probability > 40
-        ? "Call + WhatsApp reminder"
-        : "Firm call + log outcome";
-
+  /* =========================
+     FLAGS
+  ========================= */
   const redFlags: string[] = [];
-  if ((input.phonesCount ?? 0) === 0) redFlags.push("No phone");
-  if ((input.addressesCount ?? 0) === 0) redFlags.push("No address");
-  if (inactivity > 7) redFlags.push("No recent action");
+  if (!input.phonesCount) redFlags.push("No phone");
+  if (!input.addressesCount) redFlags.push("No address");
+  if (inactivity > 5) redFlags.push("Inactive client");
 
   const strengths: string[] = [];
-  if (osint > 50) strengths.push("Strong OSINT data");
-  if ((input.phonesCount ?? 0) > 0) strengths.push("Reachable");
+  if (osint > 60) strengths.push("Strong OSINT");
+  if (input.phonesCount) strengths.push("Reachable");
+
+  /* =========================
+     META
+  ========================= */
+  const confidence = Math.round((osint + (100 - risk)) / 2);
+
+  const riskBoost = Math.max(0, Math.round((100 - probability) / 10));
+  const urgency = Math.min(100, risk + inactivity * 2);
 
   return {
     behaviorPrediction,
@@ -107,14 +133,16 @@ function fallbackAI(input: AIInput): AIResult {
     tone,
     nextAction,
     summary: `${behaviorPrediction}. Strategy: ${strategy}.`,
-    confidence: Math.round((osint + (100 - risk)) / 2),
+    confidence,
     redFlags,
     strengths,
+    riskBoost,
+    urgency,
   };
 }
 
 /* =========================
-   OPENAI CALL
+   OPENAI CALL 🔥
 ========================= */
 async function runAI(input: AIInput): Promise<AIResult | null> {
   if (!process.env.OPENAI_API_KEY) return null;
@@ -127,7 +155,7 @@ async function runAI(input: AIInput): Promise<AIResult | null> {
         {
           role: "system",
           content:
-            "You are a debt collection AI. Return ONLY JSON with: behaviorPrediction, paymentProbability, strategy, tone, nextAction, summary, confidence, redFlags, strengths.",
+            "You are a debt collection AI decision engine. Return ONLY JSON with keys: behaviorPrediction, paymentProbability, strategy, tone, nextAction, summary, confidence, redFlags, strengths, riskBoost, urgency.",
         },
         {
           role: "user",
@@ -144,18 +172,23 @@ async function runAI(input: AIInput): Promise<AIResult | null> {
 
     return {
       ...parsed,
-      paymentProbability: parseNumber(parsed.paymentProbability),
-      confidence: parseNumber(parsed.confidence),
+      paymentProbability: safeNumber(parsed.paymentProbability),
+      confidence: safeNumber(parsed.confidence),
+      riskBoost: safeNumber(parsed.riskBoost),
+      urgency: safeNumber(parsed.urgency),
     };
-  } catch {
+  } catch (error) {
+    console.error("AI ERROR:", error);
     return null;
   }
 }
 
 /* =========================
-   MAIN FUNCTION
+   MAIN ENTRY
 ========================= */
-export async function analyzeClient(input: AIInput): Promise<AIResult> {
+export async function analyzeClient(
+  input: AIInput
+): Promise<AIResult> {
   const ai = await runAI(input);
 
   if (ai) return ai;
@@ -164,11 +197,12 @@ export async function analyzeClient(input: AIInput): Promise<AIResult> {
 }
 
 /* =========================
-   QUICK DECISION HELPER
+   PRIORITY BOOST 🔥
 ========================= */
 export function getCallPriority(ai: AIResult, riskScore: number) {
-  return (
-    ai.paymentProbability * 0.4 +
-    riskScore * 0.6
+  return Math.round(
+    ai.paymentProbability * 0.3 +
+      riskScore * 0.5 +
+      ai.urgency * 0.2
   );
 }

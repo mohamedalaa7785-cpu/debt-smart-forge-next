@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* =========================
+   RESET + BASE
+========================= */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  scroll-behavior: smooth;
+}
+
+/* =========================
+   BODY SYSTEM
+========================= */
+body {
+  @apply bg-bg text-gray-900 antialiased;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* =========================
+   SCROLLBAR (MOBILE CLEAN)
+========================= */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5f5;
+  border-radius: 10px;
+}
+
+/* =========================
+   INPUT SYSTEM
+========================= */
+.input {
+  @apply w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-black;
+}
+
+/* =========================
+   BUTTON SYSTEM
+========================= */
+.btn {
+  @apply px-4 py-2 rounded-xl text-sm font-medium transition;
+}
+
+.btn-primary {
+  @apply bg-black text-white;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 text-gray-800;
+}
+
+.btn-success {
+  @apply bg-success text-white;
+}
+
+.btn-danger {
+  @apply bg-danger text-white;
+}
+
+/* =========================
+   CARD SYSTEM 🔥
+========================= */
+.card {
+  @apply bg-white rounded-2xl shadow-card p-4;
+}
+
+.card-strong {
+  @apply bg-white rounded-2xl shadow-strong p-4;
+}
+
+/* =========================
+   TEXT SYSTEM
+========================= */
+.title {
+  @apply text-lg font-bold;
+}
+
+.subtitle {
+  @apply text-sm text-gray-500;
+}
+
+/* =========================
+   BADGE SYSTEM
+========================= */
+.badge {
+  @apply px-2 py-1 text-xs rounded-full;
+}
+
+/* =========================
+   MOBILE SAFE AREA
+========================= */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+  }

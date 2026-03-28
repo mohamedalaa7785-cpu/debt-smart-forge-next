@@ -11,13 +11,14 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
    VALIDATE BASE64
 ========================= */
 function validateBase64(file: string) {
+  if (!file || typeof file !== "string") {
+    return "Invalid file";
+  }
+
   if (!file.startsWith("data:image")) {
     return "Invalid image format";
   }
 
-  /* =========================
-     TYPE CHECK
-  ========================= */
   const mimeMatch = file.match(/^data:(image\/[a-zA-Z]+);base64,/);
 
   if (!mimeMatch) {
@@ -30,9 +31,6 @@ function validateBase64(file: string) {
     return "Unsupported image type";
   }
 
-  /* =========================
-     SIZE CHECK
-  ========================= */
   const sizeInBytes =
     (file.length * 3) / 4 -
     (file.endsWith("==") ? 2 : file.endsWith("=") ? 1 : 0);
@@ -51,8 +49,11 @@ function validateBase64(file: string) {
 ========================= */
 function sanitize(body: any) {
   return {
-    file: body.file,
-    folder: body.folder || "debt-smart",
+    file: String(body.file || ""),
+    folder:
+      typeof body.folder === "string" && body.folder.trim()
+        ? body.folder.trim()
+        : "debt-smart/clients",
   };
 }
 
@@ -61,12 +62,21 @@ function sanitize(body: any) {
 ========================= */
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    let body: any;
+
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid JSON body" },
+        { status: 400 }
+      );
+    }
 
     /* =========================
        VALIDATION
     ========================= */
-    if (!body.file) {
+    if (!body?.file) {
       return NextResponse.json(
         { success: false, error: "File is required" },
         { status: 400 }
@@ -98,15 +108,15 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        url: result.secure_url,
-        publicId: result.public_id,
+        url: result.url,
+        publicId: result.publicId,
         width: result.width,
         height: result.height,
         format: result.format,
+        sizeKB: result.sizeKB,
       },
-
       meta: {
-        sizeLimitMB: MAX_SIZE_MB,
+        maxSizeMB: MAX_SIZE_MB,
       },
     });
   } catch (error) {
@@ -120,4 +130,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-         }
+}

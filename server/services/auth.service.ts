@@ -22,6 +22,10 @@ function getExpiryDate() {
   return d;
 }
 
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
 /* =========================
    REGISTER 🔥
 ========================= */
@@ -30,8 +34,14 @@ export async function register(
   password: string,
   role: "admin" | "agent" = "agent"
 ) {
+  const cleanEmail = normalizeEmail(email);
+
+  if (!cleanEmail || password.length < 6) {
+    throw new Error("Invalid input");
+  }
+
   const existing = await db.query.users.findFirst({
-    where: eq(users.email, email),
+    where: eq(users.email, cleanEmail),
   });
 
   if (existing) {
@@ -43,24 +53,31 @@ export async function register(
   const [user] = await db
     .insert(users)
     .values({
-      email,
+      email: cleanEmail,
       password: hashed,
       role,
     })
     .returning();
 
-  return user;
+  return {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
 }
 
 /* =========================
    LOGIN 🔐
 ========================= */
 export async function login(email: string, password: string) {
+  const cleanEmail = normalizeEmail(email);
+
   const user = await db.query.users.findFirst({
-    where: eq(users.email, email),
+    where: eq(users.email, cleanEmail),
   });
 
-  if (!user || !user.isActive) {
+  /* ❌ مهم: متقولش السبب الحقيقي */
+  if (!user) {
     throw new Error("Invalid credentials");
   }
 
@@ -89,34 +106,80 @@ export async function login(email: string, password: string) {
 }
 
 /* =========================
-   GET USER FROM TOKEN
+   GET USER FROM TOKEN 🔥🔥🔥
 ========================= */
 export async function getUserFromToken(token: string) {
-  if (!token) return null;
+  try {
+    if (!token) return null;
 
-  const session = await db.query.sessions.findFirst({
-    where: eq(sessions.token, token),
-  });
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.token, token),
+    });
 
-  if (!session) return null;
+    if (!session) return null;
 
-  if (session.expiresAt && new Date(session.expiresAt) < new Date()) {
+    /* =========================
+       EXPIRED SESSION
+    ========================= */
+    if (
+      session.expiresAt &&
+      new Date(session.expiresAt) < new Date()
+    ) {
+      // 🔥 تنظيف تلقائي
+      await db
+        .delete(sessions)
+        .where(eq(sessions.token, token));
+
+      return null;
+    }
+
+    const user = await db.query.users.findFirst({
+      where: eq(users.id, session.userId),
+    });
+
+    if (!user) return null;
+
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+    };
+  } catch (error) {
+    console.error("getUserFromToken error:", error);
     return null;
   }
-
-  return db.query.users.findFirst({
-    where: eq(users.id, session.userId),
-  });
 }
 
 /* =========================
-   LOGOUT
+   LOGOUT 🔥
 ========================= */
 export async function logout(token: string) {
   try {
-    await db.delete(sessions).where(eq(sessions.token, token));
+    if (!token) return false;
+
+    await db
+      .delete(sessions)
+      .where(eq(sessions.token, token));
+
     return true;
-  } catch {
+  } catch (error) {
+    console.error("logout error:", error);
+    return false;
+  }
+}
+
+/* =========================
+   LOGOUT ALL DEVICES 🔥🔥🔥
+========================= */
+export async function logoutAll(userId: string) {
+  try {
+    await db
+      .delete(sessions)
+      .where(eq(sessions.userId, userId));
+
+    return true;
+  } catch (error) {
+    console.error("logoutAll error:", error);
     return false;
   }
 }
@@ -130,5 +193,7 @@ export async function cleanExpiredSessions() {
       DELETE FROM sessions
       WHERE expires_at < NOW()
     `);
-  } catch {}
-}
+  } catch (error) {
+    console.error("clean sessions error:", error);
+  }
+     }

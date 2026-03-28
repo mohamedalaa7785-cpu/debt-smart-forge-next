@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { buildWhatsAppLink, formatCurrency } from "@/lib/utils";
+import {
+  buildWhatsAppLink,
+  formatCurrency,
+} from "@/lib/utils";
 import RiskBadge from "@/components/RiskBadge";
 
 /* =========================
@@ -15,17 +18,53 @@ export default function ClientPage({
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  /* =========================
+     FETCH
+  ========================= */
+  async function fetchData() {
+    try {
+      setLoading(true);
+
+      const res = await fetch(`/api/client/${params.id}`);
+      const json = await res.json();
+
+      setData(json.data);
+    } catch (err) {
+      console.error("Client fetch error:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    fetch(`/api/client/${params.id}`)
-      .then((res) => res.json())
-      .then((res) => {
-        setData(res.data);
-        setLoading(false);
-      });
+    fetchData();
   }, [params.id]);
 
-  if (loading) return <div className="p-4">Loading...</div>;
-  if (!data) return <div className="p-4">No data</div>;
+  /* =========================
+     ACTION LOGGER 🔥
+  ========================= */
+  async function logAction(type: string, note?: string) {
+    try {
+      await fetch("/api/actions", {
+        method: "POST",
+        body: JSON.stringify({
+          clientId: params.id,
+          actionType: type,
+          note,
+        }),
+      });
+
+      fetchData(); // refresh timeline
+    } catch (err) {
+      console.error("Action log error:", err);
+    }
+  }
+
+  if (loading)
+    return <div className="p-4 text-center">Loading...</div>;
+
+  if (!data)
+    return <div className="p-4 text-center">No data</div>;
 
   const {
     client,
@@ -41,7 +80,7 @@ export default function ClientPage({
   const mainPhone = phones?.[0]?.phone;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-w-xl mx-auto">
 
       {/* =========================
           HEADER
@@ -56,10 +95,10 @@ export default function ClientPage({
           />
 
           <div className="text-right">
-            <p className="text-sm text-gray-500">
+            <p className="text-xs text-gray-500">
               Total Due
             </p>
-            <p className="font-bold">
+            <p className="font-bold text-lg">
               {formatCurrency(summary.totalAmountDue)}
             </p>
           </div>
@@ -67,13 +106,14 @@ export default function ClientPage({
       </div>
 
       {/* =========================
-          QUICK ACTIONS 🔥
+          QUICK ACTIONS 🔥 (SMART)
       ========================= */}
       {mainPhone && (
         <div className="grid grid-cols-3 gap-2">
 
           <a
             href={`tel:${mainPhone}`}
+            onClick={() => logAction("CALL")}
             className="btn btn-success text-center"
           >
             📞 Call
@@ -81,13 +121,18 @@ export default function ClientPage({
 
           <a
             href={buildWhatsAppLink(mainPhone)}
+            target="_blank"
+            onClick={() => logAction("WHATSAPP")}
             className="btn btn-primary text-center"
           >
             💬 WhatsApp
           </a>
 
           <button
-            onClick={() => navigator.clipboard.writeText(mainPhone)}
+            onClick={() => {
+              navigator.clipboard.writeText(mainPhone);
+              logAction("COPY_PHONE");
+            }}
             className="btn btn-secondary"
           >
             Copy
@@ -96,7 +141,7 @@ export default function ClientPage({
       )}
 
       {/* =========================
-          AI ANALYSIS 🧠
+          AI DECISION 🧠
       ========================= */}
       <div className="card space-y-2">
         <h2 className="font-semibold">🧠 AI Decision</h2>
@@ -104,20 +149,20 @@ export default function ClientPage({
         <p className="text-sm">{ai.summary}</p>
 
         <div className="text-sm">
-          🎯 Next: <b>{ai.nextAction}</b>
+          🎯 <b>{ai.nextAction}</b>
         </div>
 
         <div className="text-sm">
-          ⚡ Tone: <b>{ai.tone}</b>
+          Tone: <b>{ai.tone}</b>
         </div>
 
         <div className="text-sm">
-          📊 Probability: {ai.paymentProbability}%
+          Probability: {ai.paymentProbability}%
         </div>
 
         {ai.redFlags?.length > 0 && (
           <div className="text-xs text-red-500">
-            ⚠️ {ai.redFlags.join(" | ")}
+            ⚠ {ai.redFlags.join(" | ")}
           </div>
         )}
       </div>
@@ -139,13 +184,15 @@ export default function ClientPage({
             </div>
 
             <div>EMI: {formatCurrency(l.emi)}</div>
-            <div>Due: {formatCurrency(l.amountDue)}</div>
+            <div className="font-medium">
+              Due: {formatCurrency(l.amountDue)}
+            </div>
           </div>
         ))}
       </div>
 
       {/* =========================
-          PHONES
+          PHONES (FULL CONTROL)
       ========================= */}
       <div className="card space-y-2">
         <h2 className="font-semibold">📞 Phones</h2>
@@ -153,19 +200,36 @@ export default function ClientPage({
         {phones.map((p: any) => (
           <div
             key={p.id}
-            className="flex justify-between text-sm"
+            className="flex items-center justify-between bg-gray-50 p-2 rounded"
           >
             <span>{p.phone}</span>
 
-            <a href={`tel:${p.phone}`} className="text-green-600">
-              Call
-            </a>
+            <div className="flex gap-2">
+
+              <a
+                href={`tel:${p.phone}`}
+                onClick={() => logAction("CALL")}
+                className="text-green-600 text-xs"
+              >
+                Call
+              </a>
+
+              <a
+                href={buildWhatsAppLink(p.phone)}
+                target="_blank"
+                onClick={() => logAction("WHATSAPP")}
+                className="text-blue-600 text-xs"
+              >
+                WA
+              </a>
+
+            </div>
           </div>
         ))}
       </div>
 
       {/* =========================
-          ADDRESSES + MAP LINK
+          ADDRESSES + MAP
       ========================= */}
       <div className="card space-y-2">
         <h2 className="font-semibold">📍 Addresses</h2>
@@ -185,7 +249,7 @@ export default function ClientPage({
       </div>
 
       {/* =========================
-          OSINT 🔍
+          OSINT
       ========================= */}
       <div className="card space-y-2">
         <h2 className="font-semibold">🔍 OSINT</h2>
@@ -197,16 +261,10 @@ export default function ClientPage({
             Confidence: {osint.confidenceScore}%
           </div>
         )}
-
-        {osint?.socialLinks && (
-          <div className="text-xs break-all">
-            {osint.socialLinks}
-          </div>
-        )}
       </div>
 
       {/* =========================
-          ACTIONS TIMELINE
+          TIMELINE 🔥
       ========================= */}
       <div className="card space-y-2">
         <h2 className="font-semibold">📅 Activity</h2>
@@ -222,7 +280,10 @@ export default function ClientPage({
             key={a.id}
             className="text-sm border-b pb-1"
           >
-            <p>{a.actionType}</p>
+            <p className="font-medium">
+              {a.actionType}
+            </p>
+
             <p className="text-xs text-gray-500">
               {a.note}
             </p>
@@ -231,4 +292,4 @@ export default function ClientPage({
       </div>
     </div>
   );
-          }
+}

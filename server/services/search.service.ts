@@ -4,7 +4,7 @@ import {
   clientPhones,
 } from "@/server/db/schema";
 
-import { ilike, or, eq } from "drizzle-orm";
+import { ilike, or, eq, SQL } from "drizzle-orm";
 import { normalizePhone } from "@/lib/utils";
 
 /* =========================
@@ -19,11 +19,16 @@ export async function searchClients(query: string) {
   /* =========================
      QUERY BUILD
   ========================= */
-  const conditions = [
+  const conditions: SQL[] = [
     ilike(clients.name, `%${cleanQuery}%`),
-    ilike(clients.email, `%${cleanQuery}%`),
-    ilike(clients.company, `%${cleanQuery}%`),
   ];
+
+  if (clients.email) {
+    conditions.push(ilike(clients.email, `%${cleanQuery}%`));
+  }
+  if (clients.company) {
+    conditions.push(ilike(clients.company, `%${cleanQuery}%`));
+  }
 
   if (phone) {
     conditions.push(
@@ -69,8 +74,8 @@ export async function searchClients(query: string) {
       map.set(row.id, {
         id: row.id,
         name: row.name,
-        email: row.email,
-        company: row.company,
+        email: row.email ?? undefined,
+        company: row.company ?? undefined,
         phones: [],
       });
     }

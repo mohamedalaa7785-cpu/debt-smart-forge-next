@@ -5,7 +5,7 @@ import {
   clientPhones,
 } from "@/server/db/schema";
 
-import { ilike, or, desc, eq } from "drizzle-orm";
+import { ilike, or, desc, eq, SQL } from "drizzle-orm";
 import { normalizePhone } from "@/lib/utils";
 
 /* =========================
@@ -31,11 +31,16 @@ function sanitizeQuery(q: string) {
 function buildConditions(q: string) {
   const phone = normalizePhone(q);
 
-  const conditions: any[] = [
+  const conditions: SQL[] = [
     ilike(clients.name, `%${q}%`),
-    ilike(clients.email, `%${q}%`),
-    ilike(clients.company, `%${q}%`),
   ];
+
+  if (clients.email) {
+    conditions.push(ilike(clients.email, `%${q}%`));
+  }
+  if (clients.company) {
+    conditions.push(ilike(clients.company, `%${q}%`));
+  }
 
   if (phone && phone.length >= 3) {
     conditions.push(
@@ -125,7 +130,7 @@ export async function GET(req: Request) {
           name: row.name,
           email: row.email ?? undefined,
           company: row.company ?? undefined,
-          createdAt: row.createdAt,
+          createdAt: row.createdAt || new Date(),
           phones: [],
         });
       }
@@ -183,4 +188,4 @@ export async function GET(req: Request) {
       { status: 500 }
     );
   }
-        }
+}

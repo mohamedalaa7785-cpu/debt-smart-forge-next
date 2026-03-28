@@ -100,12 +100,12 @@ export async function getClientById(clientId: string) {
     /* =========================
        FINANCIAL ENGINE 💰
     ========================= */
-    const financialLoans = loans.map((loan) =>
+    const financialLoans = loans.map((loan: any) =>
       calculateFinancials({
         loanType: loan.loanType,
         emi: Number(loan.emi),
-        bucket: loan.bucket,
-        penaltyEnabled: loan.penaltyEnabled,
+        bucket: loan.bucket ?? 1,
+        penaltyEnabled: loan.penaltyEnabled ?? false,
         penaltyAmount: Number(loan.penaltyAmount || 0),
       })
     );
@@ -124,7 +124,7 @@ export async function getClientById(clientId: string) {
     ========================= */
     const maxBucket =
       financialLoans.length > 0
-        ? Math.max(...financialLoans.map((l) => l.bucket))
+        ? Math.max(...financialLoans.map((l: any) => l.bucket))
         : 1;
 
     let risk = calculateRisk({
@@ -161,7 +161,7 @@ export async function getClientById(clientId: string) {
       osintConfidence: osint?.confidenceScore ?? 0,
       osintSummary: osint?.summary ?? null,
 
-      loanTypes: loans.map((l) => l.loanType),
+      loanTypes: loans.map((l: any) => l.loanType),
 
       aiSignalsScore: actionScore,
     });
@@ -268,7 +268,7 @@ export async function createClientFull(data: {
       throw new Error("Name is required");
     }
 
-    return await db.transaction(async (tx) => {
+    return await db.transaction(async (tx: any) => {
       const [client] = await tx
         .insert(clients)
         .values({
@@ -316,4 +316,4 @@ export async function createClientFull(data: {
     console.error("createClientFull error:", error);
     throw error;
   }
-        }
+}

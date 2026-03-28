@@ -8,6 +8,7 @@ import {
   numeric,
   jsonb,
 } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 
 /* =========================
    USERS 🔐
@@ -23,17 +24,30 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const usersRelations = relations(users, ({ many }) => ({
+  sessions: many(sessions),
+  logs: many(logs),
+}));
+
 /* =========================
    SESSIONS
 ========================= */
 export const sessions = pgTable("sessions", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  userId: uuid("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   token: text("token").unique(),
+  expiresAt: timestamp("expires_at"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id],
+  }),
+}));
 
 /* =========================
    LOGS 📊
@@ -41,12 +55,19 @@ export const sessions = pgTable("sessions", {
 export const logs = pgTable("logs", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  userId: uuid("user_id"),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
   action: text("action"),
   meta: jsonb("meta"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const logsRelations = relations(logs, ({ one }) => ({
+  user: one(users, {
+    fields: [logs.userId],
+    references: [users.id],
+  }),
+}));
 
 /* =========================
    CLIENTS
@@ -65,13 +86,22 @@ export const clients = pgTable("clients", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const clientsRelations = relations(clients, ({ many }) => ({
+  phones: many(clientPhones),
+  addresses: many(clientAddresses),
+  loans: many(clientLoans),
+  actions: many(clientActions),
+  osintResults: many(osintResults),
+  images: many(clientImages),
+}));
+
 /* =========================
    PHONES
 ========================= */
 export const clientPhones = pgTable("client_phones", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  clientId: uuid("client_id").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
 
   phone: text("phone").notNull(),
   isPrimary: boolean("is_primary").default(false),
@@ -79,13 +109,20 @@ export const clientPhones = pgTable("client_phones", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const clientPhonesRelations = relations(clientPhones, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientPhones.clientId],
+    references: [clients.id],
+  }),
+}));
+
 /* =========================
    ADDRESSES
 ========================= */
 export const clientAddresses = pgTable("client_addresses", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  clientId: uuid("client_id").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
 
   address: text("address").notNull(),
 
@@ -97,13 +134,20 @@ export const clientAddresses = pgTable("client_addresses", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const clientAddressesRelations = relations(clientAddresses, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientAddresses.clientId],
+    references: [clients.id],
+  }),
+}));
+
 /* =========================
    LOANS 🔥
 ========================= */
 export const clientLoans = pgTable("client_loans", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  clientId: uuid("client_id").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
 
   loanType: text("loan_type").notNull(),
   loanNumber: text("loan_number"),
@@ -123,19 +167,36 @@ export const clientLoans = pgTable("client_loans", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const clientLoansRelations = relations(clientLoans, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientLoans.clientId],
+    references: [clients.id],
+  }),
+}));
+
 /* =========================
    ACTIONS
 ========================= */
 export const clientActions = pgTable("client_actions", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  clientId: uuid("client_id").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
 
   actionType: text("action_type").notNull(),
   note: text("note"),
+  result: text("result"),
+  amountPaid: numeric("amount_paid"),
+  nextActionDate: timestamp("next_action_date"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const clientActionsRelations = relations(clientActions, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientActions.clientId],
+    references: [clients.id],
+  }),
+}));
 
 /* =========================
    OSINT 🔍
@@ -143,7 +204,7 @@ export const clientActions = pgTable("client_actions", {
 export const osintResults = pgTable("osint_results", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  clientId: uuid("client_id").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
 
   socialLinks: jsonb("social_links"),
   workplace: jsonb("workplace"),
@@ -158,16 +219,30 @@ export const osintResults = pgTable("osint_results", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const osintResultsRelations = relations(osintResults, ({ one }) => ({
+  client: one(clients, {
+    fields: [osintResults.clientId],
+    references: [clients.id],
+  }),
+}));
+
 /* =========================
    IMAGES
 ========================= */
 export const clientImages = pgTable("client_images", {
   id: uuid("id").defaultRandom().primaryKey(),
 
-  clientId: uuid("client_id").notNull(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
 
   imageUrl: text("image_url").notNull(),
   publicId: text("public_id"),
 
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const clientImagesRelations = relations(clientImages, ({ one }) => ({
+  client: one(clients, {
+    fields: [clientImages.clientId],
+    references: [clients.id],
+  }),
+}));

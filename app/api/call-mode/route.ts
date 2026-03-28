@@ -21,7 +21,7 @@ export async function GET() {
       .orderBy(desc(clients.createdAt))
       .limit(50);
 
-    const result = [];
+    const result: any[] = [];
 
     for (const client of allClients) {
       const [loans, actions, phones] = await Promise.all([
@@ -42,12 +42,9 @@ export async function GET() {
           .where(eq(clientPhones.clientId, client.id)),
       ]);
 
-      const totalDue = loans.reduce(
-        (sum, l) => sum + Number(l.balance || 0),
-        0
-      );
+      const totalDue = loans.reduce((sum: number, l: any) => sum + Number(l.balance || 0), 0);
 
-      const lastActionDays = actions.length
+      const lastActionDays = actions.length && actions[0].createdAt
         ? Math.floor(
             (Date.now() -
               new Date(actions[0].createdAt).getTime()) /
@@ -58,7 +55,7 @@ export async function GET() {
       /* =========================
          AI SIGNALS
       ========================= */
-      const actionScore = actions.reduce((acc, a) => {
+      const actionScore = actions.reduce((acc: number, a: any) => {
         if (a.actionType === "CALL") return acc + 5;
         if (a.actionType === "WHATSAPP") return acc + 3;
         if (a.actionType === "PROMISE") return acc + 10;
@@ -83,7 +80,7 @@ export async function GET() {
       const priority =
         totalDue * 0.6 +
         actionScore * 5 +
-        ai.paymentProbability * 2 -
+        (ai?.paymentProbability || 0) * 2 -
         lastActionDays * 3;
 
       result.push({
@@ -116,4 +113,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-        }
+}

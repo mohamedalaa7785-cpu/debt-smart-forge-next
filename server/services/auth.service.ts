@@ -1,6 +1,6 @@
 import { db } from "@/server/db";
 import { users, sessions } from "@/server/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql, lt } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 
@@ -189,11 +189,10 @@ export async function logoutAll(userId: string) {
 ========================= */
 export async function cleanExpiredSessions() {
   try {
-    await db.execute(`
-      DELETE FROM sessions
-      WHERE expires_at < NOW()
-    `);
+    await db
+      .delete(sessions)
+      .where(lt(sessions.expiresAt, sql`NOW()`));
   } catch (error) {
     console.error("clean sessions error:", error);
   }
-     }
+}

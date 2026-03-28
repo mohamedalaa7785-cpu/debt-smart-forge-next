@@ -2,11 +2,18 @@ import OpenAI from "openai";
 import { safeJsonParse, parseNumber } from "@/lib/utils";
 
 /* =========================
-   OPENAI INIT
+   OPENAI INIT (SAFE)
 ========================= */
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-});
+let openai: OpenAI | null = null;
+
+function getOpenAI() {
+  if (!openai && process.env.OPENAI_API_KEY) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
 
 /* =========================
    TYPES
@@ -136,7 +143,8 @@ function fallbackAI(input: AIInput): AIResult {
    OPENAI CALL 🔥
 ========================= */
 async function runAI(input: AIInput): Promise<AIResult | null> {
-  if (!process.env.OPENAI_API_KEY) return null;
+  const client = getOpenAI();
+  if (!client) return null;
 
   try {
     const prompt = `
@@ -164,7 +172,7 @@ Focus on:
 - urgency level
 `;
 
-    const response = await openai.chat.completions.create({
+    const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.2,
       messages: [

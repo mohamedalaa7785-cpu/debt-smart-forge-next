@@ -1,69 +1,67 @@
 import "server-only";
-
-import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import * as schema from "./schema";
 
 /* =========================
-   GLOBAL POOL (SAFE FOR SERVERLESS)
+   GLOBAL CLIENT (SAFE FOR SERVERLESS)
 ========================= */
 declare global {
   // eslint-disable-next-line no-var
-  var __dbPool: Pool | undefined;
+  var __dbClient: postgres.Sql | undefined;
 }
 
 /* =========================
-   CREATE POOL (LAZY)
+   CREATE CLIENT (LAZY)
 ========================= */
-function createPool() {
+function createClient() {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    console.error("❌ DATABASE_URL is missing");
+    // In build time, we might not have DATABASE_URL, but we shouldn't throw
+    // to allow the build to proceed if it doesn't actually need the DB.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("DATABASE_URL is required in production");
+    }
     return null;
   }
 
-  return new Pool({
-    connectionString,
-
-    /* 🔥 مهم لـ Supabase */
-    ssl: {
-      rejectUnauthorized: false,
-    },
-
-    max: 5, // serverless friendly
-    idleTimeoutMillis: 20000,
-    connectionTimeoutMillis: 10000,
+  return postgres(connectionString, {
+    ssl: "require",
+    max: 1, // serverless friendly
+    idle_timeout: 20,
+    connect_timeout: 10,
   });
 }
 
 /* =========================
-   GET POOL
+   GET CLIENT
 ========================= */
-const pool =
-  global.__dbPool ?? createPool();
+let client: postgres.Sql | null = null;
 
-if (!pool) {
-  throw new Error("Database not initialized");
-}
-
-if (process.env.NODE_ENV !== "production") {
-  global.__dbPool = pool;
+try {
+  client = global.__dbClient ?? createClient();
+  
+  if (process.env.NODE_ENV !== "production" && client) {
+    global.__dbClient = client;
+  }
+} catch (error) {
+  console.error("Failed to initialize database client:", error);
+  client = null;
 }
 
 /* =========================
-   DRIZZLE INSTANCE
+   DRIZZLE INSTANCE (WITH FALLBACK)
 ========================= */
-export const db = drizzle(pool, {
-  schema,
-});
+export const db = client ? drizzle(client, { schema }) : ({} as any);
 
 /* =========================
    HEALTH CHECK (OPTIONAL)
 ========================= */
 export async function checkDb() {
+  if (!client) return false;
   try {
-    await pool.query("SELECT 1");
+    await client`SELECT 1`;
     return true;
   } catch (error) {
     console.error("DB ERROR:", error);

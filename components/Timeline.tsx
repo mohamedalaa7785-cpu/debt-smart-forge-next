@@ -1,3 +1,5 @@
+"use client";
+
 export default function Timeline({ actions }: any) {
   if (!actions || actions.length === 0) {
     return (

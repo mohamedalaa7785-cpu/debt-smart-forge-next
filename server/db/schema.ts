@@ -93,6 +93,8 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   actions: many(clientActions),
   osintResults: many(osintResults),
   images: many(clientImages),
+  legalCases: many(legalCases),
+  settlements: many(settlements),
 }));
 
 /* =========================
@@ -243,6 +245,55 @@ export const clientImages = pgTable("client_images", {
 export const clientImagesRelations = relations(clientImages, ({ one }) => ({
   client: one(clients, {
     fields: [clientImages.clientId],
+    references: [clients.id],
+  }),
+}));
+
+/* =========================
+   LEGAL CASES ⚖️
+========================= */
+export const legalCases = pgTable("legal_cases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  
+  caseNumber: text("case_number"),
+  caseType: text("case_type"), // e.g., "Bounced Check", "Legal Notice"
+  courtName: text("court_name"),
+  status: text("status").default("pending"),
+  
+  nextSessionDate: timestamp("next_session_date"),
+  lastUpdate: text("last_update"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const legalCasesRelations = relations(legalCases, ({ one }) => ({
+  client: one(clients, {
+    fields: [legalCases.clientId],
+    references: [clients.id],
+  }),
+}));
+
+/* =========================
+   SETTLEMENTS 💰
+========================= */
+export const settlements = pgTable("settlements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+  
+  originalBalance: numeric("original_balance").notNull(),
+  settlementAmount: numeric("settlement_amount").notNull(),
+  haircutPercentage: numeric("haircut_percentage").notNull(),
+  
+  status: text("status").default("proposed"), // proposed, approved, rejected, paid
+  validUntil: timestamp("valid_until"),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const settlementsRelations = relations(settlements, ({ one }) => ({
+  client: one(clients, {
+    fields: [settlements.clientId],
     references: [clients.id],
   }),
 }));

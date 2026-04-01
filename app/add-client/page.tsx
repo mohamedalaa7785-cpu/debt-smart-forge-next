@@ -32,6 +32,10 @@ export default function AddClientPage() {
     { loanType: "PIL", emi: "", balance: "" },
   ]);
 
+  const [imageUrl, setImageUrl] = useState("");
+  const [osintLoading, setOsintLoading] = useState(false);
+  const [osintData, setOsintData] = useState<any>(null);
+
   const [loading, setLoading] = useState(false);
 
   /* =========================
@@ -71,6 +75,59 @@ export default function AddClientPage() {
   };
 
   /* =========================
+     IMAGE UPLOAD & OSINT
+  ========================= */
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64 = reader.result as string;
+
+      try {
+        // Upload image
+        const uploadRes = await fetch("/api/upload", {
+          method: "POST",
+          body: JSON.stringify({ image: base64 }),
+        });
+
+        const uploadData = await uploadRes.json();
+        if (!uploadData.success) {
+          alert("Image upload failed");
+          return;
+        }
+
+        const uploadedUrl = uploadData.data.url;
+        setImageUrl(uploadedUrl);
+
+        // Trigger OSINT
+        setOsintLoading(true);
+        const osintRes = await fetch("/api/osint", {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            phone: phones[0],
+            company,
+            imageUrl: uploadedUrl,
+          }),
+        });
+
+        const osintResult = await osintRes.json();
+        if (osintResult.success) {
+          setOsintData(osintResult.data);
+        }
+      } catch (err) {
+        console.error("OSINT error:", err);
+      } finally {
+        setOsintLoading(false);
+      }
+    };
+
+    reader.readAsDataURL(file);
+  };
+
+  /* =========================
      SUBMIT
   ========================= */
   const handleSubmit = async () => {
@@ -94,6 +151,8 @@ export default function AddClientPage() {
             emi: Number(l.emi),
             balance: Number(l.balance),
           })),
+          imageUrl,
+          osintData,
         }),
       });
 
@@ -141,6 +200,43 @@ export default function AddClientPage() {
           value={company}
           onChange={(e) => setCompany(e.target.value)}
         />
+      </div>
+
+      {/* IMAGE UPLOAD & OSINT */}
+      <div className="card space-y-3">
+        <p className="font-semibold">📸 Reverse Image Search (OSINT)</p>
+        
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleImageUpload}
+          className="input"
+        />
+
+        {imageUrl && (
+          <div>
+            <img src={imageUrl} alt="Uploaded" className="w-full h-32 object-cover rounded-lg" />
+          </div>
+        )}
+
+        {osintLoading && <p className="text-sm text-gray-500">🔍 Fetching OSINT data...</p>}
+
+        {osintData && (
+          <div className="bg-blue-50 p-3 rounded-lg space-y-2">
+            <p className="text-sm font-semibold">🔍 Intelligence Found:</p>
+            <p className="text-xs">{osintData.summary}</p>
+            {osintData.socialLinks?.length > 0 && (
+              <div className="text-xs">
+                <p className="font-semibold">Social Links:</p>
+                {osintData.socialLinks.map((link: string, i: number) => (
+                  <a key={i} href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 break-all">
+                    {link}
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* PHONES */}
@@ -237,4 +333,4 @@ export default function AddClientPage() {
       </button>
     </div>
   );
-  }
+}

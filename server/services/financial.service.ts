@@ -223,3 +223,36 @@ export function calculateFinancialPriority(
     return score + loan.riskWeight;
   }, 0);
 }
+
+/* =========================
+   SETTLEMENT SIMULATOR 💰
+========================= */
+export interface SettlementInput {
+  originalBalance: number;
+  haircutPercentage: number; // e.g., 30 for 30%
+}
+
+export interface SettlementResult {
+  originalBalance: number;
+  haircutPercentage: number;
+  haircutAmount: number;
+  settlementAmount: number;
+  savings: number;
+}
+
+export function simulateSettlement(input: SettlementInput): SettlementResult {
+  const originalBalance = safeNumber(input.originalBalance);
+  const haircutPercentage = safeNumber(input.haircutPercentage);
+  
+  const haircutAmount = (originalBalance * haircutPercentage) / 100;
+  const settlementAmount = originalBalance - haircutAmount;
+  const savings = haircutAmount;
+
+  return {
+    originalBalance,
+    haircutPercentage,
+    haircutAmount,
+    settlementAmount,
+    savings,
+  };
+}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
-import { clients } from "@/server/db/schema";
+import { clients, clientPhones, clientAddresses, clientLoans, osintResults } from "@/server/db/schema";
 import { desc } from "drizzle-orm";
 
 import { requireUser } from "@/server/lib/auth";
@@ -163,5 +163,97 @@ export async function GET(req: NextRequest) {
       error?.message || "Unauthorized",
       error?.message === "Too many requests" ? 429 : 401
     );
+  }
+}
+
+/* =========================
+   POST CLIENTS (CREATE) 🔥
+========================= */
+export async function POST(req: NextRequest) {
+  try {
+    const user = await requireUser(req);
+    const body = await req.json();
+
+    const { name, email, company, phones, addresses, loans, imageUrl, osintData } = body;
+
+    if (!name) {
+      return fail("Name is required");
+    }
+
+    if (!phones || phones.length === 0) {
+      return fail("At least one phone is required");
+    }
+
+    if (!loans || loans.length === 0) {
+      return fail("At least one loan is required");
+    }
+
+    // Create client
+    const clientResult = await db
+      .insert(clients)
+      .values({
+        name,
+        email: email || null,
+        company: company || null,
+        imageUrl: imageUrl || null,
+      })
+      .returning();
+
+    const clientId = clientResult[0].id;
+
+    // Create phones
+    if (phones && phones.length > 0) {
+      await db.insert(clientPhones).values(
+        phones.map((phone: string, index: number) => ({
+          clientId,
+          phone,
+          isPrimary: index === 0,
+        }))
+      );
+    }
+
+    // Create addresses
+    if (addresses && addresses.length > 0) {
+      await db.insert(clientAddresses).values(
+        addresses.map((address: string, index: number) => ({
+          clientId,
+          address,
+          isPrimary: index === 0,
+        }))
+      );
+    }
+
+    // Create loans
+    if (loans && loans.length > 0) {
+      await db.insert(clientLoans).values(
+        loans.map((loan: any) => ({
+          clientId,
+          loanType: loan.loanType,
+          balance: loan.balance,
+          emi: loan.emi,
+          bucket: 1,
+        }))
+      );
+    }
+
+    // Save OSINT data if available
+    if (osintData) {
+      await db.insert(osintResults).values({
+        clientId,
+        socialLinks: osintData.socialLinks || [],
+        workplace: osintData.workplace || [],
+        webResults: osintData.webResults || [],
+        imageResults: osintData.imageMatches || [],
+        summary: osintData.summary,
+        confidenceScore: osintData.confidence || 0,
+      });
+    }
+
+    await logAction(user.id, "CREATE_CLIENT", { clientId, name });
+
+    return success({ id: clientId, name });
+  } catch (error: any) {
+    console.error("POST CLIENTS ERROR:", error);
+    return fail(error?.message || "Failed to create client", 500);
   }
 }

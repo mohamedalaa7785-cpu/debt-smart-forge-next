@@ -8,6 +8,13 @@
       "when": 1774710121937,
       "tag": "0000_colorful_boomer",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1775084652940,
+      "tag": "0001_purple_sue_storm",
+      "breakpoints": true
     }
   ]
 }

@@ -142,7 +142,9 @@ export function buildWhatsAppLink(
 export function formatCurrency(value: number | string) {
   const num = parseNumber(value);
 
-  return new Intl.NumberFormat("en-US", {
+  return new Intl.NumberFormat("en-EG", {
+    style: "currency",
+    currency: "EGP",
     maximumFractionDigits: 0,
   }).format(num);
 }

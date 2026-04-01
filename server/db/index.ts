@@ -18,11 +18,6 @@ function createClient() {
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
-    // In build time, we might not have DATABASE_URL, but we shouldn't throw
-    // to allow the build to proceed if it doesn't actually need the DB.
-    if (process.env.NODE_ENV === "production") {
-      throw new Error("DATABASE_URL is required in production");
-    }
     return null;
   }
 
@@ -53,7 +48,15 @@ try {
 /* =========================
    DRIZZLE INSTANCE (WITH FALLBACK)
 ========================= */
-export const db = client ? drizzle(client, { schema }) : ({} as any);
+const connectionString = process.env.DATABASE_URL || "postgres://localhost:5432/db";
+const sql = postgres(connectionString, {
+  ssl: process.env.DATABASE_URL ? "require" : false,
+  max: 1,
+  idle_timeout: 20,
+  connect_timeout: 10,
+});
+
+export const db = drizzle(sql, { schema });
 
 /* =========================
    HEALTH CHECK (OPTIONAL)

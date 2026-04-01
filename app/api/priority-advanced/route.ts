@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+export const dynamic = "force-dynamic";
 import { getClientById, getAllClients } from "@/server/services/client.service";
 import { sortClientsByPriority } from "@/server/core/priority.engine";
 

@@ -1,22 +1,19 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-
   images: {
     domains: [
       "res.cloudinary.com",
       "lh3.googleusercontent.com",
     ],
   },
-
   eslint: {
     ignoreDuringBuilds: true,
   },
-
   typescript: {
     ignoreBuildErrors: false,
   },
-
+  output: 'standalone',
   async headers() {
     return [
       {
@@ -35,5 +32,4 @@ const nextConfig = {
     ];
   },
 };
-
 module.exports = nextConfig;

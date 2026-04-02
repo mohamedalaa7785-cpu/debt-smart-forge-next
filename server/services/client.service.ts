@@ -1,225 +1,88 @@
 import { db } from "@/server/db";
-import {
-  clients,
-  clientPhones,
-  clientAddresses,
-  clientLoans,
-  clientActions,
-  osintResults,
-} from "@/server/db/schema";
-
-import { eq, desc } from "drizzle-orm";
-
-import {
-  calculateFinancials,
-  calculateClientFinancialSummary,
-} from "./financial.service";
-
-import { calculateRisk } from "./risk.service";
-import { analyzeClient } from "./ai.service";
+import { clients, clientPhones, clientAddresses, clientLoans, clientActions, osintResults, users } from "@/server/db/schema";
+import { eq, and, or, desc, inArray } from "drizzle-orm";
 
 /* =========================
-   HELPERS
+   DOMAIN LOGIC 🏦
 ========================= */
-function calculateLastActionDays(actions: any[]) {
-  if (!actions.length) return 999;
+export function calculateDomainInfo(domainType: string, cycleStartDate: Date | null) {
+  const now = new Date();
+  const start = cycleStartDate || new Date(now.getFullYear(), now.getMonth(), 1);
+  let end = new Date(start);
 
-  return Math.floor(
-    (Date.now() -
-      new Date(actions[0].createdAt).getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
-}
+  if (domainType === "FIRST") {
+    // Starts at beginning of month, duration 3 months
+    end.setMonth(start.getMonth() + 3);
+  } else if (domainType === "THIRD") {
+    // Starts at mid-month, ends at end of month
+    start.setDate(15);
+    end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+  } else if (domainType === "WRITEOFF") {
+    // Every 3 months, dynamic based on bank (defaulting to 3 months from start)
+    end.setMonth(start.getMonth() + 3);
+  }
 
-function calculateActionScore(actions: any[]) {
-  return actions.reduce((acc, a) => {
-    switch (a.actionType) {
-      case "CALL":
-        return acc + 5;
-      case "WHATSAPP":
-        return acc + 3;
-      case "PROMISE":
-        return acc + 10;
-      case "BROKEN_PROMISE":
-        return acc - 10;
-      case "PAID":
-        return acc + 15;
-      default:
-        return acc;
-    }
-  }, 0);
+  return {
+    start,
+    end,
+    isActive: now >= start && now <= end
+  };
 }
 
 /* =========================
-   GET FULL CLIENT PROFILE 🔥
+   GET CLIENTS (WITH PERMISSIONS) 👥
 ========================= */
-export async function getClientById(clientId: string) {
+export async function getClientsForUser(userId: string, role: string) {
   try {
-    if (!clientId) return null;
+    if (role === "hidden_admin" || role === "admin") {
+      // Adel / Admin: Sees ALL
+      return await db.select().from(clients).orderBy(desc(clients.createdAt));
+    } else if (role === "supervisor") {
+      // Loay / Supervisor: Sees ALL WRITEOFF
+      return await db.select().from(clients)
+        .where(eq(clients.portfolioType, "WRITEOFF"))
+        .orderBy(desc(clients.createdAt));
+    } else if (role === "team_leader") {
+      // Team Leader: Sees team clients (e.g., all ACTIVE or those they own)
+      return await db.select().from(clients)
+        .where(or(eq(clients.portfolioType, "ACTIVE"), eq(clients.ownerId, userId)))
+        .orderBy(desc(clients.createdAt));
+    } else {
+      // Collector: Sees ONLY own clients
+      return await db.select().from(clients)
+        .where(eq(clients.ownerId, userId))
+        .orderBy(desc(clients.createdAt));
+    }
+  } catch (error) {
+    console.error("getClientsForUser error:", error);
+    return [];
+  }
+}
 
-    /* =========================
-       BASIC DATA
-    ========================= */
-    const client = await db.query.clients.findFirst({
-      where: eq(clients.id, clientId),
-    });
-
+/* =========================
+   GET CLIENT BY ID (FULL DATA)
+========================= */
+export async function getClientById(id: string) {
+  try {
+    const clientList = await db.select().from(clients).where(eq(clients.id, id));
+    const client = clientList[0];
     if (!client) return null;
 
-    /* =========================
-       PARALLEL FETCH 🚀
-    ========================= */
-    const [phones, addresses, loans, actions, osint] =
-      await Promise.all([
-        db
-          .select()
-          .from(clientPhones)
-          .where(eq(clientPhones.clientId, clientId)),
+    const [phones, addresses, loans, actions, osint] = await Promise.all([
+      db.select().from(clientPhones).where(eq(clientPhones.clientId, id)),
+      db.select().from(clientAddresses).where(eq(clientAddresses.clientId, id)),
+      db.select().from(clientLoans).where(eq(clientLoans.clientId, id)),
+      db.select().from(clientActions).where(eq(clientActions.clientId, id)),
+      db.select().from(osintResults).where(eq(osintResults.clientId, id)).limit(1).then(res => res[0])
+    ]);
 
-        db
-          .select()
-          .from(clientAddresses)
-          .where(eq(clientAddresses.clientId, clientId)),
-
-        db
-          .select()
-          .from(clientLoans)
-          .where(eq(clientLoans.clientId, clientId)),
-
-        db
-          .select()
-          .from(clientActions)
-          .where(eq(clientActions.clientId, clientId))
-          .orderBy(desc(clientActions.createdAt)),
-
-        db.query.osintResults.findFirst({
-          where: eq(osintResults.clientId, clientId),
-        }),
-      ]);
-
-    /* =========================
-       FINANCIAL ENGINE 💰
-    ========================= */
-    const financialLoans = loans.map((loan: any) =>
-      calculateFinancials({
-        loanType: loan.loanType,
-        emi: Number(loan.emi),
-        bucket: loan.bucket ?? 1,
-        penaltyEnabled: loan.penaltyEnabled ?? false,
-        penaltyAmount: Number(loan.penaltyAmount || 0),
-      })
-    );
-
-    const financialSummary =
-      calculateClientFinancialSummary(financialLoans);
-
-    /* =========================
-       ACTIONS ANALYSIS 🧠
-    ========================= */
-    const lastActionDays = calculateLastActionDays(actions);
-    const actionScore = calculateActionScore(actions);
-
-    /* =========================
-       RISK ENGINE 📊
-    ========================= */
-    const maxBucket =
-      financialLoans.length > 0
-        ? Math.max(...financialLoans.map((l: any) => l.bucket))
-        : 1;
-
-    let risk = calculateRisk({
-      bucket: maxBucket,
-      amountDue: financialSummary.totalAmountDue,
-
-      hasPhone: phones.length > 0,
-      hasAddress: addresses.length > 0,
-      hasLoans: loans.length > 0,
-      hasOsint: !!osint,
-
-      lastActionDays,
-      aiSignalsScore: actionScore,
-    });
-
-    /* =========================
-       AI ENGINE 🤖
-    ========================= */
-    const ai = await analyzeClient({
-      clientName: client.name,
-
-      totalAmountDue: financialSummary.totalAmountDue,
-      totalBalance: financialSummary.totalBase,
-
-      riskScore: risk.score,
-      riskLabel: risk.label,
-
-      lastActionDays,
-
-      phonesCount: phones.length,
-      addressesCount: addresses.length,
-      loansCount: loans.length,
-
-      osintConfidence: osint?.confidenceScore ?? 0,
-      osintSummary: osint?.summary ?? null,
-
-      loanTypes: loans.map((l: any) => l.loanType),
-
-      aiSignalsScore: actionScore,
-    });
-
-    /* =========================
-       FINAL RISK UPDATE 🔥
-    ========================= */
-    risk = calculateRisk({
-      bucket: maxBucket,
-      amountDue: financialSummary.totalAmountDue,
-
-      hasPhone: phones.length > 0,
-      hasAddress: addresses.length > 0,
-      hasLoans: loans.length > 0,
-      hasOsint: !!osint,
-
-      lastActionDays,
-      aiSignalsScore:
-        actionScore + (ai?.confidence || 0) / 5,
-    });
-
-    /* =========================
-       PRIORITY ENGINE ⚡
-    ========================= */
-    const priorityScore =
-      financialSummary.totalAmountDue * 0.5 +
-      risk.score * 10 -
-      lastActionDays * 2;
-
-    /* =========================
-       FINAL RESPONSE
-    ========================= */
     return {
-      client,
-
+      ...client,
       phones,
       addresses,
-
-      loans: financialLoans,
-
+      loans,
       actions,
-
-      osint,
-
-      summary: {
-        totalEMI: financialSummary.totalEMI,
-        totalAmountDue: financialSummary.totalAmountDue,
-        totalBalance: financialSummary.totalBase,
-
-        riskScore: risk.score,
-        riskLabel: risk.label,
-
-        priorityScore: Math.round(priorityScore),
-
-        lastActionDays,
-      },
-
-      ai,
+      osint
     };
   } catch (error) {
     console.error("getClientById error:", error);
@@ -228,86 +91,36 @@ export async function getClientById(clientId: string) {
 }
 
 /* =========================
-   GET ALL CLIENTS (LIGHT)
+   CREATE CLIENT
 ========================= */
-export async function getAllClients() {
+export async function createClientFull(data: any, ownerId: string) {
   try {
-    return await db
-      .select({
-        id: clients.id,
-        name: clients.name,
-        createdAt: clients.createdAt,
-      })
-      .from(clients)
-      .orderBy(desc(clients.createdAt));
-  } catch (error) {
-    console.error("getAllClients error:", error);
-    return [];
-  }
-}
-
-/* =========================
-   CREATE CLIENT (TRANSACTION) 🔥
-========================= */
-export async function createClientFull(data: {
-  name: string;
-  email?: string;
-  company?: string;
-
-  phones: string[];
-  addresses: string[];
-
-  loans: {
-    loanType: string;
-    emi: number;
-    balance: number;
-  }[];
-}) {
-  try {
-    if (!data.name) {
-      throw new Error("Name is required");
-    }
-
-    return await db.transaction(async (tx: any) => {
-      const [client] = await tx
-        .insert(clients)
-        .values({
-          name: data.name,
-          email: data.email,
-          company: data.company,
-        })
-        .returning();
+    return await db.transaction(async (tx) => {
+      const [client] = await tx.insert(clients).values({
+        name: data.name,
+        email: data.email,
+        company: data.company,
+        notes: data.notes,
+        ownerId: ownerId,
+        portfolioType: data.portfolioType || "ACTIVE",
+        domainType: data.domainType || "FIRST",
+        cycleStartDate: data.cycleStartDate ? new Date(data.cycleStartDate) : new Date(),
+        cycleEndDate: data.cycleEndDate ? new Date(data.cycleEndDate) : null,
+      }).returning();
 
       if (data.phones?.length) {
-        await tx.insert(clientPhones).values(
-          data.phones.map((phone) => ({
-            clientId: client.id,
-            phone,
-          }))
-        );
-      }
-
-      if (data.addresses?.length) {
-        await tx.insert(clientAddresses).values(
-          data.addresses.map((address) => ({
-            clientId: client.id,
-            address,
-          }))
-        );
+        await tx.insert(clientPhones).values(data.phones.map((p: string) => ({ clientId: client.id, phone: p })));
       }
 
       if (data.loans?.length) {
-        await tx.insert(clientLoans).values(
-          data.loans.map((loan) => ({
-            clientId: client.id,
-            loanType: loan.loanType,
-            emi: loan.emi.toString(),
-            balance: loan.balance.toString(),
-            bucket: 1,
-            penaltyEnabled: false,
-            penaltyAmount: "0",
-          }))
-        );
+        await tx.insert(clientLoans).values(data.loans.map((l: any) => ({
+          clientId: client.id,
+          loanType: l.loanType,
+          emi: l.emi?.toString(),
+          balance: l.balance?.toString(),
+          bucket: l.bucket || 1,
+          amountDue: l.amountDue?.toString()
+        })));
       }
 
       return client;

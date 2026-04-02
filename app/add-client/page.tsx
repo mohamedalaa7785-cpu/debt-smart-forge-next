@@ -3,333 +3,231 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-/* =========================
-   TYPES
-========================= */
-interface Loan {
-  loanType: string;
-  emi: string;
-  balance: string;
-}
-
-/* =========================
-   PAGE
-========================= */
 export default function AddClientPage() {
   const router = useRouter();
-
-  /* =========================
-     STATE
-  ========================= */
+  const [loading, setLoading] = useState(false);
+  
+  // Basic Info
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
+  const [notes, setNotes] = useState("");
+  
+  // Banking Logic
+  const [portfolioType, setPortfolioType] = useState("ACTIVE");
+  const [domainType, setDomainType] = useState("FIRST");
+  const [cycleStartDate, setCycleStartDate] = useState(new Date().toISOString().split('T')[0]);
 
-  const [phones, setPhones] = useState<string[]>([""]);
-  const [addresses, setAddresses] = useState<string[]>([""]);
-
-  const [loans, setLoans] = useState<Loan[]>([
-    { loanType: "PIL", emi: "", balance: "" },
-  ]);
-
-  const [imageUrl, setImageUrl] = useState("");
-  const [osintLoading, setOsintLoading] = useState(false);
-  const [osintData, setOsintData] = useState<any>(null);
-
-  const [loading, setLoading] = useState(false);
-
-  /* =========================
-     HANDLERS
-  ========================= */
-  const updatePhone = (index: number, value: string) => {
-    const updated = [...phones];
-    updated[index] = value;
-    setPhones(updated);
-  };
+  // Dynamic Lists
+  const [phones, setPhones] = useState([""]);
+  const [loans, setLoans] = useState([{ loanType: "PIL", emi: "", balance: "", amountDue: "" }]);
 
   const addPhone = () => setPhones([...phones, ""]);
-
-  const updateAddress = (index: number, value: string) => {
-    const updated = [...addresses];
-    updated[index] = value;
-    setAddresses(updated);
+  const updatePhone = (i: number, val: string) => {
+    const newPhones = [...phones];
+    newPhones[i] = val;
+    setPhones(newPhones);
   };
 
-  const addAddress = () => setAddresses([...addresses, ""]);
-
-  const updateLoan = (
-    index: number,
-    field: keyof Loan,
-    value: string
-  ) => {
-    const updated = [...loans];
-    updated[index][field] = value;
-    setLoans(updated);
+  const addLoan = () => setLoans([...loans, { loanType: "PIL", emi: "", balance: "", amountDue: "" }]);
+  const updateLoan = (i: number, field: string, val: string) => {
+    const newLoans = [...loans] as any;
+    newLoans[i][field] = val;
+    setLoans(newLoans);
   };
 
-  const addLoan = () => {
-    setLoans([
-      ...loans,
-      { loanType: "PIL", emi: "", balance: "" },
-    ]);
-  };
-
-  /* =========================
-     IMAGE UPLOAD & OSINT
-  ========================= */
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64 = reader.result as string;
-
-      try {
-        // Upload image
-        const uploadRes = await fetch("/api/upload", {
-          method: "POST",
-          body: JSON.stringify({ image: base64 }),
-        });
-
-        const uploadData = await uploadRes.json();
-        if (!uploadData.success) {
-          alert("Image upload failed");
-          return;
-        }
-
-        const uploadedUrl = uploadData.data.url;
-        setImageUrl(uploadedUrl);
-
-        // Trigger OSINT
-        setOsintLoading(true);
-        const osintRes = await fetch("/api/osint", {
-          method: "POST",
-          body: JSON.stringify({
-            name,
-            phone: phones[0],
-            company,
-            imageUrl: uploadedUrl,
-          }),
-        });
-
-        const osintResult = await osintRes.json();
-        if (osintResult.success) {
-          setOsintData(osintResult.data);
-        }
-      } catch (err) {
-        console.error("OSINT error:", err);
-      } finally {
-        setOsintLoading(false);
-      }
-    };
-
-    reader.readAsDataURL(file);
-  };
-
-  /* =========================
-     SUBMIT
-  ========================= */
   const handleSubmit = async () => {
-    if (!name) return alert("Name required");
-    if (!phones[0]) return alert("Phone required");
-    if (!loans[0].emi) return alert("Loan EMI required");
-
+    if (!name) return alert("Name is required");
     setLoading(true);
 
     try {
       const res = await fetch("/api/clients", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           email,
           company,
+          notes,
+          portfolioType,
+          domainType,
+          cycleStartDate,
           phones: phones.filter(Boolean),
-          addresses: addresses.filter(Boolean),
-          loans: loans.map((l) => ({
-            loanType: l.loanType,
-            emi: Number(l.emi),
-            balance: Number(l.balance),
-          })),
-          imageUrl,
-          osintData,
-        }),
+          loans: loans.map(l => ({
+            ...l,
+            emi: Number(l.emi) || 0,
+            balance: Number(l.balance) || 0,
+            amountDue: Number(l.amountDue) || 0
+          }))
+        })
       });
 
       const data = await res.json();
-
-      if (!data.success) {
-        alert(data.error || "Error");
-        return;
+      if (data.success) {
+        router.push(`/client/${data.data.id}`);
+      } else {
+        alert(data.error || "Failed to save client");
       }
-
-      router.push(`/client/${data.data.id}`);
     } catch (err) {
       console.error(err);
-      alert("Something went wrong");
+      alert("An error occurred");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="space-y-5">
-
-      {/* HEADER */}
-      <h1 className="title">➕ Add Client</h1>
+    <div className="max-w-2xl mx-auto space-y-6 pb-20">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800">➕ Add New Client</h1>
+        <button 
+          onClick={() => router.back()}
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          Cancel
+        </button>
+      </div>
 
       {/* BASIC INFO */}
-      <div className="card space-y-3">
-        <input
-          className="input"
-          placeholder="Client Name *"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-
-        <input
-          className="input"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-
-        <input
-          className="input"
-          placeholder="Company"
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
-        />
+      <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
+        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Basic Information</h2>
+        <div className="grid grid-cols-1 gap-4">
+          <input
+            className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+            placeholder="Client Full Name *"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <input
+              className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="Email Address"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <input
+              className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              placeholder="Company / Workplace"
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+            />
+          </div>
+          <textarea
+            className="w-full p-3 bg-gray-50 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24"
+            placeholder="Additional Notes..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+          />
+        </div>
       </div>
 
-      {/* IMAGE UPLOAD & OSINT */}
-      <div className="card space-y-3">
-        <p className="font-semibold">📸 Reverse Image Search (OSINT)</p>
-        
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleImageUpload}
-          className="input"
-        />
-
-        {imageUrl && (
+      {/* BANKING LOGIC */}
+      <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
+        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Banking & Portfolio Logic</h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <img src={imageUrl} alt="Uploaded" className="w-full h-32 object-cover rounded-lg" />
-          </div>
-        )}
-
-        {osintLoading && <p className="text-sm text-gray-500">🔍 Fetching OSINT data...</p>}
-
-        {osintData && (
-          <div className="bg-blue-50 p-3 rounded-lg space-y-2">
-            <p className="text-sm font-semibold">🔍 Intelligence Found:</p>
-            <p className="text-xs">{osintData.summary}</p>
-            {osintData.socialLinks?.length > 0 && (
-              <div className="text-xs">
-                <p className="font-semibold">Social Links:</p>
-                {osintData.socialLinks.map((link: string, i: number) => (
-                  <a key={i} href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 break-all">
-                    {link}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* PHONES */}
-      <div className="card space-y-2">
-        <p className="font-semibold">📞 Phones</p>
-
-        {phones.map((p, i) => (
-          <input
-            key={i}
-            className="input"
-            placeholder="Phone"
-            value={p}
-            onChange={(e) => updatePhone(i, e.target.value)}
-          />
-        ))}
-
-        <button onClick={addPhone} className="btn btn-secondary">
-          + Add Phone
-        </button>
-      </div>
-
-      {/* ADDRESSES */}
-      <div className="card space-y-2">
-        <p className="font-semibold">📍 Addresses</p>
-
-        {addresses.map((a, i) => (
-          <input
-            key={i}
-            className="input"
-            placeholder="Address"
-            value={a}
-            onChange={(e) => updateAddress(i, e.target.value)}
-          />
-        ))}
-
-        <button onClick={addAddress} className="btn btn-secondary">
-          + Add Address
-        </button>
-      </div>
-
-      {/* LOANS */}
-      <div className="card space-y-3">
-        <p className="font-semibold">💰 Loans</p>
-
-        {loans.map((l, i) => (
-          <div key={i} className="space-y-2 border p-2 rounded-xl">
-
-            <select
-              className="input"
-              value={l.loanType}
-              onChange={(e) =>
-                updateLoan(i, "loanType", e.target.value)
-              }
+            <label className="text-xs font-bold text-gray-500 mb-1 block">Portfolio Type</label>
+            <select 
+              className="w-full p-3 bg-gray-50 border rounded-lg outline-none"
+              value={portfolioType}
+              onChange={(e) => setPortfolioType(e.target.value)}
             >
-              <option value="PIL">PIL</option>
-              <option value="VSBL">VSBL</option>
-              <option value="AUTO">AUTO</option>
-              <option value="CC">CC</option>
+              <option value="ACTIVE">ACTIVE</option>
               <option value="WRITEOFF">WRITEOFF</option>
             </select>
-
-            <input
-              className="input"
-              placeholder="EMI"
-              value={l.emi}
-              onChange={(e) =>
-                updateLoan(i, "emi", e.target.value)
-              }
-            />
-
-            <input
-              className="input"
-              placeholder="Balance"
-              value={l.balance}
-              onChange={(e) =>
-                updateLoan(i, "balance", e.target.value)
-              }
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 mb-1 block">Domain Type</label>
+            <select 
+              className="w-full p-3 bg-gray-50 border rounded-lg outline-none"
+              value={domainType}
+              onChange={(e) => setDomainType(e.target.value)}
+            >
+              <option value="FIRST">FIRST (3 Months)</option>
+              <option value="THIRD">THIRD (Mid-Month)</option>
+              <option value="WRITEOFF">WRITEOFF (Dynamic)</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 mb-1 block">Cycle Start Date</label>
+            <input 
+              type="date"
+              className="w-full p-3 bg-gray-50 border rounded-lg outline-none"
+              value={cycleStartDate}
+              onChange={(e) => setCycleStartDate(e.target.value)}
             />
           </div>
-        ))}
-
-        <button onClick={addLoan} className="btn btn-secondary">
-          + Add Loan
-        </button>
+        </div>
       </div>
 
-      {/* SUBMIT */}
+      {/* CONTACT & LOANS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* PHONES */}
+        <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Contact Numbers</h2>
+          {phones.map((p, i) => (
+            <input
+              key={i}
+              className="w-full p-3 bg-gray-50 border rounded-lg outline-none"
+              placeholder="Phone Number"
+              value={p}
+              onChange={(e) => updatePhone(i, e.target.value)}
+            />
+          ))}
+          <button onClick={addPhone} className="text-sm text-blue-600 font-bold hover:underline">
+            + Add Another Phone
+          </button>
+        </div>
+
+        {/* LOANS */}
+        <div className="bg-white p-6 rounded-xl border shadow-sm space-y-4">
+          <h2 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Loan Details</h2>
+          {loans.map((l, i) => (
+            <div key={i} className="p-3 border rounded-lg space-y-2 bg-gray-50">
+              <select
+                className="w-full p-2 bg-white border rounded outline-none text-sm"
+                value={l.loanType}
+                onChange={(e) => updateLoan(i, "loanType", e.target.value)}
+              >
+                <option value="PIL">PIL</option>
+                <option value="VSBL">VSBL</option>
+                <option value="AUTO">AUTO</option>
+                <option value="CC">CC</option>
+              </select>
+              <div className="grid grid-cols-3 gap-2">
+                <input
+                  className="p-2 bg-white border rounded outline-none text-sm"
+                  placeholder="EMI"
+                  value={l.emi}
+                  onChange={(e) => updateLoan(i, "emi", e.target.value)}
+                />
+                <input
+                  className="p-2 bg-white border rounded outline-none text-sm"
+                  placeholder="Balance"
+                  value={l.balance}
+                  onChange={(e) => updateLoan(i, "balance", e.target.value)}
+                />
+                <input
+                  className="p-2 bg-white border rounded outline-none text-sm"
+                  placeholder="Due"
+                  value={l.amountDue}
+                  onChange={(e) => updateLoan(i, "amountDue", e.target.value)}
+                />
+              </div>
+            </div>
+          ))}
+          <button onClick={addLoan} className="text-sm text-blue-600 font-bold hover:underline">
+            + Add Another Loan
+          </button>
+        </div>
+      </div>
+
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="btn btn-primary w-full"
+        className="w-full py-4 bg-blue-600 text-white font-bold rounded-xl shadow-lg hover:bg-blue-700 disabled:bg-gray-400 transition-all"
       >
-        {loading ? "Saving..." : "Save Client"}
+        {loading ? "Creating Client System..." : "🚀 Initialize Client System"}
       </button>
     </div>
   );

@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getClientById } from "@/server/services/client.service";
+import { calculateRisk } from "@/server/services/risk.service";
+import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
+import { decideAction } from "@/server/core/decision.engine";
 
-/* =========================
-   HELPERS
-========================= */
 function success(data: any, meta?: any) {
   return NextResponse.json({
     success: true,
@@ -22,9 +22,6 @@ function fail(error: string, status = 400) {
   );
 }
 
-/* =========================
-   GET FULL CLIENT PROFILE 🔥
-========================= */
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -32,97 +29,90 @@ export async function GET(
   try {
     const clientId = params?.id?.trim();
 
-    /* =========================
-       VALIDATION
-    ========================= */
     if (!clientId) {
       return fail("Client ID is required", 400);
     }
 
-    /* =========================
-       FETCH DATA
-    ========================= */
     const data = await getClientById(clientId);
 
     if (!data) {
       return fail("Client not found", 404);
     }
 
-    /* =========================
-       SAFE FALLBACKS
-    ========================= */
-    const summary = data.summary || {};
     const phones = data.phones || [];
     const addresses = data.addresses || [];
     const actions = data.actions || [];
     const osint = data.osint || null;
-    const ai = data.ai || null;
 
-    /* =========================
-       PRIORITY ENGINE 🔥
-    ========================= */
-    const priority =
-      (summary.totalAmountDue || 0) * 0.5 +
-      (summary.riskScore || 0) * 10 -
-      (summary.lastActionDays || 0) * 2 +
-      (ai?.urgency || 0);
+    // Calculate total due
+    const totalDue = (data.loans || []).reduce((sum: number, l: any) => sum + (parseFloat(l.amountDue as any) || 0), 0);
 
-    /* =========================
-       FINAL RESPONSE
-    ========================= */
+    // Calculate risk
+    const riskInput = {
+      bucket: data.loans?.[0]?.bucket,
+      amountDue: totalDue,
+      hasPhone: phones.length > 0,
+      hasAddress: addresses.length > 0,
+      hasLoans: (data.loans?.length || 0) > 0,
+      hasOsint: !!osint,
+      lastActionDays: 0,
+      aiSignalsScore: 50
+    };
+    const risk = calculateRisk(riskInput);
+
+    // AI Analysis
+    const aiInput = {
+      clientName: data.name || "Unknown",
+      totalAmountDue: totalDue,
+      riskScore: risk.score,
+      riskLabel: risk.label,
+      phonesCount: phones.length,
+      addressesCount: addresses.length,
+      loansCount: data.loans?.length || 0,
+      osintConfidence: osint?.confidenceScore as any || 0,
+      osintSummary: osint?.summary
+    };
+    const aiResult = await analyzeClient(aiInput);
+
+    // Generate script
+    const script = await generateCallScript(aiInput, aiResult);
+
+    // Decision engine
+    const decision = decideAction({
+      risk,
+      ai: aiResult,
+      osintConfidence: osint?.confidenceScore as any || 0,
+      lastActionDays: 0,
+      totalDue
+    });
+
     return success(
       {
-        /* BASIC */
-        client: data.client,
-
-        /* RELATIONS */
+        client: data,
         phones,
         addresses,
         loans: data.loans || [],
-
-        /* TIMELINE */
         actions,
-
-        /* OSINT */
         osint,
-
-        /* SUMMARY */
-        summary: {
-          ...summary,
-          priorityScore: Math.max(0, Math.round(priority)),
-        },
-
-        /* AI */
-        ai,
+        risk,
+        ai: aiResult,
+        script,
+        decision
       },
-
-      /* =========================
-         META (DECISION LAYER)
-      ========================= */
       {
-        risk: summary.riskLabel,
-        riskScore: summary.riskScore,
-
-        totalDue: summary.totalAmountDue,
-
+        risk: risk.label,
+        riskScore: risk.score,
+        totalDue,
         hasOSINT: !!osint,
         hasPhones: phones.length > 0,
         hasAddresses: addresses.length > 0,
-
-        lastActionDays: summary.lastActionDays,
-
-        priorityScore: Math.max(0, Math.round(priority)),
-
-        actionRequired:
-          summary.riskScore >= 50 ||
-          summary.lastActionDays > 3,
-
-        nextBestAction: ai?.nextAction || null,
+        priority: decision.priority,
+        actionRequired: risk.score >= 50,
+        nextAction: decision.action
       }
     );
   } catch (error) {
     console.error("GET CLIENT ERROR:", error);
-
     return fail("Failed to fetch client", 500);
   }
-       }
+}

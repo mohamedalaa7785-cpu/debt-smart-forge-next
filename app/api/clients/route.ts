@@ -204,10 +204,9 @@ export async function POST(req: NextRequest) {
     // Create phones
     if (phones && phones.length > 0) {
       await db.insert(clientPhones).values(
-        phones.map((phone: string, index: number) => ({
+        phones.map((phone: string) => ({
           clientId,
           phone,
-          isPrimary: index === 0,
         }))
       );
     }
@@ -215,9 +214,13 @@ export async function POST(req: NextRequest) {
     // Create addresses
     if (addresses && addresses.length > 0) {
       await db.insert(clientAddresses).values(
-        addresses.map((address: string, index: number) => ({
+        addresses.map((address: any, index: number) => ({
           clientId,
-          address,
+          address: address.address || address,
+          city: address.city,
+          area: address.area,
+          lat: address.lat?.toString(),
+          lng: address.lng?.toString(),
           isPrimary: index === 0,
         }))
       );
@@ -229,9 +232,13 @@ export async function POST(req: NextRequest) {
         loans.map((loan: any) => ({
           clientId,
           loanType: loan.loanType,
-          balance: loan.balance,
-          emi: loan.emi,
-          bucket: 1,
+          balance: loan.balance?.toString(),
+          overdue: loan.overdue?.toString(),
+          emi: loan.emi?.toString(),
+          amountDue: loan.amountDue?.toString(),
+          bucket: loan.bucket || 1,
+          penaltyEnabled: loan.penaltyEnabled || false,
+          penaltyAmount: loan.penaltyAmount?.toString() || "0"
         }))
       );
     }

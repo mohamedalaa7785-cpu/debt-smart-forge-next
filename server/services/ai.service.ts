@@ -22,24 +22,19 @@ export type Tone = "soft" | "balanced" | "firm" | "aggressive";
 
 export interface AIInput {
   clientName: string;
-
   totalAmountDue?: number;
   totalBalance?: number;
   riskScore?: number;
   riskLabel?: string;
-
   lastActionDays?: number;
-
   phonesCount?: number;
   addressesCount?: number;
   loansCount?: number;
-
   osintConfidence?: number;
   osintSummary?: string | null;
-
   loanTypes?: string[];
-
   aiSignalsScore?: number;
+  behaviorType?: string; // cooperative, delaying, avoiding
 }
 
 export interface AIResult {
@@ -52,9 +47,16 @@ export interface AIResult {
   confidence: number;
   redFlags: string[];
   strengths: string[];
-
   riskBoost: number;
   urgency: number;
+}
+
+export interface CallScript {
+  opening: string;
+  mainBody: string;
+  objectionHandling: string[];
+  closing: string;
+  whatsappMessage: string;
 }
 
 /* =========================
@@ -182,7 +184,6 @@ Focus on:
     });
 
     const text = response.choices[0]?.message?.content || "";
-
     const parsed = safeJsonParse<AIResult | null>(text, null);
 
     if (!parsed) return null;
@@ -201,15 +202,76 @@ Focus on:
 }
 
 /* =========================
+   SCRIPT GENERATION 🔥
+========================= */
+export async function generateCallScript(input: AIInput, aiResult: AIResult): Promise<CallScript> {
+  const client = getOpenAI();
+  if (!client) {
+    return {
+      opening: `Hello ${input.clientName}, this is Debt Smart OS calling regarding your outstanding balance.`,
+      mainBody: `We noticed an overdue amount of ${input.totalAmountDue}. We need to discuss a payment plan.`,
+      objectionHandling: ["I understand, but we need to settle this.", "We can offer a temporary extension if you pay a portion now."],
+      closing: "Thank you, we expect the payment by the agreed date.",
+      whatsappMessage: `Dear ${input.clientName}, please contact us regarding your balance of ${input.totalAmountDue}.`
+    };
+  }
+
+  try {
+    const prompt = `
+You are a professional debt collection agent. Generate a call script in ARABIC (Egyptian dialect) and a WhatsApp message.
+The tone should be ${aiResult.tone}.
+Client: ${input.clientName}
+Amount Due: ${input.totalAmountDue}
+Risk Level: ${input.riskLabel}
+Strategy: ${aiResult.strategy}
+
+Return ONLY valid JSON:
+{
+  "opening": "...",
+  "mainBody": "...",
+  "objectionHandling": ["...", "..."],
+  "closing": "...",
+  "whatsappMessage": "..."
+}
+`;
+
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.7,
+      messages: [
+        { role: "system", content: prompt },
+        { role: "user", content: JSON.stringify({ input, aiResult }) },
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content || "";
+    const parsed = safeJsonParse<CallScript | null>(text, null);
+
+    return parsed || {
+      opening: `أهلاً أستاذ ${input.clientName}، مع حضرتك من قسم التحصيل.`,
+      mainBody: `بخصوص المديونية المتأخرة بقيمة ${input.totalAmountDue}، محتاجين نعرف ميعاد السداد.`,
+      objectionHandling: ["فاهم حضرتك، بس لازم نلاقي حل دلوقتي.", "ممكن نجدول المبلغ لو سددت جزء حالاً."],
+      closing: "شكراً لحضرتك، منتظرين السداد في الميعاد.",
+      whatsappMessage: `الأستاذ ${input.clientName}، يرجى التواصل بخصوص مديونية ${input.totalAmountDue} لتجنب الإجراءات القانونية.`
+    };
+  } catch (error) {
+    console.error("SCRIPT ERROR:", error);
+    return {
+      opening: `أهلاً أستاذ ${input.clientName}، مع حضرتك من قسم التحصيل.`,
+      mainBody: `بخصوص المديونية المتأخرة بقيمة ${input.totalAmountDue}، محتاجين نعرف ميعاد السداد.`,
+      objectionHandling: ["فاهم حضرتك، بس لازم نلاقي حل دلوقتي.", "ممكن نجدول المبلغ لو سددت جزء حالاً."],
+      closing: "شكراً لحضرتك، منتظرين السداد في الميعاد.",
+      whatsappMessage: `الأستاذ ${input.clientName}، يرجى التواصل بخصوص مديونية ${input.totalAmountDue} لتجنب الإجراءات القانونية.`
+    };
+  }
+}
+
+/* =========================
    MAIN ENTRY
 ========================= */
-export async function analyzeClient(
-  input: AIInput
-): Promise<AIResult> {
+export async function analyzeClient(input: AIInput): Promise<AIResult> {
   const ai = await runAI(input);
-
   if (ai) return ai;
-
   return fallbackAI(input);
 }
 

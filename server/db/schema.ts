@@ -7,9 +7,17 @@ import { relations } from "drizzle-orm";
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name"),
-  email: text("email").unique(),
-  password: text("password"),
-  role: text("role"),
+  email: text("email").unique().notNull(),
+  password: text("password").notNull(),
+  role: text("role").notNull(), // admin, supervisor, team_leader, collector, hidden_admin
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  token: text("token").unique().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

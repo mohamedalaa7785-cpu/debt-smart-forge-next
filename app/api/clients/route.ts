@@ -1,3 +1,5 @@
+// file: app/api/clients/route.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getClientsForUser, createClientFull } from "@/server/services/client.service";
@@ -27,10 +29,22 @@ function rateLimit(key: string, limit = 30) {
 }
 
 /* =========================
+   HELPERS 🔥
+========================= */
+function normalizePhone(phone: string) {
+  return phone.replace(/\D/g, "");
+}
+
+function dedupePhones(phones: string[]) {
+  const set = new Set(phones.map(normalizePhone));
+  return Array.from(set);
+}
+
+/* =========================
    CACHE (LIGHT)
 ========================= */
 const cache = new Map<string, { data: any; expiry: number }>();
-const TTL = 1000 * 30; // 30 sec
+const TTL = 1000 * 30;
 
 /* =========================
    GET CLIENTS 🔥
@@ -42,6 +56,7 @@ export async function GET(req: NextRequest) {
       rateLimit(ip);
 
       const { page, limit, offset } = getPagination(req);
+
       const cacheKey = `${user.id}-${user.role}-${page}-${limit}`;
       const cached = cache.get(cacheKey);
 
@@ -49,15 +64,18 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({
           success: true,
           data: cached.data,
-          meta: { page, limit, cached: true }
+          meta: { page, limit, cached: true },
         });
       }
 
       const scopedClients = await getClientsForUser(user.id, user.role);
-      const sortedClients = scopedClients
-        .slice()
-        .sort((a, b) => (new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()));
-      
+
+      const sortedClients = scopedClients.sort(
+        (a, b) =>
+          new Date(b.createdAt as any).getTime() -
+          new Date(a.createdAt as any).getTime()
+      );
+
       const data = sortedClients
         .slice(offset, offset + limit + 1)
         .map((client) => ({
@@ -78,7 +96,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         data,
-        meta: { page, limit, count: data.length, hasMore }
+        meta: { page, limit, count: data.length, hasMore },
       });
     } catch (error: any) {
       return NextResponse.json(
@@ -90,30 +108,79 @@ export async function GET(req: NextRequest) {
 }
 
 /* =========================
-   POST CLIENTS (CREATE) 🔥
+   POST CLIENTS 🔥
 ========================= */
 export async function POST(req: NextRequest) {
   return withAuth(req, async (user) => {
     try {
       const body = await req.json();
-      const { name, phones, loans } = body;
 
-      if (!name) return NextResponse.json({ success: false, error: "Name is required" }, { status: 400 });
-      if (!phones || phones.length === 0) return NextResponse.json({ success: false, error: "At least one phone is required" }, { status: 400 });
-      if (!loans || loans.length === 0) return NextResponse.json({ success: false, error: "At least one loan is required" }, { status: 400 });
+      let { name, phones, loans } = body;
 
-      // Enforce ownership: Every newly created client must set owner_id = authenticated user id
-      const ownerId = (user.role === "admin" || user.role === "hidden_admin") && body.ownerId 
-        ? body.ownerId 
-        : user.id;
+      if (!name) {
+        return NextResponse.json(
+          { success: false, error: "Name is required" },
+          { status: 400 }
+        );
+      }
 
-      const newClient = await createClientFull({ ...body, ownerId }, user.id);
-      
-      await logAction(user.id, "CREATE_CLIENT", { clientId: newClient.id, name: newClient.name });
+      if (!phones || phones.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "At least one phone is required" },
+          { status: 400 }
+        );
+      }
 
-      return NextResponse.json({ success: true, data: { id: newClient.id, name: newClient.name } });
+      if (!loans || loans.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "At least one loan is required" },
+          { status: 400 }
+        );
+      }
+
+      // 🔥 normalize + dedupe
+      phones = dedupePhones(phones);
+
+      // 🔥 enforce owner (STRICT)
+      const ownerId =
+        user.role === "hidden_admin" && body.ownerId
+          ? body.ownerId
+          : user.id;
+
+      const teamLeaderId =
+        user.role === "team_leader" ? user.id : body.teamLeaderId || null;
+
+      const newClient = await createClientFull(
+        {
+          ...body,
+          name: name.trim(),
+          phones,
+          ownerId,
+          teamLeaderId,
+        },
+        user.id
+      );
+
+      await logAction(user.id, "CREATE_CLIENT", {
+        clientId: newClient.id,
+        name: newClient.name,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          id: newClient.id,
+          name: newClient.name,
+        },
+      });
     } catch (error: any) {
-      return NextResponse.json({ success: false, error: error.message || "Failed to create client" }, { status: 500 });
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message || "Failed to create client",
+        },
+        { status: 500 }
+      );
     }
   });
-}
+   }

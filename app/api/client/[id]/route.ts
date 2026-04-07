@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getClientById } from "@/server/services/client.service";
+import { canAccessClient, getClientById } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
 import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
@@ -40,6 +40,10 @@ export async function GET(
 
     if (!data) {
       return fail("Client not found", 404);
+    }
+
+    if (!canAccessClient(data, user.id, user.role)) {
+      return fail("Forbidden", 403);
     }
 
     const phones = data.phones || [];
@@ -120,8 +124,11 @@ export async function GET(
         nextAction: decision.action
       }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("GET CLIENT ERROR:", error);
+    if (error?.message === "Unauthorized" || error?.message === "Invalid session") {
+      return fail(error.message, 401);
+    }
     return fail("Failed to fetch client", 500);
   }
 }

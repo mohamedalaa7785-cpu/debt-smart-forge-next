@@ -13,11 +13,14 @@ import { logAction } from "@/server/services/log.service";
 /* =========================
    ENV CHECK 🔥
 ========================= */
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl) {
   throw new Error("Missing SUPABASE URL");
 }
 
-if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+if (!supabaseKey) {
   throw new Error("Missing SUPABASE ANON KEY");
 }
 
@@ -37,9 +40,12 @@ export async function POST(request: Request) {
 
     const cookieStore = cookies();
 
+    /* =========================
+       SUPABASE CLIENT
+    ========================= */
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      supabaseUrl as string,
+      supabaseKey as string,
       {
         cookies: {
           get: (name: string) => cookieStore.get(name)?.value,
@@ -87,7 +93,7 @@ export async function POST(request: Request) {
       where: eq(users.id, data.user.id),
     });
 
-    /* 🔥 AUTO FIX SYNC بدل ما يكسر */
+    /* 🔥 AUTO SYNC */
     if (!dbUser) {
       const inserted = await db
         .insert(users)
@@ -123,6 +129,8 @@ export async function POST(request: Request) {
       },
     });
   } catch (err: any) {
+    console.error("LOGIN ERROR:", err);
+
     return NextResponse.json(
       {
         success: false,
@@ -131,4 +139,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
+       }

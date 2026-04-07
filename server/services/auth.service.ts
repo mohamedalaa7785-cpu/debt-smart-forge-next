@@ -32,7 +32,7 @@ function normalizeEmail(email: string) {
 export async function register(
   email: string,
   password: string,
-  role: "admin" | "agent" = "agent"
+  role: "admin" | "supervisor" | "team_leader" | "collector" | "hidden_admin" = "collector"
 ) {
   const cleanEmail = normalizeEmail(email);
 

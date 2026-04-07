@@ -1,112 +1,68 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { clientActions } from "@/server/db/schema";
 import { parseNumber } from "@/lib/utils";
+import { withApiGuard } from "@/server/lib/auth";
+import { auditSensitiveAction } from "@/server/services/audit.service";
 
-/* =========================
-   VALIDATION
-========================= */
 function validate(body: any) {
   if (!body.clientId) return "clientId is required";
   if (!body.actionType) return "actionType is required";
   return null;
 }
-
-/* =========================
-   SANITIZATION
-========================= */
 function sanitize(body: any) {
   return {
     clientId: body.clientId,
     actionType: String(body.actionType).toUpperCase(),
-
     note: body.note?.trim() || null,
-
     result: body.result?.trim() || null,
     nextActionDate: body.nextActionDate || null,
-
     amountPaid: parseNumber(body.amountPaid || 0),
   };
 }
-
-/* =========================
-   ACTION TYPE NORMALIZATION
-========================= */
 function normalizeActionType(type: string) {
   const t = type.toUpperCase();
-
   if (["CALL", "CALL_ATTEMPT"].includes(t)) return "CALL";
   if (["WHATSAPP", "MSG"].includes(t)) return "WHATSAPP";
   if (["VISIT"].includes(t)) return "VISIT";
   if (["PAYMENT"].includes(t)) return "PAYMENT";
-
   return "NOTE";
 }
 
-/* =========================
-   CREATE ACTION
-========================= */
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
+export async function POST(req: NextRequest) {
+  return withApiGuard(req, { method: "POST", route: "/api/actions" }, async (user) => {
+    if (!user) return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
 
-    /* =========================
-       VALIDATION
-    ========================= */
-    const error = validate(body);
+    try {
+      const body = await req.json();
+      const error = validate(body);
+      if (error) return NextResponse.json({ success: false, error }, { status: 400 });
 
-    if (error) {
-      return NextResponse.json(
-        { success: false, error },
-        { status: 400 }
-      );
-    }
+      const clean = sanitize(body);
+      const actionType = normalizeActionType(clean.actionType);
 
-    /* =========================
-       SANITIZE
-    ========================= */
-    const clean = sanitize(body);
-
-    const actionType = normalizeActionType(clean.actionType);
-
-    /* =========================
-       INSERT
-    ========================= */
-    const [action] = await db
-      .insert(clientActions)
-      .values({
+      const [action] = await db.insert(clientActions).values({
         clientId: clean.clientId,
+        userId: user.id,
         actionType,
-
         note: clean.note,
         result: clean.result,
-
         amountPaid: clean.amountPaid.toString(),
         nextActionDate: clean.nextActionDate,
-      })
-      .returning();
+      }).returning();
 
-    /* =========================
-       SMART RESPONSE 🔥
-    ========================= */
-    return NextResponse.json({
-      success: true,
-      data: action,
+      if (["VISIT", "WHATSAPP"].includes(actionType)) {
+        await auditSensitiveAction(user.id, `CLIENT_${actionType}`, { clientId: clean.clientId, actionId: action.id });
+      }
 
-      meta: {
-        isPayment: actionType === "PAYMENT",
-        requiresFollowUp: !clean.nextActionDate,
-      },
-    });
-  } catch (error) {
-    console.error("ACTION ERROR:", error);
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Action failed",
-      },
-      { status: 500 }
-    );
-  }
+      return NextResponse.json({
+        success: true,
+        data: action,
+        meta: { isPayment: actionType === "PAYMENT", requiresFollowUp: !clean.nextActionDate },
+      });
+    } catch (error) {
+      console.error("ACTION ERROR:", error);
+      return NextResponse.json({ success: false, error: "Action failed" }, { status: 500 });
     }
+  });
+}

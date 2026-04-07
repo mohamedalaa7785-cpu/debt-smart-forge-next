@@ -1,70 +1,63 @@
 import { db } from "@/server/db";
-import { clients, clientPhones, clientAddresses, clientLoans, clientActions, osintResults, users, callLogs, followups } from "@/server/db/schema";
-import { eq, and, or, desc, inArray, sql } from "drizzle-orm";
+import { clients, clientPhones, clientAddresses, clientLoans, clientActions, osintResults, callLogs, followups } from "@/server/db/schema";
+import { eq, and, or, desc, type SQL } from "drizzle-orm";
+import type { UserRole } from "@/server/core/rbac";
 
-/* =========================
-   DOMAIN LOGIC 🏦
-========================= */
 export function calculateDomainInfo(domainType: string, cycleStartDateStr: string | null) {
   const now = new Date();
   const start = cycleStartDateStr ? new Date(cycleStartDateStr) : new Date(now.getFullYear(), now.getMonth(), 1);
   let end = new Date(start);
 
   if (domainType === "FIRST") {
-    // Starts at beginning of month, duration 3 months
     end.setMonth(start.getMonth() + 3);
   } else if (domainType === "THIRD") {
-    // Starts at mid-month, ends at end of month
     start.setDate(15);
     end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
   } else if (domainType === "WRITEOFF") {
-    // Every 3 months, dynamic based on bank (defaulting to 3 months from start)
     end.setMonth(start.getMonth() + 3);
   }
 
-  return {
-    start,
-    end,
-    isActive: now >= start && now <= end
-  };
+  return { start, end, isActive: now >= start && now <= end };
 }
 
-/* =========================
-   GET CLIENTS (WITH PERMISSIONS) 👥
-========================= */
-export async function getClientsForUser(userId: string, role: string) {
+export function getOwnershipScopeCondition(userId: string, role: UserRole): SQL | undefined {
+  if (role === "collector") {
+    return eq(clients.ownerId, userId);
+  }
+  return undefined;
+}
+
+export async function getClientsForUser(userId: string, role: UserRole) {
   try {
     if (role === "hidden_admin" || role === "admin") {
-      // Adel / Admin: Sees ALL
       return await db.select().from(clients).orderBy(desc(clients.createdAt));
-    } else if (role === "supervisor") {
-      // Loay / Supervisor: Sees ALL WRITEOFF
+    }
+    if (role === "supervisor") {
       return await db.select().from(clients)
         .where(eq(clients.portfolioType, "WRITEOFF"))
         .orderBy(desc(clients.createdAt));
-    } else if (role === "team_leader") {
-      // Team Leader: Sees team clients (e.g., all ACTIVE or those they own)
+    }
+    if (role === "team_leader") {
       return await db.select().from(clients)
         .where(or(eq(clients.portfolioType, "ACTIVE"), eq(clients.ownerId, userId)))
         .orderBy(desc(clients.createdAt));
-    } else {
-      // Collector: Sees ONLY own clients
-      return await db.select().from(clients)
-        .where(eq(clients.ownerId, userId))
-        .orderBy(desc(clients.createdAt));
     }
+
+    return await db.select().from(clients)
+      .where(eq(clients.ownerId, userId))
+      .orderBy(desc(clients.createdAt));
   } catch (error) {
     console.error("getClientsForUser error:", error);
     return [];
   }
 }
 
-/* =========================
-   GET CLIENT BY ID (FULL DATA)
-========================= */
-export async function getClientById(id: string) {
+export async function getClientById(id: string, viewer?: { userId: string; role: UserRole }) {
   try {
-    const clientList = await db.select().from(clients).where(eq(clients.id, id));
+    const ownershipFilter = viewer ? getOwnershipScopeCondition(viewer.userId, viewer.role) : undefined;
+    const whereClause = ownershipFilter ? and(eq(clients.id, id), ownershipFilter) : eq(clients.id, id);
+
+    const clientList = await db.select().from(clients).where(whereClause);
     const client = clientList[0];
     if (!client) return null;
 
@@ -94,9 +87,6 @@ export async function getClientById(id: string) {
   }
 }
 
-/* =========================
-   CREATE CLIENT
-========================= */
 export async function createClientFull(data: any, ownerId: string) {
   try {
     return await db.transaction(async (tx) => {
@@ -152,9 +142,6 @@ export async function createClientFull(data: any, ownerId: string) {
   }
 }
 
-/* =========================
-   GET ALL CLIENTS (FOR PRIORITY)
-========================= */
 export async function getAllClients() {
   try {
     return await db.select().from(clients).orderBy(desc(clients.createdAt));

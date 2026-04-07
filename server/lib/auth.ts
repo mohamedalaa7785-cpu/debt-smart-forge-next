@@ -1,111 +1,75 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserFromToken } from "@/server/services/auth.service";
+import { getPolicy, isAllowed, type UserRole } from "@/server/core/rbac";
 
-/* =========================
-   TYPES 🔥
-========================= */
 export interface AuthUser {
   id: string;
   email: string;
-  role: "admin" | "agent";
+  role: UserRole;
 }
 
-/* =========================
-   HELPERS
-========================= */
+type GuardPolicy = {
+  method: string;
+  route: string;
+  action?: string;
+};
+
 function fail(error: string, status = 401) {
-  return NextResponse.json(
-    { success: false, error },
-    { status }
-  );
+  return NextResponse.json({ success: false, error }, { status });
 }
 
-/* =========================
-   EXTRACT TOKEN 🔥 (SAFE)
-========================= */
 function extractToken(req: NextRequest): string | null {
   const authHeader = req.headers.get("authorization");
-
   if (!authHeader) return null;
 
   const clean = authHeader.trim();
-
   if (clean.toLowerCase().startsWith("bearer ")) {
     return clean.slice(7).trim();
   }
-
   return clean;
 }
 
-/* =========================
-   REQUIRE USER 🔐 (SAFE)
-========================= */
-export async function requireUser(
-  req: NextRequest
-): Promise<AuthUser> {
+export async function requireUser(req: NextRequest): Promise<AuthUser> {
   const token = extractToken(req);
-
-  if (!token) {
-    console.warn("⚠️ Missing token");
-    throw new Error("Unauthorized");
-  }
+  if (!token) throw new Error("Unauthorized");
 
   const user = await getUserFromToken(token);
-
-  if (!user) {
-    console.warn("⚠️ Invalid session");
-    throw new Error("Invalid session");
-  }
+  if (!user) throw new Error("Invalid session");
 
   return user as AuthUser;
 }
 
-/* =========================
-   REQUIRE ROLE 🧠
-========================= */
-export function requireRole(
-  user: AuthUser,
-  roles: ("admin" | "agent")[]
-) {
+export function requireRole(user: AuthUser, roles: UserRole[]) {
   if (!roles.includes(user.role)) {
-    console.warn(
-      `⚠️ Forbidden access by user ${user.id} role=${user.role}`
-    );
     throw new Error("Forbidden");
   }
 }
 
-/* =========================
-   WITH AUTH WRAPPER 🔥🔥🔥
-========================= */
-export async function withAuth(
+export async function withApiGuard(
   req: NextRequest,
-  handler: (user: AuthUser) => Promise<NextResponse>
+  policy: GuardPolicy,
+  handler: (user: AuthUser | null) => Promise<NextResponse>
 ) {
   try {
+    const matchedPolicy = getPolicy(policy.method, policy.route, policy.action);
+    if (!matchedPolicy) {
+      return fail(`Policy is not defined for ${policy.method} ${policy.route}`, 500);
+    }
+
+    if (matchedPolicy.public) {
+      return await handler(null);
+    }
+
     const user = await requireUser(req);
+
+    if (!isAllowed(user.role, policy.method, policy.route, policy.action)) {
+      return fail("Forbidden", 403);
+    }
 
     return await handler(user);
   } catch (error: any) {
-    return fail(error?.message || "Unauthorized", 401);
-  }
-}
-
-/* =========================
-   WITH ROLE WRAPPER 🔥
-========================= */
-export async function withRole(
-  req: NextRequest,
-  roles: ("admin" | "agent")[],
-  handler: (user: AuthUser) => Promise<NextResponse>
-) {
-  try {
-    const user = await requireUser(req);
-
-    requireRole(user, roles);
-
-    return await handler(user);
-  } catch (error: any) {
-    return fail(error?.message || "Forbidden", 403);
+    const message = error?.message || "Unauthorized";
+    const status = message === "Forbidden" ? 403 : 401;
+    return fail(message, status);
   }
 }

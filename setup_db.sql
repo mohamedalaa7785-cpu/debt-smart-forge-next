@@ -5,6 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 DROP TABLE IF EXISTS followups CASCADE;
 DROP TABLE IF EXISTS call_logs CASCADE;
 DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS client_images CASCADE;
 DROP TABLE IF EXISTS osint_results CASCADE;
 DROP TABLE IF EXISTS client_actions CASCADE;
@@ -21,6 +22,15 @@ CREATE TABLE users (
   email TEXT UNIQUE,
   password TEXT,
   role TEXT,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Create SESSIONS table
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id),
+  token TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -135,6 +145,8 @@ CREATE TABLE followups (
 
 -- Create Indexes
 CREATE INDEX idx_clients_owner_id ON clients(owner_id);
+CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_client_loans_client_id ON client_loans(client_id);
 CREATE INDEX idx_client_actions_client_id ON client_actions(client_id);
 CREATE INDEX idx_client_phones_client_id ON client_phones(client_id);

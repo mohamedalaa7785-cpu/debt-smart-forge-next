@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiPost } from "@/lib/api-secure";
 
 export default function AddClientPage() {
   const router = useRouter();
@@ -41,36 +42,28 @@ export default function AddClientPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/clients", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email,
-          company,
-          notes,
-          portfolioType,
-          domainType,
-          cycleStartDate,
-          phones: phones.filter(Boolean),
-          loans: loans.map(l => ({
-            ...l,
-            emi: Number(l.emi) || 0,
-            balance: Number(l.balance) || 0,
-            amountDue: Number(l.amountDue) || 0
-          }))
-        })
+      const data = await apiPost("/api/clients", {
+        name,
+        email,
+        company,
+        notes,
+        portfolioType,
+        domainType,
+        cycleStartDate,
+        phones: phones.filter(Boolean),
+        loans: loans.map(l => ({
+          ...l,
+          emi: Number(l.emi) || 0,
+          balance: Number(l.balance) || 0,
+          amountDue: Number(l.amountDue) || 0
+        }))
       });
-
-      const data = await res.json();
       if (data.success) {
         router.push(`/client/${data.data.id}`);
-      } else {
-        alert(data.error || "Failed to save client");
       }
     } catch (err) {
       console.error(err);
-      alert("An error occurred");
+      alert((err as Error)?.message || "Failed to save client");
     } finally {
       setLoading(false);
     }

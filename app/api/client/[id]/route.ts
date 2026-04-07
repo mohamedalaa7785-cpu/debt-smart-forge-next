@@ -3,6 +3,8 @@ import { getClientById } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
 import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
+import { requireUser } from "@/server/lib/auth";
+import { logAction } from "@/server/services/log.service";
 
 function success(data: any, meta?: any) {
   return NextResponse.json({
@@ -27,6 +29,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const user = await requireUser(req);
     const clientId = params?.id?.trim();
 
     if (!clientId) {
@@ -84,6 +87,12 @@ export async function GET(
       osintConfidence: osint?.confidenceScore as any || 0,
       lastActionDays: 0,
       totalDue
+    });
+
+    await logAction(user.id, "GET_CLIENT_DETAILS", {
+      clientId,
+      risk: risk.label,
+      nextAction: decision.action,
     });
 
     return success(

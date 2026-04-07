@@ -7,7 +7,7 @@ import { getUserFromToken } from "@/server/services/auth.service";
 export interface AuthUser {
   id: string;
   email: string;
-  role: "admin" | "agent";
+  role: "admin" | "supervisor" | "team_leader" | "collector" | "hidden_admin";
 }
 
 /* =========================
@@ -65,7 +65,7 @@ export async function requireUser(
 ========================= */
 export function requireRole(
   user: AuthUser,
-  roles: ("admin" | "agent")[]
+  roles: AuthUser["role"][]
 ) {
   if (!roles.includes(user.role)) {
     console.warn(
@@ -96,7 +96,7 @@ export async function withAuth(
 ========================= */
 export async function withRole(
   req: NextRequest,
-  roles: ("admin" | "agent")[],
+  roles: AuthUser["role"][],
   handler: (user: AuthUser) => Promise<NextResponse>
 ) {
   try {

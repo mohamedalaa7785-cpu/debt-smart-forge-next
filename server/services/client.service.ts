@@ -151,3 +151,15 @@ export async function createClientFull(data: any, ownerId: string) {
     throw error;
   }
 }
+
+/* =========================
+   GET ALL CLIENTS (FOR PRIORITY)
+========================= */
+export async function getAllClients() {
+  try {
+    return await db.select().from(clients).orderBy(desc(clients.createdAt));
+  } catch (error) {
+    console.error("getAllClients error:", error);
+    return [];
+  }
+}

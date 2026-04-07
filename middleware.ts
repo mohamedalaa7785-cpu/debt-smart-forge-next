@@ -1,12 +1,10 @@
+// file: middleware.ts
+
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+  let response = NextResponse.next();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -17,58 +15,51 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value;
         },
         set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          });
+          response.cookies.set({ name, value, ...options });
         },
         remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: "",
-            ...options,
-          });
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          });
-          response.cookies.set({
-            name,
-            value: "",
-            ...options,
-          });
+          response.cookies.set({ name, value: "", ...options });
         },
       },
     }
   );
 
-  const { data: { user } } = await supabase.auth.getUser();
+  // 🔥 استخدم session مش user
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  // Protect dashboard and client routes
-  const isAuthPage = request.nextUrl.pathname.startsWith("/login");
-  const isProtectedPage = 
-    request.nextUrl.pathname === "/" || 
-    request.nextUrl.pathname.startsWith("/dashboard") || 
-    request.nextUrl.pathname.startsWith("/client") ||
-    request.nextUrl.pathname.startsWith("/add-client");
+  const pathname = request.nextUrl.pathname;
 
-  if (!user && isProtectedPage) {
+  // =========================
+  // ✅ PUBLIC ROUTES
+  // =========================
+  const isPublicRoute =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/api/auth/login") ||
+    pathname.startsWith("/api/auth/register") ||
+    pathname.startsWith("/api/auth/me");
+
+  // =========================
+  // 🔒 PROTECTED ROUTES
+  // =========================
+  const isProtectedRoute =
+    pathname === "/" ||
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/client") ||
+    pathname.startsWith("/add-client");
+
+  // =========================
+  // 🚫 BLOCK ACCESS
+  // =========================
+  if (!session && isProtectedRoute) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (user && isAuthPage) {
+  // =========================
+  // 🔁 REDIRECT IF LOGGED IN
+  // =========================
+  if (session && pathname.startsWith("/login")) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
@@ -77,13 +68,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
-     */
     "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

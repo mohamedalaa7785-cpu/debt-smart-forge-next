@@ -1,3 +1,5 @@
+// file: server/lib/auth.ts
+
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
@@ -11,7 +13,12 @@ import { eq } from "drizzle-orm";
 export interface AuthUser {
   id: string;
   email: string;
-  role: "admin" | "supervisor" | "team_leader" | "collector" | "hidden_admin";
+  role:
+    | "admin"
+    | "supervisor"
+    | "team_leader"
+    | "collector"
+    | "hidden_admin";
   name?: string | null;
 }
 
@@ -19,19 +26,17 @@ export interface AuthUser {
    HELPERS
 ========================= */
 function fail(error: string, status = 401) {
-  return NextResponse.json(
-    { success: false, error },
-    { status }
-  );
+  return NextResponse.json({ success: false, error }, { status });
 }
 
 /* =========================
-   REQUIRE USER 🔐 (SUPABASE SSR)
+   REQUIRE USER 🔐 (STRICT)
 ========================= */
 export async function requireUser(
   req: NextRequest
 ): Promise<AuthUser> {
   const cookieStore = cookies();
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -44,21 +49,32 @@ export async function requireUser(
     }
   );
 
-  const { data: { user }, error } = await supabase.auth.getUser();
+  // 🔥 1. تأكد من وجود session
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (!session) {
+    throw new Error("Invalid session");
+  }
+
+  // 🔥 2. هات user من session
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
 
   if (error || !user) {
-    console.warn("⚠️ Unauthorized access attempt");
     throw new Error("Unauthorized");
   }
 
-  // Get user details from our public.users table (synced via trigger)
+  // 🔥 3. لازم يكون متزامن مع public.users
   const dbUser = await db.query.users.findFirst({
     where: eq(users.id, user.id),
   });
 
   if (!dbUser) {
-    console.warn(`⚠️ User ${user.id} not found in public.users table`);
-    throw new Error("User record not found");
+    throw new Error("User record not synced");
   }
 
   return {
@@ -76,18 +92,15 @@ export function requireRole(
   user: AuthUser,
   roles: AuthUser["role"][]
 ) {
-  if (user.role === "hidden_admin") return; // hidden_admin bypasses all
-  
+  if (user.role === "hidden_admin") return;
+
   if (!roles.includes(user.role)) {
-    console.warn(
-      `⚠️ Forbidden access by user ${user.id} role=${user.role}`
-    );
     throw new Error("Forbidden");
   }
 }
 
 /* =========================
-   WITH AUTH WRAPPER 🔥🔥🔥
+   WITH AUTH WRAPPER 🔥
 ========================= */
 export async function withAuth(
   req: NextRequest,

@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from "cloudinary";
+import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
    LAZY CONFIG 🔥
@@ -8,14 +9,9 @@ let isConfigured = false;
 function ensureCloudinary() {
   if (isConfigured) return;
 
-  const cloud_name = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-  const api_key = process.env.CLOUDINARY_API_KEY;
-  const api_secret = process.env.CLOUDINARY_API_SECRET;
-
-  if (!cloud_name || !api_key || !api_secret) {
-    console.error("❌ Cloudinary ENV missing");
-    throw new Error("Cloudinary not configured");
-  }
+  const cloud_name = getRequiredEnv("NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME");
+  const api_key = getRequiredEnv("CLOUDINARY_API_KEY");
+  const api_secret = getRequiredEnv("CLOUDINARY_API_SECRET");
 
   cloudinary.config({
     cloud_name,

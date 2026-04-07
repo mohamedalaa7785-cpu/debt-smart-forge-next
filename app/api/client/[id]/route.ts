@@ -1,134 +1,100 @@
 import { NextRequest, NextResponse } from "next/server";
-import { canAccessClient, getClientById } from "@/server/services/client.service";
+import { withAuth } from "@/server/lib/auth";
+import { getClientById, canAccessClient } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
 import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
-import { requireUser } from "@/server/lib/auth";
 import { logAction } from "@/server/services/log.service";
-
-function success(data: any, meta?: any) {
-  return NextResponse.json({
-    success: true,
-    data,
-    ...(meta ? { meta } : {}),
-  });
-}
-
-function fail(error: string, status = 400) {
-  return NextResponse.json(
-    {
-      success: false,
-      error,
-    },
-    { status }
-  );
-}
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const user = await requireUser(req);
-    const clientId = params?.id?.trim();
+  return withAuth(req, async (user) => {
+    try {
+      const clientId = params.id;
+      const data = await getClientById(clientId);
 
-    if (!clientId) {
-      return fail("Client ID is required", 400);
-    }
+      if (!data) {
+        return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+      }
 
-    const data = await getClientById(clientId);
+      if (!canAccessClient(data as any, user.id, user.role)) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      }
 
-    if (!data) {
-      return fail("Client not found", 404);
-    }
+      const phones = data.phones || [];
+      const addresses = data.addresses || [];
+      const loans = data.loans || [];
+      const osint = data.osint || null;
 
-    if (!canAccessClient(data, user.id, user.role)) {
-      return fail("Forbidden", 403);
-    }
+      // Calculate total due
+      const totalDue = loans.reduce((sum: number, l: any) => sum + (parseFloat(l.amountDue as any) || 0), 0);
 
-    const phones = data.phones || [];
-    const addresses = data.addresses || [];
-    const actions = data.actions || [];
-    const osint = data.osint || null;
+      // Calculate risk
+      const riskInput = {
+        bucket: loans[0]?.bucket ?? undefined,
+        amountDue: totalDue,
+        hasPhone: phones.length > 0,
+        hasAddress: addresses.length > 0,
+        hasLoans: loans.length > 0,
+        hasOsint: !!osint,
+        lastActionDays: 0,
+        aiSignalsScore: 50
+      };
+      const risk = calculateRisk(riskInput);
 
-    // Calculate total due
-    const totalDue = (data.loans || []).reduce((sum: number, l: any) => sum + (parseFloat(l.amountDue as any) || 0), 0);
+      // AI Analysis
+      const aiInput = {
+        clientName: data.name || "Unknown",
+        totalAmountDue: totalDue,
+        riskScore: risk.score,
+        riskLabel: risk.label,
+        phonesCount: phones.length,
+        addressesCount: addresses.length,
+        loansCount: loans.length,
+        osintConfidence: Number(osint?.confidenceScore || 0),
+        osintSummary: osint?.summary || ""
+      };
+      const aiResult = await analyzeClient(aiInput);
 
-    // Calculate risk
-    const riskInput = {
-      bucket: data.loans?.[0]?.bucket ?? undefined,
-      amountDue: totalDue,
-      hasPhone: phones.length > 0,
-      hasAddress: addresses.length > 0,
-      hasLoans: (data.loans?.length || 0) > 0,
-      hasOsint: !!osint,
-      lastActionDays: 0,
-      aiSignalsScore: 50
-    };
-    const risk = calculateRisk(riskInput);
+      // Generate script
+      const script = await generateCallScript(aiInput, aiResult);
 
-    // AI Analysis
-    const aiInput = {
-      clientName: data.name || "Unknown",
-      totalAmountDue: totalDue,
-      riskScore: risk.score,
-      riskLabel: risk.label,
-      phonesCount: phones.length,
-      addressesCount: addresses.length,
-      loansCount: data.loans?.length || 0,
-      osintConfidence: osint?.confidenceScore as any || 0,
-      osintSummary: osint?.summary
-    };
-    const aiResult = await analyzeClient(aiInput);
-
-    // Generate script
-    const script = await generateCallScript(aiInput, aiResult);
-
-    // Decision engine
-    const decision = decideAction({
-      risk,
-      ai: aiResult,
-      osintConfidence: osint?.confidenceScore as any || 0,
-      lastActionDays: 0,
-      totalDue
-    });
-
-    await logAction(user.id, "GET_CLIENT_DETAILS", {
-      clientId,
-      risk: risk.label,
-      nextAction: decision.action,
-    });
-
-    return success(
-      {
-        client: data,
-        phones,
-        addresses,
-        loans: data.loans || [],
-        actions,
-        osint,
+      // Decision engine
+      const decision = decideAction({
         risk,
         ai: aiResult,
-        script,
-        decision
-      },
-      {
+        osintConfidence: Number(osint?.confidenceScore || 0),
+        lastActionDays: 0,
+        totalDue
+      });
+
+      await logAction(user.id, "VIEW_CLIENT", {
+        clientId,
         risk: risk.label,
-        riskScore: risk.score,
-        totalDue,
-        hasOSINT: !!osint,
-        hasPhones: phones.length > 0,
-        hasAddresses: addresses.length > 0,
-        priority: decision.priority,
-        actionRequired: risk.score >= 50,
-        nextAction: decision.action
-      }
-    );
-  } catch (error: any) {
-    console.error("GET CLIENT ERROR:", error);
-    if (error?.message === "Unauthorized" || error?.message === "Invalid session") {
-      return fail(error.message, 401);
+        nextAction: decision.action,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          client: data,
+          phones,
+          addresses,
+          loans,
+          actions: data.actions || [],
+          osint,
+          risk,
+          ai: aiResult,
+          script,
+          decision,
+          totalDue
+        }
+      });
+    } catch (error: any) {
+      console.error("GET CLIENT ERROR:", error);
+      return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 500 });
     }
-    return fail("Failed to fetch client", 500);
-  }
+  });
 }

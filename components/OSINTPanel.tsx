@@ -1,47 +1,72 @@
 "use client";
 
-export default function OSINTPanel({ osint }: any) {
+interface OSINT {
+  id: string;
+  summary: string | null;
+  confidenceScore: string | null;
+  social: any;
+  workplace: any;
+  webResults: any;
+  imageResults: any;
+}
+
+export default function OSINTPanel({ osint }: { osint: OSINT | null }) {
   if (!osint) {
     return (
-      <div className="p-4 bg-gray-50 border rounded-lg text-sm text-gray-400 text-center">
-        No intelligence data available for this client.
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <span>🔍</span> OSINT Intelligence
+        </h2>
+        <div className="p-8 bg-gray-50 border border-dashed border-gray-200 rounded-xl text-center text-gray-400 text-sm font-medium">
+          No intelligence data available for this client.
+        </div>
       </div>
     );
   }
 
+  const confidence = Number(osint.confidenceScore || 0);
+
   return (
-    <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
-      <div className="px-4 py-3 bg-gray-50 border-b flex justify-between items-center">
-        <h2 className="font-bold text-gray-800 flex items-center gap-2">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex justify-between items-center">
+        <h2 className="font-bold text-gray-900 flex items-center gap-2">
           <span className="text-blue-600">🔍</span> OSINT Intelligence
         </h2>
-        <div className="text-xs font-medium px-2 py-1 bg-blue-100 text-blue-700 rounded-full">
-          Confidence: {osint.confidenceScore}%
+        <div className={`text-[10px] font-black px-2 py-1 rounded-full uppercase tracking-widest ${
+          confidence > 70 ? "bg-green-100 text-green-700" : 
+          confidence > 40 ? "bg-blue-100 text-blue-700" : 
+          "bg-gray-100 text-gray-700"
+        }`}>
+          Confidence: {confidence}%
         </div>
       </div>
       
-      <div className="p-4 space-y-6">
+      <div className="p-6 space-y-6">
         {/* SUMMARY */}
         <div>
-          <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Executive Summary</h3>
-          <p className="text-sm text-gray-700 leading-relaxed">{osint.summary || "No summary available."}</p>
+          <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Executive Summary</h3>
+          <p className="text-sm text-gray-700 font-medium leading-relaxed bg-blue-50/50 p-3 rounded-xl border border-blue-100/50">
+            {osint.summary || "No summary available."}
+          </p>
         </div>
 
         {/* SOCIAL MEDIA */}
-        {osint.social && (
+        {osint.social && Array.isArray(osint.social) && osint.social.length > 0 && (
           <div>
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Social Presence</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {Object.entries(osint.social).map(([platform, link]: [string, any]) => (
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Social Presence</h3>
+            <div className="flex flex-wrap gap-2">
+              {osint.social.map((link: string, idx: number) => (
                 <a 
-                  key={platform} 
+                  key={idx} 
                   href={link} 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 p-2 bg-gray-50 rounded border hover:bg-gray-100 transition-colors"
+                  className="px-3 py-1.5 bg-gray-50 rounded-lg border border-gray-100 text-xs text-blue-600 font-bold hover:bg-blue-50 hover:border-blue-200 transition truncate max-w-full"
                 >
-                  <span className="text-xs font-medium capitalize">{platform}</span>
-                  <span className="text-xs text-blue-600 truncate flex-1">{link}</span>
+                  {link.includes('facebook') ? 'Facebook' : 
+                   link.includes('linkedin') ? 'LinkedIn' : 
+                   link.includes('twitter') ? 'Twitter' : 
+                   link.includes('instagram') ? 'Instagram' : 'Social Profile'}
                 </a>
               ))}
             </div>
@@ -49,30 +74,27 @@ export default function OSINTPanel({ osint }: any) {
         )}
 
         {/* WORKPLACE */}
-        {osint.workplace && (
+        {osint.workplace && Array.isArray(osint.workplace) && osint.workplace.length > 0 && (
           <div>
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Verified Workplace</h3>
-            <div className="p-3 bg-green-50 border border-green-100 rounded-lg">
-              <div className="font-bold text-sm text-green-800">{osint.workplace.company || "Unknown Company"}</div>
-              <div className="text-xs text-green-700 mt-1">{osint.workplace.address}</div>
-              {osint.workplace.phone && (
-                <div className="text-xs text-green-700 font-medium mt-1">📞 {osint.workplace.phone}</div>
-              )}
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Employment Signals</h3>
+            <div className="space-y-2">
+              {osint.workplace.map((w: string, idx: number) => (
+                <div key={idx} className="p-3 bg-green-50/50 border border-green-100/50 rounded-xl text-xs text-green-800 font-medium">
+                  {w}
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {/* IMAGE MATCHES */}
-        {osint.imageResults && osint.imageResults.length > 0 && (
+        {osint.imageResults && Array.isArray(osint.imageResults) && osint.imageResults.length > 0 && (
           <div>
-            <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Image Intelligence Matches</h3>
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {osint.imageResults.map((img: any, idx: number) => (
-                <div key={idx} className="flex-shrink-0 w-24 space-y-1">
-                  <div className="aspect-square bg-gray-200 rounded overflow-hidden border">
-                    <img src={img.url} alt="Match" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="text-[10px] text-gray-500 truncate">{img.source || "Web Match"}</div>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Image Matches</h3>
+            <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+              {osint.imageResults.map((img: string, idx: number) => (
+                <div key={idx} className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
+                  <img src={img} alt="Match" className="w-full h-full object-cover" />
                 </div>
               ))}
             </div>

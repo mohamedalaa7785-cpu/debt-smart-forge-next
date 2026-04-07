@@ -1,78 +1,72 @@
 import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/server/lib/auth";
 import { db } from "@/server/db";
 import { clientActions } from "@/server/db/schema";
 import { parseNumber } from "@/lib/utils";
-import { requireUser } from "@/server/lib/auth";
 import { canAccessClient, getClientById } from "@/server/services/client.service";
-
-function validate(body: any) {
-  if (!body.clientId) return "clientId is required";
-  if (!body.actionType) return "actionType is required";
-  return null;
-}
-
-function sanitize(body: any) {
-  return {
-    clientId: body.clientId,
-    actionType: String(body.actionType).toUpperCase(),
-    note: body.note?.trim() || null,
-    result: body.result?.trim() || null,
-    nextActionDate: body.nextActionDate || null,
-    amountPaid: parseNumber(body.amountPaid || 0),
-  };
-}
+import { logAction } from "@/server/services/log.service";
 
 function normalizeActionType(type: string) {
-  const t = type.toUpperCase();
+  const t = String(type).toUpperCase();
   if (["CALL", "CALL_ATTEMPT"].includes(t)) return "CALL";
   if (["WHATSAPP", "MSG"].includes(t)) return "WHATSAPP";
   if (["VISIT"].includes(t)) return "VISIT";
   if (["PAYMENT"].includes(t)) return "PAYMENT";
+  if (["FOLLOW", "FOLLOWUP"].includes(t)) return "FOLLOW";
   return "NOTE";
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const user = await requireUser(req);
-    const body = await req.json();
-    const error = validate(body);
+  return withAuth(req, async (user) => {
+    try {
+      const body = await req.json();
+      
+      if (!body.clientId || !body.actionType) {
+        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
+      }
 
-    if (error) {
-      return NextResponse.json({ success: false, error }, { status: 400 });
-    }
+      const client = await getClientById(body.clientId);
+      if (!client) {
+        return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+      }
 
-    const clean = sanitize(body);
-    const client = await getClientById(clean.clientId);
-    if (!client || !canAccessClient(client, user.id, user.role)) {
-      return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
-    }
+      if (!canAccessClient(client as any, user.id, user.role)) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      }
 
-    const actionType = normalizeActionType(clean.actionType);
+      const actionType = normalizeActionType(body.actionType);
+      const amountPaid = parseNumber(body.amountPaid || 0);
 
-    const [action] = await db
-      .insert(clientActions)
-      .values({
-        clientId: clean.clientId,
-        userId: user.id,
+      const [action] = await db
+        .insert(clientActions)
+        .values({
+          clientId: body.clientId,
+          userId: user.id,
+          actionType,
+          note: body.note?.trim() || null,
+          result: body.result?.trim() || null,
+          amountPaid: amountPaid.toString(),
+          nextActionDate: body.nextActionDate || null,
+        })
+        .returning();
+
+      await logAction(user.id, "CREATE_ACTION", {
+        clientId: body.clientId,
         actionType,
-        note: clean.note,
-        result: clean.result,
-        amountPaid: clean.amountPaid.toString(),
-        nextActionDate: clean.nextActionDate,
-      })
-      .returning();
+        actionId: action.id,
+      });
 
-    return NextResponse.json({
-      success: true,
-      data: action,
-      meta: {
-        isPayment: actionType === "PAYMENT",
-        requiresFollowUp: !clean.nextActionDate,
-      },
-    });
-  } catch (error: any) {
-    console.error("ACTION ERROR:", error);
-    const status = error?.message === "Unauthorized" || error?.message === "Invalid session" ? 401 : 500;
-    return NextResponse.json({ success: false, error: error?.message || "Action failed" }, { status });
-  }
+      return NextResponse.json({
+        success: true,
+        data: action,
+        meta: {
+          isPayment: actionType === "PAYMENT",
+          requiresFollowUp: !body.nextActionDate,
+        },
+      });
+    } catch (error: any) {
+      console.error("ACTION ERROR:", error);
+      return NextResponse.json({ success: false, error: error.message || "Action failed" }, { status: 500 });
+    }
+  });
 }

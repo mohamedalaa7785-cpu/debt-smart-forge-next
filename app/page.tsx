@@ -1,125 +1,116 @@
-"use client";
-
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import RiskBadge from "@/components/RiskBadge";
 import { formatCurrency } from "@/lib/utils";
-import { isLoggedIn } from "@/lib/auth-store";
-import { apiGet } from "@/lib/api-secure";
+import { getClientsForUser, getClientById } from "@/server/services/client.service";
+import { requireUser } from "@/server/lib/auth";
+import { headers } from "next/headers";
+import { NextRequest } from "next/server";
 
-interface Client {
-  id: string;
-  name: string;
-}
+export const dynamic = "force-dynamic";
 
-interface ClientFull {
-  client: {
-    id: string;
-    name: string;
-  };
-  summary: {
-    totalAmountDue: number;
-    riskScore: number;
-    riskLabel: "HIGH" | "MEDIUM" | "LOW";
-  };
-  ai: {
-    nextAction: string;
-    paymentProbability: number;
-  };
-}
+export default async function DashboardPage() {
+  // We need to simulate a NextRequest for requireUser
+  const headerList = headers();
+  const req = new NextRequest(new URL("/", "http://localhost"), { headers: headerList });
+  
+  let user;
+  try {
+    user = await requireUser(req);
+  } catch (e) {
+    // Middleware should handle redirection, but as a fallback:
+    return <div className="p-4 text-center">Unauthorized. Please login.</div>;
+  }
 
-export default function DashboardPage() {
-  const router = useRouter();
-  const [clients, setClients] = useState<ClientFull[]>([]);
-  const [loading, setLoading] = useState(true);
+  const baseClients = await getClientsForUser(user.id, user.role);
+  
+  // Enrich with summary data
+  const clients = await Promise.all(
+    baseClients.slice(0, 10).map(async (c) => {
+      const d = await getClientById(c.id);
+      if (!d) return null;
+      
+      const totalDue = d.loans.reduce((acc, loan) => acc + Number(loan.overdue || 0), 0);
+      // Simplified risk for list
+      const riskScore = d.loans[0]?.bucket ? d.loans[0].bucket * 20 : 20;
+      const riskLabel = riskScore >= 80 ? "HIGH" : riskScore >= 40 ? "MEDIUM" : "LOW";
+      
+      return {
+        client: c,
+        summary: {
+          totalAmountDue: totalDue,
+          riskScore,
+          riskLabel
+        }
+      };
+    })
+  );
 
-  useEffect(() => {
-    if (!isLoggedIn()) {
-      router.replace("/login");
-      setLoading(false);
-      return;
-    }
+  const validClients = clients.filter(Boolean) as any[];
+  validClients.sort((a, b) => b.summary.totalAmountDue - a.summary.totalAmountDue);
 
-    async function load() {
-      try {
-        const data = await apiGet("/api/clients");
-        const baseClients: Client[] = data.data || [];
-
-        const full = await Promise.all(
-          baseClients.map(async (c) => {
-            const d = await apiGet(`/api/client/${c.id}`);
-            return d.data;
-          })
-        );
-
-        full.sort((a, b) => {
-          const p1 = a.summary.totalAmountDue * 0.5 + a.summary.riskScore * 10;
-          const p2 = b.summary.totalAmountDue * 0.5 + b.summary.riskScore * 10;
-          return p2 - p1;
-        });
-
-        setClients(full);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    load();
-  }, [router]);
-
-  if (loading) return <div className="p-4">Loading...</div>;
-
-  const totalClients = clients.length;
-  const totalDue = clients.reduce((sum, c) => sum + (c.summary?.totalAmountDue || 0), 0);
-  const highRisk = clients.filter((c) => c.summary?.riskLabel === "HIGH").length;
+  const totalClients = baseClients.length;
+  const totalDue = validClients.reduce((sum, c) => sum + (c.summary?.totalAmountDue || 0), 0);
+  const highRisk = validClients.filter((c) => c.summary?.riskLabel === "HIGH").length;
 
   return (
-    <div className="space-y-5">
-      <div className="flex justify-between items-center">
-        <h1 className="title">📊 Smart Dashboard</h1>
-        <Link href="/add-client" className="btn btn-primary">+ Add</Link>
+    <div className="space-y-6 max-w-4xl mx-auto py-8">
+      <div className="flex justify-between items-center px-4 md:px-0">
+        <h1 className="text-2xl font-bold text-gray-900">📊 Smart Dashboard</h1>
+        <Link href="/add-client" className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition">
+          + Add Client
+        </Link>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="card text-center">
-          <p className="text-xs text-gray-500">Clients</p>
-          <p className="font-bold">{totalClients}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-4 md:px-0">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
+          <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Clients</p>
+          <p className="mt-2 text-3xl font-bold text-gray-900">{totalClients}</p>
         </div>
-        <div className="card text-center">
-          <p className="text-xs text-gray-500">Total Due</p>
-          <p className="font-bold">{formatCurrency(totalDue)}</p>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
+          <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Overdue</p>
+          <p className="mt-2 text-3xl font-bold text-blue-600">{formatCurrency(totalDue)}</p>
         </div>
-        <div className="card text-center">
-          <p className="text-xs text-gray-500">High Risk</p>
-          <p className="font-bold text-red-500">{highRisk}</p>
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
+          <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">High Risk</p>
+          <p className="mt-2 text-3xl font-bold text-red-500">{highRisk}</p>
         </div>
       </div>
 
-      {clients[0] && (
-        <div className="card-strong flex justify-between items-center">
-          <div>
-            <p className="text-sm text-gray-500">Next Call</p>
-            <p className="font-bold">{clients[0].client.name}</p>
+      {validClients[0] && (
+        <div className="mx-4 md:px-0">
+          <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex justify-between items-center">
+            <div>
+              <p className="text-xs font-semibold text-blue-600 uppercase">Top Priority</p>
+              <p className="text-lg font-bold text-gray-900">{validClients[0].client.name}</p>
+            </div>
+            <Link href={`/client/${validClients[0].client.id}`} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition">
+              Open Case
+            </Link>
           </div>
-          <Link href={`/client/${clients[0].client.id}`} className="btn btn-danger">Open</Link>
         </div>
       )}
 
-      <div className="space-y-3">
-        {clients.length === 0 && <div className="card text-center text-gray-500">No clients yet</div>}
+      <div className="space-y-3 px-4 md:px-0">
+        <h2 className="text-lg font-semibold text-gray-900">Client List</h2>
+        {validClients.length === 0 && (
+          <div className="bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
+            No clients assigned to you yet.
+          </div>
+        )}
 
-        {clients.map((c) => (
-          <Link key={c.client.id} href={`/client/${c.client.id}`} className="card flex flex-col gap-2">
-            <div className="flex justify-between items-center">
-              <p className="font-semibold">{c.client.name}</p>
+        {validClients.map((c) => (
+          <Link key={c.client.id} href={`/client/${c.client.id}`} className="block bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition">
+            <div className="flex justify-between items-start">
+              <div className="space-y-1">
+                <p className="font-bold text-gray-900">{c.client.name}</p>
+                <p className="text-sm text-gray-500">{c.client.company || "No Company"}</p>
+              </div>
               <RiskBadge label={c.summary.riskLabel} score={c.summary.riskScore} size="sm" />
             </div>
-            <div className="text-sm">💰 {formatCurrency(c.summary.totalAmountDue)}</div>
-            <div className="text-xs text-gray-500">{c.ai?.nextAction}</div>
-            <div className="text-xs">Pay Chance: {c.ai?.paymentProbability}%</div>
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-lg font-bold text-blue-600">{formatCurrency(c.summary.totalAmountDue)}</div>
+              <div className="text-xs font-medium text-gray-400">Created {new Date(c.client.createdAt).toLocaleDateString()}</div>
+            </div>
           </Link>
         ))}
       </div>

@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/server/db";
-import { osintResults } from "@/server/db/schema";
-
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
+import { getClientsForUser, createClientFull } from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
-import { createClientFull, getClientsForUser } from "@/server/services/client.service";
 
 /* =========================
    RATE LIMIT 🔥
@@ -22,7 +19,6 @@ function rateLimit(key: string, limit = 30) {
   }
 
   data.count++;
-
   rateMap.set(key, data);
 
   if (data.count > limit) {
@@ -33,187 +29,91 @@ function rateLimit(key: string, limit = 30) {
 /* =========================
    CACHE (LIGHT)
 ========================= */
-const cache = new Map<
-  string,
-  { data: any; expiry: number }
->();
-
+const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 30; // 30 sec
-
-/* =========================
-   HELPERS
-========================= */
-function success(data: any, meta?: any) {
-  return NextResponse.json({
-    success: true,
-    data,
-    ...(meta ? { meta } : {}),
-  });
-}
-
-function fail(error: string, status = 400) {
-  return NextResponse.json(
-    {
-      success: false,
-      error,
-    },
-    { status }
-  );
-}
 
 /* =========================
    GET CLIENTS 🔥
 ========================= */
 export async function GET(req: NextRequest) {
-  try {
-    /* =========================
-       RATE LIMIT
-    ========================= */
-    const ip =
-      req.headers.get("x-forwarded-for") || "unknown";
+  return withAuth(req, async (user) => {
+    try {
+      const ip = req.headers.get("x-forwarded-for") || "unknown";
+      rateLimit(ip);
 
-    rateLimit(ip);
+      const { page, limit, offset } = getPagination(req);
+      const cacheKey = `${user.id}-${user.role}-${page}-${limit}`;
+      const cached = cache.get(cacheKey);
 
-    /* =========================
-       AUTH
-    ========================= */
-    const user = await requireUser(req);
+      if (cached && cached.expiry > Date.now()) {
+        return NextResponse.json({
+          success: true,
+          data: cached.data,
+          meta: { page, limit, cached: true }
+        });
+      }
 
-    /* =========================
-       PAGINATION
-    ========================= */
-    const { page, limit, offset } = getPagination(req);
+      const scopedClients = await getClientsForUser(user.id, user.role);
+      const sortedClients = scopedClients
+        .slice()
+        .sort((a, b) => (new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()));
+      
+      const data = sortedClients
+        .slice(offset, offset + limit + 1)
+        .map((client) => ({
+          id: client.id,
+          name: client.name,
+          email: client.email,
+          company: client.company,
+          createdAt: client.createdAt,
+        }));
 
-    const cacheKey = `${user.id}-${user.role}-${page}-${limit}`;
+      const hasMore = data.length > limit;
+      if (hasMore) data.pop();
 
-    /* =========================
-       CACHE HIT
-    ========================= */
-    const cached = cache.get(cacheKey);
+      await logAction(user.id, "GET_CLIENTS", { page, limit });
 
-    if (cached && cached.expiry > Date.now()) {
-      return success(cached.data, {
-        page,
-        limit,
-        cached: true,
+      cache.set(cacheKey, { data, expiry: Date.now() + TTL });
+
+      return NextResponse.json({
+        success: true,
+        data,
+        meta: { page, limit, count: data.length, hasMore }
       });
+    } catch (error: any) {
+      return NextResponse.json(
+        { success: false, error: error.message || "Internal Server Error" },
+        { status: error.message === "Too many requests" ? 429 : 500 }
+      );
     }
-
-    /* =========================
-       FETCH DATA
-    ========================= */
-    const scopedClients = await getClientsForUser(user.id, user.role);
-    const sortedClients = scopedClients
-      .slice()
-      .sort((a, b) => (new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()));
-    const data = sortedClients
-      .slice(offset, offset + limit + 1)
-      .map((client) => ({
-        id: client.id,
-        name: client.name,
-        email: client.email,
-        company: client.company,
-        createdAt: client.createdAt,
-      }));
-
-    /* =========================
-       HAS MORE FIX 🔥
-    ========================= */
-    const hasMore = data.length > limit;
-
-    if (hasMore) {
-      data.pop(); // remove extra item
-    }
-
-    /* =========================
-       LOGGING
-    ========================= */
-    await logAction(user.id, "GET_CLIENTS", {
-      page,
-      limit,
-    });
-
-    /* =========================
-       CACHE SAVE
-    ========================= */
-    cache.set(cacheKey, {
-      data,
-      expiry: Date.now() + TTL,
-    });
-
-    /* =========================
-       RESPONSE
-    ========================= */
-    return success(data, {
-      page,
-      limit,
-      count: data.length,
-      hasMore,
-    });
-  } catch (error: any) {
-    console.error("GET CLIENTS ERROR:", error);
-
-    return fail(
-      error?.message || "Unauthorized",
-      error?.message === "Too many requests" ? 429 : 401
-    );
-  }
+  });
 }
 
 /* =========================
    POST CLIENTS (CREATE) 🔥
 ========================= */
 export async function POST(req: NextRequest) {
-  try {
-    const user = await requireUser(req);
-    const body = await req.json();
+  return withAuth(req, async (user) => {
+    try {
+      const body = await req.json();
+      const { name, phones, loans } = body;
 
-    const { name, email, company, phones, addresses, loans, imageUrl, osintData } = body;
+      if (!name) return NextResponse.json({ success: false, error: "Name is required" }, { status: 400 });
+      if (!phones || phones.length === 0) return NextResponse.json({ success: false, error: "At least one phone is required" }, { status: 400 });
+      if (!loans || loans.length === 0) return NextResponse.json({ success: false, error: "At least one loan is required" }, { status: 400 });
 
-    if (!name) {
-      return fail("Name is required");
+      // Enforce ownership: Every newly created client must set owner_id = authenticated user id
+      const ownerId = (user.role === "admin" || user.role === "hidden_admin") && body.ownerId 
+        ? body.ownerId 
+        : user.id;
+
+      const newClient = await createClientFull({ ...body, ownerId }, user.id);
+      
+      await logAction(user.id, "CREATE_CLIENT", { clientId: newClient.id, name: newClient.name });
+
+      return NextResponse.json({ success: true, data: { id: newClient.id, name: newClient.name } });
+    } catch (error: any) {
+      return NextResponse.json({ success: false, error: error.message || "Failed to create client" }, { status: 500 });
     }
-
-    if (!phones || phones.length === 0) {
-      return fail("At least one phone is required");
-    }
-
-    if (!loans || loans.length === 0) {
-      return fail("At least one loan is required");
-    }
-
-    const newClient = await createClientFull(
-      {
-        name,
-        email: email || null,
-        company: company || null,
-        imageUrl: imageUrl || null,
-        phones,
-        addresses,
-        loans,
-      },
-      user.id
-    );
-    const clientId = newClient.id;
-
-    // Save OSINT data if available
-    if (osintData) {
-      await db.insert(osintResults).values({
-        clientId,
-        social: osintData.socialLinks || [],
-        workplace: osintData.workplace || [],
-        webResults: osintData.webResults || [],
-        imageResults: osintData.imageMatches || [],
-        summary: osintData.summary,
-        confidenceScore: osintData.confidence || 0,
-      });
-    }
-
-    await logAction(user.id, "CREATE_CLIENT", { clientId, name });
-
-    return success({ id: clientId, name });
-  } catch (error: any) {
-    console.error("POST CLIENTS ERROR:", error);
-    return fail(error?.message || "Failed to create client", 500);
-  }
+  });
 }

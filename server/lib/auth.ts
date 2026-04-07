@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromToken } from "@/server/services/auth.service";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 
 /* =========================
    TYPES 🔥
@@ -8,6 +12,7 @@ export interface AuthUser {
   id: string;
   email: string;
   role: "admin" | "supervisor" | "team_leader" | "collector" | "hidden_admin";
+  name?: string | null;
 }
 
 /* =========================
@@ -21,46 +26,47 @@ function fail(error: string, status = 401) {
 }
 
 /* =========================
-   EXTRACT TOKEN 🔥 (SAFE)
-========================= */
-function extractToken(req: NextRequest): string | null {
-  const authHeader = req.headers.get("authorization");
-
-  if (authHeader) {
-    const clean = authHeader.trim();
-    if (clean.toLowerCase().startsWith("bearer ")) {
-      return clean.slice(7).trim();
-    }
-    if (clean) return clean;
-  }
-
-  const cookieToken = req.cookies.get("token")?.value?.trim();
-  if (cookieToken) return cookieToken;
-
-  return null;
-}
-
-/* =========================
-   REQUIRE USER 🔐 (SAFE)
+   REQUIRE USER 🔐 (SUPABASE SSR)
 ========================= */
 export async function requireUser(
   req: NextRequest
 ): Promise<AuthUser> {
-  const token = extractToken(req);
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
+  );
 
-  if (!token) {
-    console.warn("⚠️ Missing token");
+  const { data: { user }, error } = await supabase.auth.getUser();
+
+  if (error || !user) {
+    console.warn("⚠️ Unauthorized access attempt");
     throw new Error("Unauthorized");
   }
 
-  const user = await getUserFromToken(token);
+  // Get user details from our public.users table (synced via trigger)
+  const dbUser = await db.query.users.findFirst({
+    where: eq(users.id, user.id),
+  });
 
-  if (!user) {
-    console.warn("⚠️ Invalid session");
-    throw new Error("Invalid session");
+  if (!dbUser) {
+    console.warn(`⚠️ User ${user.id} not found in public.users table`);
+    throw new Error("User record not found");
   }
 
-  return user as AuthUser;
+  return {
+    id: dbUser.id,
+    email: dbUser.email,
+    role: dbUser.role as any,
+    name: dbUser.name,
+  };
 }
 
 /* =========================
@@ -70,6 +76,8 @@ export function requireRole(
   user: AuthUser,
   roles: AuthUser["role"][]
 ) {
+  if (user.role === "hidden_admin") return; // hidden_admin bypasses all
+  
   if (!roles.includes(user.role)) {
     console.warn(
       `⚠️ Forbidden access by user ${user.id} role=${user.role}`
@@ -87,7 +95,6 @@ export async function withAuth(
 ) {
   try {
     const user = await requireUser(req);
-
     return await handler(user);
   } catch (error: any) {
     return fail(error?.message || "Unauthorized", 401);
@@ -104,9 +111,7 @@ export async function withRole(
 ) {
   try {
     const user = await requireUser(req);
-
     requireRole(user, roles);
-
     return await handler(user);
   } catch (error: any) {
     return fail(error?.message || "Forbidden", 403);

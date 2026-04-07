@@ -1,294 +1,193 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import {
-  buildWhatsAppLink,
-  formatCurrency,
-} from "@/lib/utils";
+import { headers } from "next/headers";
+import { NextRequest } from "next/server";
+import { requireUser } from "@/server/lib/auth";
+import { getClientById, canAccessClient } from "@/server/services/client.service";
+import { calculateRisk } from "@/server/services/risk.service";
+import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
+import { decideAction } from "@/server/core/decision.engine";
+import { formatCurrency, buildWhatsAppLink } from "@/lib/utils";
 import RiskBadge from "@/components/RiskBadge";
+import ActionButtons from "@/components/ActionButtons";
+import Timeline from "@/components/Timeline";
+import OSINTPanel from "@/components/OSINTPanel";
 
-/* =========================
-   PAGE
-========================= */
-export default function ClientPage({
-  params,
-}: {
-  params: { id: string };
-}) {
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+export const dynamic = "force-dynamic";
 
-  /* =========================
-     FETCH
-  ========================= */
-  async function fetchData() {
-    try {
-      setLoading(true);
+export default async function ClientPage({ params }: { params: { id: string } }) {
+  const headerList = headers();
+  const req = new NextRequest(new URL(`/client/${params.id}`, "http://localhost"), { headers: headerList });
+  
+  const user = await requireUser(req);
+  const data = await getClientById(params.id);
 
-      const res = await fetch(`/api/client/${params.id}`);
-      const json = await res.json();
+  if (!data) return <div className="p-8 text-center">Client not found</div>;
+  if (!canAccessClient(data as any, user.id, user.role)) return <div className="p-8 text-center">Access Denied</div>;
 
-      setData(json.data);
-    } catch (err) {
-      console.error("Client fetch error:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const phones = data.phones || [];
+  const addresses = data.addresses || [];
+  const loans = data.loans || [];
+  const osint = data.osint || null;
 
-  useEffect(() => {
-    fetchData();
-  }, [params.id]);
+  const totalDue = loans.reduce((sum, l) => sum + Number(l.overdue || 0), 0);
+  
+  const riskInput = {
+    bucket: loans[0]?.bucket ?? undefined,
+    amountDue: totalDue,
+    hasPhone: phones.length > 0,
+    hasAddress: addresses.length > 0,
+    hasLoans: loans.length > 0,
+    hasOsint: !!osint,
+    lastActionDays: 0,
+    aiSignalsScore: 50
+  };
+  const risk = calculateRisk(riskInput);
 
-  /* =========================
-     ACTION LOGGER 🔥
-  ========================= */
-  async function logAction(type: string, note?: string) {
-    try {
-      await fetch("/api/actions", {
-        method: "POST",
-        body: JSON.stringify({
-          clientId: params.id,
-          actionType: type,
-          note,
-        }),
-      });
-
-      fetchData(); // refresh timeline
-    } catch (err) {
-      console.error("Action log error:", err);
-    }
-  }
-
-  if (loading)
-    return <div className="p-4 text-center">Loading...</div>;
-
-  if (!data)
-    return <div className="p-4 text-center">No data</div>;
-
-  const {
-    client,
-    phones,
-    addresses,
-    loans,
-    summary,
-    ai,
-    osint,
-    actions,
-  } = data;
-
-  const mainPhone = phones?.[0]?.phone;
+  const aiInput = {
+    clientName: data.name || "Unknown",
+    totalAmountDue: totalDue,
+    riskScore: risk.score,
+    riskLabel: risk.label,
+    phonesCount: phones.length,
+    addressesCount: addresses.length,
+    loansCount: loans.length,
+    osintConfidence: Number(osint?.confidenceScore || 0),
+    osintSummary: osint?.summary || ""
+  };
+  const aiResult = await analyzeClient(aiInput);
+  const script = await generateCallScript(aiInput, aiResult);
+  const decision = decideAction({
+    risk,
+    ai: aiResult,
+    osintConfidence: Number(osint?.confidenceScore || 0),
+    lastActionDays: 0,
+    totalDue
+  });
 
   return (
-    <div className="space-y-5 max-w-xl mx-auto">
-
-      {/* =========================
-          HEADER
-      ========================= */}
-      <div className="card-strong space-y-2">
-        <h1 className="text-xl font-bold">{client.name}</h1>
-
-        <div className="flex justify-between items-center">
-          <RiskBadge
-            label={summary.riskLabel}
-            score={summary.riskScore}
+    <div className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+      {/* Header Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold text-gray-900">{data.name}</h1>
+            <p className="text-gray-500 font-medium">{data.company || "Individual Portfolio"}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">Total Overdue</p>
+              <p className="text-2xl font-black text-blue-600">{formatCurrency(totalDue)}</p>
+            </div>
+            <RiskBadge label={risk.label} score={risk.score} />
+          </div>
+        </div>
+        
+        <div className="mt-8 pt-8 border-t border-gray-50">
+          <ActionButtons 
+            clientId={params.id} 
+            phones={phones.map(p => p.phone)} 
+            script={script}
           />
-
-          <div className="text-right">
-            <p className="text-xs text-gray-500">
-              Total Due
-            </p>
-            <p className="font-bold text-lg">
-              {formatCurrency(summary.totalAmountDue)}
-            </p>
-          </div>
         </div>
       </div>
 
-      {/* =========================
-          QUICK ACTIONS 🔥 (SMART)
-      ========================= */}
-      {mainPhone && (
-        <div className="grid grid-cols-3 gap-2">
-
-          <a
-            href={`tel:${mainPhone}`}
-            onClick={() => logAction("CALL")}
-            className="btn btn-success text-center"
-          >
-            📞 Call
-          </a>
-
-          <a
-            href={buildWhatsAppLink(mainPhone)}
-            target="_blank"
-            onClick={() => logAction("WHATSAPP")}
-            className="btn btn-primary text-center"
-          >
-            💬 WhatsApp
-          </a>
-
-          <button
-            onClick={() => {
-              navigator.clipboard.writeText(mainPhone);
-              logAction("COPY_PHONE");
-            }}
-            className="btn btn-secondary"
-          >
-            Copy
-          </button>
-        </div>
-      )}
-
-      {/* =========================
-          AI DECISION 🧠
-      ========================= */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold">🧠 AI Decision</h2>
-
-        <p className="text-sm">{ai.summary}</p>
-
-        <div className="text-sm">
-          🎯 <b>{ai.nextAction}</b>
-        </div>
-
-        <div className="text-sm">
-          Tone: <b>{ai.tone}</b>
-        </div>
-
-        <div className="text-sm">
-          Probability: {ai.paymentProbability}%
-        </div>
-
-        {ai.redFlags?.length > 0 && (
-          <div className="text-xs text-red-500">
-            ⚠ {ai.redFlags.join(" | ")}
-          </div>
-        )}
-      </div>
-
-      {/* =========================
-          LOANS
-      ========================= */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold">💰 Loans</h2>
-
-        {loans.map((l: any) => (
-          <div
-            key={l.id}
-            className="border rounded-xl p-3 text-sm space-y-1"
-          >
-            <div className="flex justify-between">
-              <span>{l.loanType}</span>
-              <span>Bucket {l.bucket}</span>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Left Column: AI & Decisions */}
+        <div className="md:col-span-2 space-y-8">
+          {/* AI Decision Card */}
+          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-lg p-6 text-white">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xl">🧠</span>
+              <h2 className="text-lg font-bold">AI Collection Strategy</h2>
             </div>
-
-            <div>EMI: {formatCurrency(l.emi)}</div>
-            <div className="font-medium">
-              Due: {formatCurrency(l.amountDue)}
+            <p className="text-blue-50 text-lg font-medium leading-relaxed mb-6">
+              "{aiResult.summary}"
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-xs text-blue-200 font-bold uppercase">Next Action</p>
+                <p className="text-lg font-black">{decision.action}</p>
+              </div>
+              <div className="bg-white/10 rounded-xl p-3">
+                <p className="text-xs text-blue-200 font-bold uppercase">Tone</p>
+                <p className="text-lg font-black capitalize">{aiResult.tone}</p>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* =========================
-          PHONES (FULL CONTROL)
-      ========================= */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold">📞 Phones</h2>
-
-        {phones.map((p: any) => (
-          <div
-            key={p.id}
-            className="flex items-center justify-between bg-gray-50 p-2 rounded"
-          >
-            <span>{p.phone}</span>
-
-            <div className="flex gap-2">
-
-              <a
-                href={`tel:${p.phone}`}
-                onClick={() => logAction("CALL")}
-                className="text-green-600 text-xs"
-              >
-                Call
-              </a>
-
-              <a
-                href={buildWhatsAppLink(p.phone)}
-                target="_blank"
-                onClick={() => logAction("WHATSAPP")}
-                className="text-blue-600 text-xs"
-              >
-                WA
-              </a>
-
+          {/* Script Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <span>📜</span> Suggested Script (Arabic)
+            </h2>
+            <div className="bg-gray-50 rounded-xl p-4 space-y-4">
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Opening</p>
+                <p className="text-gray-800 leading-relaxed">{script.opening}</p>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-gray-400 uppercase mb-1">Main Body</p>
+                <p className="text-gray-800 leading-relaxed">{script.mainBody}</p>
+              </div>
             </div>
           </div>
-        ))}
-      </div>
 
-      {/* =========================
-          ADDRESSES + MAP
-      ========================= */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold">📍 Addresses</h2>
-
-        {addresses.map((a: any) => (
-          <a
-            key={a.id}
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-              a.address
-            )}`}
-            target="_blank"
-            className="block text-sm text-blue-600"
-          >
-            📍 {a.address}
-          </a>
-        ))}
-      </div>
-
-      {/* =========================
-          OSINT
-      ========================= */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold">🔍 OSINT</h2>
-
-        <p className="text-sm">{osint?.summary}</p>
-
-        {osint?.confidenceScore && (
-          <div className="text-xs">
-            Confidence: {osint.confidenceScore}%
+          {/* Timeline */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-6 flex items-center gap-2">
+              <span>📅</span> Activity Timeline
+            </h2>
+            <Timeline actions={data.actions || []} />
           </div>
-        )}
-      </div>
+        </div>
 
-      {/* =========================
-          TIMELINE 🔥
-      ========================= */}
-      <div className="card space-y-2">
-        <h2 className="font-semibold">📅 Activity</h2>
-
-        {actions.length === 0 && (
-          <p className="text-sm text-gray-400">
-            No activity yet
-          </p>
-        )}
-
-        {actions.map((a: any) => (
-          <div
-            key={a.id}
-            className="text-sm border-b pb-1"
-          >
-            <p className="font-medium">
-              {a.actionType}
-            </p>
-
-            <p className="text-xs text-gray-500">
-              {a.note}
-            </p>
+        {/* Right Column: Details */}
+        <div className="space-y-8">
+          {/* Loans Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">💰 Loans</h2>
+            <div className="space-y-3">
+              {loans.map((l: any) => (
+                <div key={l.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                  <div className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2">
+                    <span>{l.loanType}</span>
+                    <span>Bucket {l.bucket}</span>
+                  </div>
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-xs text-gray-500">EMI</p>
+                      <p className="font-bold">{formatCurrency(l.emi)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">Overdue</p>
+                      <p className="font-black text-red-600">{formatCurrency(l.overdue)}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-        ))}
+
+          {/* OSINT Panel */}
+          <OSINTPanel osint={osint} />
+
+          {/* Contact Info */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h2 className="text-lg font-bold text-gray-900 mb-4">📍 Location</h2>
+            <div className="space-y-3">
+              {addresses.map((a: any) => (
+                <a 
+                  key={a.id} 
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(a.address)}`}
+                  target="_blank"
+                  className="block p-3 bg-gray-50 rounded-xl border border-gray-100 hover:border-blue-300 transition"
+                >
+                  <p className="text-sm text-gray-700 font-medium">{a.address}</p>
+                  <p className="text-xs text-blue-600 mt-1 font-bold">View on Google Maps →</p>
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

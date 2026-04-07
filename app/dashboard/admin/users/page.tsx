@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/api-secure";
 
 type UserRole = "admin" | "supervisor" | "team_leader" | "collector" | "hidden_admin";
 
@@ -33,8 +32,11 @@ export default function AdminUsersPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await apiGet("/api/admin/users");
-      const list: UserRow[] = res.data || [];
+      const res = await fetch("/api/admin/users");
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+      
+      const list: UserRow[] = json.data || [];
       setUsers(list);
 
       const roleMap: Record<string, UserRole> = {};
@@ -64,12 +66,19 @@ export default function AdminUsersPage() {
   async function createUser() {
     setError("");
     try {
-      await apiPost("/api/admin/users", {
-        email: newEmail,
-        name: newName,
-        password: newPassword,
-        role: newRole,
+      const res = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: newEmail,
+          name: newName,
+          password: newPassword,
+          role: newRole,
+        }),
       });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+
       setNewEmail("");
       setNewName("");
       setNewPassword("");
@@ -83,12 +92,19 @@ export default function AdminUsersPage() {
   async function updateUser(userId: string) {
     setError("");
     try {
-      await apiPatch("/api/admin/users", {
-        userId,
-        role: editRole[userId],
-        name: editName[userId],
-        ...(editPassword[userId] ? { password: editPassword[userId] } : {}),
+      const res = await fetch("/api/admin/users", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          role: editRole[userId],
+          name: editName[userId],
+          ...(editPassword[userId] ? { password: editPassword[userId] } : {}),
+        }),
       });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+
       setEditPassword((prev) => ({ ...prev, [userId]: "" }));
       await loadUsers();
     } catch (e: any) {
@@ -100,7 +116,14 @@ export default function AdminUsersPage() {
     if (!confirm("Delete this user?")) return;
     setError("");
     try {
-      await apiDelete("/api/admin/users", { userId });
+      const res = await fetch("/api/admin/users", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error);
+
       await loadUsers();
     } catch (e: any) {
       setError(e?.message || "Failed to delete user");
@@ -108,46 +131,62 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto">
+    <div className="space-y-8 max-w-5xl mx-auto py-8 px-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Admin Users</h1>
-        <button onClick={loadUsers} className="btn">Refresh</button>
+        <h1 className="text-3xl font-bold text-gray-900">👥 User Management</h1>
+        <button 
+          onClick={loadUsers} 
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-bold hover:bg-gray-200 transition"
+        >
+          Refresh List
+        </button>
       </div>
 
-      <div className="card">
-        <p className="text-sm text-gray-500">Hidden Admins: {hiddenAdmins}</p>
+      <div className="bg-blue-50 border border-blue-100 p-4 rounded-2xl">
+        <p className="text-sm font-bold text-blue-700 uppercase tracking-widest">
+          🛡️ Hidden Admins Active: {hiddenAdmins}
+        </p>
       </div>
 
-      <div className="card space-y-2">
-        <h2 className="font-semibold">Create User</h2>
-        <div className="grid md:grid-cols-4 gap-2">
-          <input className="input" placeholder="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
-          <input className="input" placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} />
-          <input className="input" placeholder="Password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-          <select className="input" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
+      <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Create New User</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none font-medium" placeholder="Email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} />
+          <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none font-medium" placeholder="Name" value={newName} onChange={(e) => setNewName(e.target.value)} />
+          <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none font-medium" placeholder="Password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <select className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none font-bold text-gray-700" value={newRole} onChange={(e) => setNewRole(e.target.value as UserRole)}>
             {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
           </select>
         </div>
-        <button onClick={createUser} className="btn btn-primary">Create</button>
+        <button onClick={createUser} className="w-full py-3 bg-blue-600 text-white font-black rounded-xl hover:bg-blue-700 transition uppercase tracking-widest text-xs">
+          + Create User Account
+        </button>
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && (
+        <div className="p-4 bg-red-50 text-red-700 rounded-2xl border border-red-100 font-medium text-sm">
+          ⚠️ {error}
+        </div>
+      )}
 
-      <div className="space-y-2">
-        {loading ? <div className="card">Loading...</div> : users.map((u) => (
-          <div key={u.id} className="card grid md:grid-cols-6 gap-2 items-center">
+      <div className="space-y-4">
+        <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-2">Active Directory</h2>
+        {loading ? (
+          <div className="p-12 text-center text-gray-400 font-medium">Loading user database...</div>
+        ) : users.map((u) => (
+          <div key={u.id} className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
             <div className="md:col-span-2">
-              <p className="font-semibold">{u.email}</p>
-              <p className="text-xs text-gray-500">{u.id}</p>
+              <p className="font-bold text-gray-900 truncate">{u.email}</p>
+              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest truncate">{u.id}</p>
             </div>
-            <input className="input" value={editName[u.id] || ""} onChange={(e) => setEditName((p) => ({ ...p, [u.id]: e.target.value }))} />
-            <select className="input" value={editRole[u.id] || u.role} onChange={(e) => setEditRole((p) => ({ ...p, [u.id]: e.target.value as UserRole }))}>
+            <input className="w-full p-2 bg-gray-50 border border-gray-100 rounded-lg outline-none text-sm font-medium" value={editName[u.id] || ""} onChange={(e) => setEditName((p) => ({ ...p, [u.id]: e.target.value }))} />
+            <select className="w-full p-2 bg-gray-50 border border-gray-100 rounded-lg outline-none text-xs font-black text-gray-700" value={editRole[u.id] || u.role} onChange={(e) => setEditRole((p) => ({ ...p, [u.id]: e.target.value as UserRole }))}>
               {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
-            <input className="input" type="password" placeholder="new password" value={editPassword[u.id] || ""} onChange={(e) => setEditPassword((p) => ({ ...p, [u.id]: e.target.value }))} />
+            <input className="w-full p-2 bg-gray-50 border border-gray-100 rounded-lg outline-none text-sm font-medium" type="password" placeholder="New Password" value={editPassword[u.id] || ""} onChange={(e) => setEditPassword((p) => ({ ...p, [u.id]: e.target.value }))} />
             <div className="flex gap-2">
-              <button className="btn btn-primary" onClick={() => updateUser(u.id)}>Save</button>
-              <button className="btn btn-danger" onClick={() => deleteUser(u.id)}>Delete</button>
+              <button className="flex-1 py-2 bg-blue-50 text-blue-600 font-black rounded-lg hover:bg-blue-100 transition text-[10px] uppercase tracking-widest" onClick={() => updateUser(u.id)}>Save</button>
+              <button className="flex-1 py-2 bg-red-50 text-red-600 font-black rounded-lg hover:bg-red-100 transition text-[10px] uppercase tracking-widest" onClick={() => deleteUser(u.id)}>Del</button>
             </div>
           </div>
         ))}

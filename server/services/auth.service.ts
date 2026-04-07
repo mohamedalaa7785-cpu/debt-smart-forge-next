@@ -1,149 +1,47 @@
 import { db } from "@/server/db";
-import { users, sessions } from "@/server/db/schema";
-import { eq, sql, lt } from "drizzle-orm";
-import bcrypt from "bcryptjs";
-import crypto from "crypto";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 /* =========================
-   CONFIG
+   GET USER FROM SUPABASE 🔐
 ========================= */
-const SESSION_DURATION_DAYS = 7;
-
-/* =========================
-   HELPERS
-========================= */
-function generateToken() {
-  return crypto.randomBytes(48).toString("hex");
-}
-
-function getExpiryDate() {
-  const d = new Date();
-  d.setDate(d.getDate() + SESSION_DURATION_DAYS);
-  return d;
-}
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-
-/* =========================
-   REGISTER 🔥
-========================= */
-export async function register(
-  email: string,
-  password: string,
-  role: "admin" | "supervisor" | "team_leader" | "collector" | "hidden_admin" = "collector"
-) {
-  const cleanEmail = normalizeEmail(email);
-
-  if (!cleanEmail || password.length < 6) {
-    throw new Error("Invalid input");
-  }
-
-  const existing = await db.query.users.findFirst({
-    where: eq(users.email, cleanEmail),
-  });
-
-  if (existing) {
-    throw new Error("Email already exists");
-  }
-
-  const hashed = await bcrypt.hash(password, 10);
-
-  const [user] = await db
-    .insert(users)
-    .values({
-      email: cleanEmail,
-      password: hashed,
-      role,
-    })
-    .returning();
-
-  return {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-  };
-}
-
-/* =========================
-   LOGIN 🔐
-========================= */
-export async function login(email: string, password: string) {
-  const cleanEmail = normalizeEmail(email);
-
-  const user = await db.query.users.findFirst({
-    where: eq(users.email, cleanEmail),
-  });
-
-  /* ❌ مهم: متقولش السبب الحقيقي */
-  if (!user) {
-    throw new Error("Invalid credentials");
-  }
-
-  const valid = await bcrypt.compare(password, user.password);
-
-  if (!valid) {
-    throw new Error("Invalid credentials");
-  }
-
-  const token = generateToken();
-
-  await db.insert(sessions).values({
-    userId: user.id,
-    token,
-    expiresAt: getExpiryDate(),
-  });
-
-  return {
-    token,
-    user: {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-    },
-  };
-}
-
-/* =========================
-   GET USER FROM TOKEN 🔥🔥🔥
-========================= */
-export async function getUserFromToken(token: string) {
+export async function getUserFromToken(token?: string) {
   try {
-    if (!token) return null;
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value;
+          },
+        },
+      }
+    );
 
-    const session = await db.query.sessions.findFirst({
-      where: eq(sessions.token, token),
-    });
+    const { data: { user }, error } = await supabase.auth.getUser(token);
 
-    if (!session) return null;
-
-    /* =========================
-       EXPIRED SESSION
-    ========================= */
-    if (
-      session.expiresAt &&
-      new Date(session.expiresAt) < new Date()
-    ) {
-      // 🔥 تنظيف تلقائي
-      await db
-        .delete(sessions)
-        .where(eq(sessions.token, token));
-
+    if (error || !user) {
       return null;
     }
 
-    const user = await db.query.users.findFirst({
-      where: eq(users.id, session.userId),
+    // Get user details from our public.users table
+    const dbUser = await db.query.users.findFirst({
+      where: eq(users.id, user.id),
     });
 
-    if (!user) return null;
+    if (!dbUser) {
+      return null;
+    }
 
     return {
-      id: user.id,
-      email: user.email,
-      role: user.role,
+      id: dbUser.id,
+      email: dbUser.email,
+      role: dbUser.role as any,
+      name: dbUser.name,
     };
   } catch (error) {
     console.error("getUserFromToken error:", error);
@@ -152,48 +50,32 @@ export async function getUserFromToken(token: string) {
 }
 
 /* =========================
-   LOGOUT 🔥
+   AUTH WRAPPERS (LEGACY COMPAT)
 ========================= */
-export async function logout(token: string) {
-  try {
-    if (!token) return false;
-
-    await db
-      .delete(sessions)
-      .where(eq(sessions.token, token));
-
-    return true;
-  } catch (error) {
-    console.error("logout error:", error);
-    return false;
-  }
+export async function login(email: string, password: string) {
+  // This should be handled by Supabase Auth on the client side
+  // but we keep the signature for compatibility if needed
+  throw new Error("Login should be handled via Supabase Auth client");
 }
 
-/* =========================
-   LOGOUT ALL DEVICES 🔥🔥🔥
-========================= */
-export async function logoutAll(userId: string) {
-  try {
-    await db
-      .delete(sessions)
-      .where(eq(sessions.userId, userId));
-
-    return true;
-  } catch (error) {
-    console.error("logoutAll error:", error);
-    return false;
-  }
-}
-
-/* =========================
-   CLEAN EXPIRED SESSIONS
-========================= */
-export async function cleanExpiredSessions() {
-  try {
-    await db
-      .delete(sessions)
-      .where(lt(sessions.expiresAt, sql`NOW()`));
-  } catch (error) {
-    console.error("clean sessions error:", error);
-  }
+export async function logout() {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options });
+        },
+        remove(name: string, options: any) {
+          cookieStore.set({ name, value: "", ...options });
+        },
+      },
+    }
+  );
+  await supabase.auth.signOut();
 }

@@ -1,265 +1,163 @@
-import { pgTable, uuid, text, timestamp, numeric, integer, boolean, jsonb, date } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, timestamp, boolean, decimal, integer, jsonb, uuid, pgEnum } from "drizzle-orm/pg-core";
 
 /* =========================
-   USERS 🔥
+   ENUMS
+========================= */
+export const roleEnum = pgEnum("user_role", ["admin", "supervisor", "team_leader", "collector", "hidden_admin"]);
+
+/* =========================
+   USERS 👤
 ========================= */
 export const users = pgTable("users", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name"),
-  email: text("email").unique().notNull(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
-  role: text("role").notNull(), // admin, supervisor, team_leader, collector, hidden_admin
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const sessions = pgTable("sessions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").references(() => users.id).notNull(),
-  token: text("token").unique().notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
+  name: text("name"),
+  role: text("role").default("collector"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 /* =========================
    CLIENTS 👥
 ========================= */
 export const clients = pgTable("clients", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  name: text("name"),
+  id: uuid("id").primaryKey().defaultRandom(),
   customerId: text("customer_id").unique(),
+  name: text("name").notNull(),
   email: text("email"),
   company: text("company"),
-  notes: text("notes"),
   imageUrl: text("image_url"),
+  notes: text("notes"),
   ownerId: uuid("owner_id").references(() => users.id),
-  portfolioType: text("portfolio_type"), // ACTIVE / WRITEOFF
-  domainType: text("domain_type"), // FIRST / THIRD / WRITEOFF
+  teamLeaderId: uuid("team_leader_id").references(() => users.id),
+  portfolioType: text("portfolio_type").default("ACTIVE"),
+  domainType: text("domain_type").default("FIRST"),
   branch: text("branch"),
-  cycleStartDate: date("cycle_start_date"),
-  cycleEndDate: date("cycle_end_date"),
-  createdAt: timestamp("created_at").defaultNow(),
+  cycleStartDate: timestamp("cycle_start_date", { withTimezone: true }),
+  cycleEndDate: timestamp("cycle_end_date", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const clientsRelations = relations(clients, ({ one, many }) => ({
-  owner: one(users, {
-    fields: [clients.ownerId],
-    references: [users.id],
-  }),
-  phones: many(clientPhones),
-  addresses: many(clientAddresses),
-  loans: many(clientLoans),
-  actions: many(clientActions),
-  osint: one(osintResults, {
-    fields: [clients.id],
-    references: [osintResults.clientId],
-  }),
-  images: many(clientImages),
-  callLogs: many(callLogs),
-  followups: many(followups),
-}));
-
 /* =========================
-   PHONES 📞
+   CLIENT PHONES 📞
 ========================= */
 export const clientPhones = pgTable("client_phones", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  phone: text("phone"),
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  phone: text("phone").notNull(),
+  isPrimary: boolean("is_primary").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const clientPhonesRelations = relations(clientPhones, ({ one }) => ({
-  client: one(clients, {
-    fields: [clientPhones.clientId],
-    references: [clients.id],
-  }),
-}));
-
 /* =========================
-   ADDRESSES 📍
+   CLIENT ADDRESSES 📍
 ========================= */
 export const clientAddresses = pgTable("client_addresses", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  address: text("address"),
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  address: text("address").notNull(),
   city: text("city"),
   area: text("area"),
-  lat: numeric("lat"),
-  lng: numeric("lng"),
+  lat: text("lat"),
+  lng: text("lng"),
   isPrimary: boolean("is_primary").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const clientAddressesRelations = relations(clientAddresses, ({ one }) => ({
-  client: one(clients, {
-    fields: [clientAddresses.clientId],
-    references: [clients.id],
-  }),
-}));
-
 /* =========================
-   LOANS 💰
+   CLIENT LOANS 💰
 ========================= */
 export const clientLoans = pgTable("client_loans", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  loanType: text("loan_type"),
-  emi: numeric("emi"),
-  balance: numeric("balance"),
-  overdue: numeric("overdue"),
-  bucket: integer("bucket"),
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  loanType: text("loan_type").notNull(),
+  emi: decimal("emi", { precision: 12, scale: 2 }),
+  balance: decimal("balance", { precision: 12, scale: 2 }),
+  overdue: decimal("overdue", { precision: 12, scale: 2 }),
+  bucket: integer("bucket").default(1),
+  amountDue: decimal("amount_due", { precision: 12, scale: 2 }),
   penaltyEnabled: boolean("penalty_enabled").default(false),
-  penaltyAmount: numeric("penalty_amount").default("0"),
-  amountDue: numeric("amount_due"),
+  penaltyAmount: decimal("penalty_amount", { precision: 12, scale: 2 }).default("0"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const clientLoansRelations = relations(clientLoans, ({ one }) => ({
-  client: one(clients, {
-    fields: [clientLoans.clientId],
-    references: [clients.id],
-  }),
-}));
-
 /* =========================
-   ACTIONS ⚡
+   CLIENT ACTIONS 📅
 ========================= */
 export const clientActions = pgTable("client_actions", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  userId: uuid("user_id").references(() => users.id),
-  actionType: text("action_type"), // CALL, VISIT, WHATSAPP, etc.
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  actionType: text("action_type").notNull(),
   note: text("note"),
   result: text("result"),
-  amountPaid: numeric("amount_paid"),
-  nextActionDate: date("next_action_date"),
-  createdAt: timestamp("created_at").defaultNow(),
+  amountPaid: decimal("amount_paid", { precision: 12, scale: 2 }),
+  nextActionDate: timestamp("next_action_date", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const clientActionsRelations = relations(clientActions, ({ one }) => ({
-  client: one(clients, {
-    fields: [clientActions.clientId],
-    references: [clients.id],
-  }),
-  user: one(users, {
-    fields: [clientActions.userId],
-    references: [users.id],
-  }),
-}));
-
 /* =========================
-   OSINT 🔍
+   OSINT RESULTS 🔍
 ========================= */
 export const osintResults = pgTable("osint_results", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull().unique(),
   social: jsonb("social"),
   workplace: jsonb("workplace"),
   webResults: jsonb("web_results"),
   imageResults: jsonb("image_results"),
   summary: text("summary"),
-  confidenceScore: numeric("confidence_score"),
+  confidenceScore: decimal("confidence_score", { precision: 5, scale: 2 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
-export const osintResultsRelations = relations(osintResults, ({ one }) => ({
-  client: one(clients, {
-    fields: [osintResults.clientId],
-    references: [clients.id],
-  }),
-}));
-
-/* =========================
-   IMAGES 🖼️
-========================= */
-export const clientImages = pgTable("client_images", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  url: text("url"),
-  publicId: text("public_id"),
-});
-
-export const clientImagesRelations = relations(clientImages, ({ one }) => ({
-  client: one(clients, {
-    fields: [clientImages.clientId],
-    references: [clients.id],
-  }),
-}));
-
-/* =========================
-   AUDIT LOGS 📋
-========================= */
-export const auditLogs = pgTable("audit_logs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").references(() => users.id),
-  action: text("action"),
-  details: jsonb("details"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const logs = pgTable("logs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").references(() => users.id),
-  action: text("action"),
-  meta: jsonb("meta"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-
-/* =========================
-   LEGAL CASES ⚖️
-========================= */
-export const legalCases = pgTable("legal_cases", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  caseNumber: text("case_number"),
-  caseType: text("case_type"),
-  status: text("status"),
-  lastUpdate: text("last_update"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const legalCasesRelations = relations(legalCases, ({ one }) => ({
-  client: one(clients, {
-    fields: [legalCases.clientId],
-    references: [clients.id],
-  }),
-}));
 
 /* =========================
    CALL LOGS 📞
 ========================= */
 export const callLogs = pgTable("call_logs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  userId: uuid("user_id").references(() => users.id),
-  callStatus: text("call_status"), // answered, no_answer, promised, refused, etc.
-  duration: integer("duration"), // in seconds
-  createdAt: timestamp("created_at").defaultNow(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  phone: text("phone").notNull(),
+  duration: integer("duration"),
+  recordingUrl: text("recording_url"),
+  summary: text("summary"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
-export const callLogsRelations = relations(callLogs, ({ one }) => ({
-  client: one(clients, {
-    fields: [callLogs.clientId],
-    references: [clients.id],
-  }),
-  user: one(users, {
-    fields: [callLogs.userId],
-    references: [users.id],
-  }),
-}));
 
 /* =========================
-   FOLLOW-UPS 📅
+   FOLLOWUPS ⏰
 ========================= */
 export const followups = pgTable("followups", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  clientId: uuid("client_id").references(() => clients.id),
-  scheduledFor: date("scheduled_for"),
-  note: text("note"),
-  createdAt: timestamp("created_at").defaultNow(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  userId: uuid("user_id").references(() => users.id).notNull(),
+  scheduledFor: timestamp("scheduled_for", { withTimezone: true }).notNull(),
+  completed: boolean("completed").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
-export const followupsRelations = relations(followups, ({ one }) => ({
-  client: one(clients, {
-    fields: [followups.clientId],
-    references: [clients.id],
-  }),
-}));
+/* =========================
+   SYSTEM LOGS 📝
+========================= */
+export const logs = pgTable("logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id),
+  action: text("action").notNull(),
+  meta: jsonb("meta"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/* =========================
+   LEGAL CASES ⚖️
+========================= */
+export const legalCases = pgTable("legal_cases", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id).notNull(),
+  caseNumber: text("case_number").unique(),
+  caseType: text("case_type"),
+  status: text("status").default("pending"),
+  lastUpdate: text("last_update"),
+  courtDate: timestamp("court_date", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});

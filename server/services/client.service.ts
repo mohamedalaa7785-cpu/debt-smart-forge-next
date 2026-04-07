@@ -11,14 +11,11 @@ export function calculateDomainInfo(domainType: string, cycleStartDateStr: strin
   let end = new Date(start);
 
   if (domainType === "FIRST") {
-    // Starts at beginning of month, duration 3 months
     end.setMonth(start.getMonth() + 3);
   } else if (domainType === "THIRD") {
-    // Starts at mid-month, ends at end of month
     start.setDate(15);
     end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
   } else if (domainType === "WRITEOFF") {
-    // Every 3 months, dynamic based on bank (defaulting to 3 months from start)
     end.setMonth(start.getMonth() + 3);
   }
 
@@ -34,21 +31,26 @@ export function calculateDomainInfo(domainType: string, cycleStartDateStr: strin
 ========================= */
 export async function getClientsForUser(userId: string, role: string) {
   try {
-    if (role === "hidden_admin" || role === "admin") {
-      // Adel / Admin: Sees ALL
+    if (role === "hidden_admin") {
+      // hidden_admin: full access
       return await db.select().from(clients).orderBy(desc(clients.createdAt));
+    } else if (role === "admin") {
+      // admin: sees only ACTIVE portfolio
+      return await db.select().from(clients)
+        .where(eq(clients.portfolioType, "ACTIVE"))
+        .orderBy(desc(clients.createdAt));
     } else if (role === "supervisor") {
-      // Loay / Supervisor: Sees ALL WRITEOFF
+      // supervisor: sees only WRITEOFF portfolio
       return await db.select().from(clients)
         .where(eq(clients.portfolioType, "WRITEOFF"))
         .orderBy(desc(clients.createdAt));
     } else if (role === "team_leader") {
-      // Team Leader: Sees team clients (e.g., all ACTIVE or those they own)
+      // team_leader: sees only clients assigned to team_leader_id
       return await db.select().from(clients)
-        .where(or(eq(clients.portfolioType, "ACTIVE"), eq(clients.ownerId, userId)))
+        .where(eq(clients.teamLeaderId, userId))
         .orderBy(desc(clients.createdAt));
     } else {
-      // Collector: Sees ONLY own clients
+      // collector: sees only clients owned by owner_id
       return await db.select().from(clients)
         .where(eq(clients.ownerId, userId))
         .orderBy(desc(clients.createdAt));
@@ -98,25 +100,24 @@ export async function getClientById(id: string) {
    ACCESS CONTROL 🔐
 ========================= */
 export function canAccessClient(
-  client: { ownerId: string | null; portfolioType: string | null } | null,
+  client: { ownerId: string | null; teamLeaderId: string | null; portfolioType: string | null } | null,
   userId: string,
   role: string
 ) {
   if (!client) return false;
 
-  if (role === "hidden_admin" || role === "admin") return true;
+  if (role === "hidden_admin") return true;
+  if (role === "admin") return client.portfolioType === "ACTIVE";
   if (role === "supervisor") return client.portfolioType === "WRITEOFF";
-  if (role === "team_leader") {
-    return client.portfolioType === "ACTIVE" || client.ownerId === userId;
-  }
-
+  if (role === "team_leader") return client.teamLeaderId === userId;
+  
   return client.ownerId === userId;
 }
 
 /* =========================
    CREATE CLIENT
 ========================= */
-export async function createClientFull(data: any, ownerId: string) {
+export async function createClientFull(data: any, creatorId: string) {
   try {
     return await db.transaction(async (tx) => {
       const [client] = await tx.insert(clients).values({
@@ -125,7 +126,8 @@ export async function createClientFull(data: any, ownerId: string) {
         email: data.email,
         company: data.company,
         notes: data.notes,
-        ownerId: ownerId,
+        ownerId: data.ownerId || creatorId, // Default to creator if not specified
+        teamLeaderId: data.teamLeaderId,
         portfolioType: data.portfolioType || "ACTIVE",
         domainType: data.domainType || "FIRST",
         branch: data.branch,

@@ -3,11 +3,12 @@ import { parseNumber } from "@/lib/utils";
 import { db } from "@/server/db";
 import { clientAddresses, clients, clientLoans } from "@/server/db/schema";
 import { eq, sql } from "drizzle-orm";
+import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
    CONFIG
 ========================= */
-const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+const API_KEY = getRequiredEnv("GOOGLE_MAPS_API_KEY");
 
 /* =========================
    TYPES
@@ -38,7 +39,6 @@ const cache = new Map<string, Coordinates>();
    SAFE REQUEST
 ========================= */
 async function safeRequest(params: any) {
-  if (!API_KEY) return null;
   try {
     const res = await axios.get(
       "https://maps.googleapis.com/maps/api/geocode/json",
@@ -79,13 +79,7 @@ export async function geocodeAddress(
     });
 
     if (!data || data.status !== "OK") {
-      // Mocking for Alexandria if API fails or key missing
-      const alexLat = 31.2001;
-      const alexLng = 29.9187;
-      return {
-        lat: alexLat + (Math.random() - 0.5) * 0.1,
-        lng: alexLng + (Math.random() - 0.5) * 0.1
-      };
+      return null;
     }
 
     const location = data.results?.[0]?.geometry?.location;

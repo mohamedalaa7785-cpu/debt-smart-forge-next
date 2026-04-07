@@ -128,6 +128,9 @@ export const clientActions = pgTable("client_actions", {
   userId: uuid("user_id").references(() => users.id),
   actionType: text("action_type"), // CALL, VISIT, WHATSAPP, etc.
   note: text("note"),
+  result: text("result"),
+  amountPaid: numeric("amount_paid"),
+  nextActionDate: date("next_action_date"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -198,6 +201,27 @@ export const logs = pgTable("logs", {
   meta: jsonb("meta"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+
+/* =========================
+   LEGAL CASES ⚖️
+========================= */
+export const legalCases = pgTable("legal_cases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  clientId: uuid("client_id").references(() => clients.id),
+  caseNumber: text("case_number"),
+  caseType: text("case_type"),
+  status: text("status"),
+  lastUpdate: text("last_update"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const legalCasesRelations = relations(legalCases, ({ one }) => ({
+  client: one(clients, {
+    fields: [legalCases.clientId],
+    references: [clients.id],
+  }),
+}));
 
 /* =========================
    CALL LOGS 📞

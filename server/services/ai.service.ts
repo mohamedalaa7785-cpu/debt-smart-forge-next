@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { safeJsonParse, parseNumber } from "@/lib/utils";
+import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
    OPENAI INIT (SAFE)
@@ -7,9 +8,9 @@ import { safeJsonParse, parseNumber } from "@/lib/utils";
 let openai: OpenAI | null = null;
 
 function getOpenAI() {
-  if (!openai && process.env.OPENAI_API_KEY) {
+  if (!openai) {
     openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: getRequiredEnv("OPENAI_API_KEY"),
     });
   }
   return openai;

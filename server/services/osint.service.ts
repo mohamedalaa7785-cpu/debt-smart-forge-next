@@ -2,7 +2,7 @@ import axios from "axios";
 import { uniqueArray } from "@/lib/utils";
 import { db } from "@/server/db";
 import { osintResults } from "@/server/db/schema";
-import { eq } from "drizzle-orm";
+import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
    CACHE (TTL SAFE)
@@ -35,12 +35,7 @@ export interface OSINTResult {
    SAFE GET KEY (LAZY)
 ========================= */
 function getApiKey() {
-  const key = process.env.SERPAPI_API_KEY;
-  if (!key) {
-    console.warn("⚠️ SERPAPI_API_KEY missing");
-    return null;
-  }
-  return key;
+  return getRequiredEnv("SERPAPI_API_KEY");
 }
 
 /* =========================
@@ -76,7 +71,6 @@ async function safeRequest(url: string, params: any) {
 ========================= */
 async function searchWeb(query: string) {
   const key = getApiKey();
-  if (!key) return [];
   const data = await safeRequest("https://serpapi.com/search.json", { q: query, api_key: key });
   return data?.organic_results?.slice(0, 5) || [];
 }
@@ -86,7 +80,7 @@ async function searchWeb(query: string) {
 ========================= */
 async function searchImage(imageUrl: string) {
   const key = getApiKey();
-  if (!key || !imageUrl) return [];
+  if (!imageUrl) return [];
   const data = await safeRequest("https://serpapi.com/search.json", { engine: "google_lens", url: imageUrl, api_key: key });
   return data?.visual_matches?.slice(0, 5) || [];
 }

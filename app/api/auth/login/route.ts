@@ -27,20 +27,18 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: CookieOptions) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name: string, options: CookieOptions) {
-            cookieStore.set({ name, value: "", ...options });
-          },
+          get: (name: string) => cookieStore.get(name)?.value,
+          set: (name: string, value: string, options: CookieOptions) =>
+            cookieStore.set({ name, value, ...options }),
+          remove: (name: string, options: CookieOptions) =>
+            cookieStore.set({ name, value: "", ...options }),
         },
       }
     );
 
-    // 🔐 LOGIN
+    /* =========================
+       LOGIN 🔐
+    ========================= */
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -53,8 +51,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // 🔥 IMPORTANT: تأكد إن session اتكتبت
+    /* =========================
+       SESSION CHECK
+    ========================= */
     const { data: sessionCheck } = await supabase.auth.getSession();
+
     if (!sessionCheck.session) {
       return NextResponse.json(
         { success: false, error: "Session not persisted" },
@@ -62,37 +63,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // 👤 مزامنة user مع public.users
-    let dbUser = await db.query.users.findFirst({
+    /* =========================
+       GET USER FROM DB 🔥
+    ========================= */
+    const dbUser = await db.query.users.findFirst({
       where: eq(users.id, data.user.id),
     });
 
-    // 🚨 لو مش موجود → اعمل upsert
+    // ❌ لو مش موجود → ده bug في sync
     if (!dbUser) {
-      const inserted = await db
-        .insert(users)
-        .values({
-          id: data.user.id,
-          email: data.user.email!,
-          role: "collector",
-          name: data.user.user_metadata?.name || null,
-        })
-        .returning();
-
-      dbUser = inserted[0];
+      return NextResponse.json(
+        {
+          success: false,
+          error: "User not synced with database",
+        },
+        { status: 500 }
+      );
     }
 
-    // 🧾 Log
-    if (dbUser) {
-      await logAction(dbUser.id, "LOGIN", { email });
-    }
+    /* =========================
+       LOG
+    ========================= */
+    await logAction(dbUser.id, "LOGIN", { email });
 
+    /* =========================
+       RESPONSE
+    ========================= */
     return NextResponse.json({
       success: true,
       data: {
         user: {
-          id: data.user.id,
-          email: data.user.email,
+          id: dbUser.id,
+          email: dbUser.email,
           role: dbUser.role,
           name: dbUser.name,
         },
@@ -108,4 +110,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-         }
+                                                  }

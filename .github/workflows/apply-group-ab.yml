@@ -1,0 +1,328 @@
+name: Auto Apply Group A+B Refactor (Decision/WhatsApp/Auth)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply-changes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Create branch and write files
+        env:
+          BRANCH: "bots/auto-refactor-group-ab-$(date +%s)"
+        run: |
+          set -e
+          echo "Creating branch $BRANCH"
+          git checkout -b "$BRANCH" || git checkout "$BRANCH"
+
+          mkdir -p server/services
+          mkdir -p lib
+          mkdir -p app/api/auth/register
+          mkdir -p app/api/auth/login
+
+          #################################################
+          # 1) server/services/decision.engine.ts -> re-export
+          #################################################
+          cat > server/services/decision.engine.ts <<'EOF'
+// server/services/decision.engine.ts
+// Thin re-export wrapper: canonical decision engine lives in server/core
+export * from "@/server/core/decision.engine";
+EOF
+
+          #################################################
+          # 2) server/services/whatsapp.service.ts -> wrapper
+          #################################################
+          cat > server/services/whatsapp.service.ts <<'EOF'
+// server/services/whatsapp.service.ts
+import { db } from "@/server/db";
+import { clientActions } from "@/server/db/schema";
+import { buildMessage, buildWhatsAppUrl } from "@/server/core/whatsapp.service";
+import { normalizePhone } from "@/lib/utils";
+
+/**
+ * WhatsAppMessage payload for sending and logging
+ */
+export interface WhatsAppMessage {
+  phone: string;
+  name?: string; // optional - used for template building
+  type?: "reminder" | "warning" | "legal";
+  message?: string; // optional explicit message
+  clientId: string;
+  userId: string;
+}
+
+/**
+ * sendWhatsAppMessage
+ * - normalizes phone
+ * - builds message if not provided
+ * - generates a wa.me link
+ * - logs a client action via Drizzle schema clientActions
+ */
+export async function sendWhatsAppMessage(payload: WhatsAppMessage) {
+  try {
+    if (!payload || !payload.phone || !payload.clientId || !payload.userId) {
+      return { success: false, error: "Missing required parameters" };
+    }
+
+    const normalized = normalizePhone(payload.phone);
+    if (!normalized) {
+      return { success: false, error: "Invalid phone number" };
+    }
+
+    const message = payload.message ?? buildMessage(payload.type ?? "reminder", payload.name ?? "Customer", undefined);
+    const link = buildWhatsAppUrl(normalized, message);
+
+    // Log action in DB using Drizzle table clientActions
+    await db.insert(clientActions).values({
+      clientId: payload.clientId,
+      userId: payload.userId,
+      actionType: "WHATSAPP",
+      note: message.slice(0, 2000),
+      createdAt: new Date().toISOString(),
+    });
+
+    return { success: true, link };
+  } catch (err) {
+    console.error("sendWhatsAppMessage error:", err);
+    return { success: false, error: (err as Error).message || "Unexpected error" };
+  }
+}
+EOF
+
+          #################################################
+          # 3) lib/api-secure.ts -> helper
+          #################################################
+          cat > lib/api-secure.ts <<'EOF'
+// lib/api-secure.ts
+import { requireAuth as _requireAuth } from "@/server/services/auth.service";
+
+/**
+ * requireUser - wrapper to get user context in Next.js route handler
+ */
+export async function requireUser(req: Request) {
+  return await _requireAuth(req);
+}
+
+/**
+ * jsonResponse - helper to return Response with JSON content-type
+ */
+export function jsonResponse(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+EOF
+
+          #################################################
+          # 4) server/services/auth.service.ts -> auth implementation (bcrypt + JWT + sessions)
+          #################################################
+          cat > server/services/auth.service.ts <<'EOF'
+// server/services/auth.service.ts
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import { db } from "@/server/db";
+import { users, sessions } from "@/server/db/schema";
+
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const BCRYPT_SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS || 10);
+
+function parseJwtExpiryToMs(exp: string) {
+  if (!exp) return 7 * 24 * 60 * 60 * 1000;
+  const last = exp.slice(-1);
+  const num = Number(exp.slice(0, -1));
+  if (last === "d") return num * 24 * 60 * 60 * 1000;
+  if (last === "h") return num * 60 * 60 * 1000;
+  if (last === "m") return num * 60 * 1000;
+  if (last === "s") return num * 1000;
+  return Number(exp) * 1000;
+}
+
+export async function hashPassword(password: string) {
+  return await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+}
+
+export async function comparePassword(plain: string, hash: string) {
+  return await bcrypt.compare(plain, hash);
+}
+
+export async function createJwtToken(payload: object) {
+  if (!JWT_SECRET) throw new Error("JWT_SECRET is not set");
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+export async function verifyJwtToken(token: string) {
+  if (!JWT_SECRET) throw new Error("JWT_SECRET is not set");
+  try {
+    return jwt.verify(token, JWT_SECRET) as any;
+  } catch (err) {
+    return null;
+  }
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string;
+  role?: string;
+}
+
+export async function createUser({
+  email,
+  password,
+  name,
+  role = "collector",
+}: {
+  email: string;
+  password: string;
+  name?: string;
+  role?: string;
+}) {
+  if (!email || !password) throw new Error("Email and password are required");
+  const existing = await db.select().from(users).where(users.email.eq(email)).limit(1);
+  if (existing.length > 0) throw new Error("Email already in use");
+  const hashed = await hashPassword(password);
+  const [created] = await db.insert(users).values({
+    name: name || null,
+    email,
+    password: hashed,
+    role,
+    createdAt: new Date().toISOString(),
+  }).returning();
+  return created as any;
+}
+
+export async function findUserByEmail(email: string) {
+  const rows = await db.select().from(users).where(users.email.eq(email)).limit(1);
+  return rows[0] as any;
+}
+
+export async function authenticate(email: string, password: string) {
+  const user = await findUserByEmail(email);
+  if (!user) return null;
+  const ok = await comparePassword(password, user.password);
+  if (!ok) return null;
+  const token = await createJwtToken({ sub: user.id, email: user.email, role: user.role });
+  await db.insert(sessions).values({
+    userId: user.id,
+    token,
+    expiresAt: new Date(Date.now() + parseJwtExpiryToMs(JWT_EXPIRES_IN)).toISOString(),
+    createdAt: new Date().toISOString(),
+  });
+  return { user: { id: user.id, email: user.email, name: user.name, role: user.role } as AuthUser, token };
+}
+
+export async function verifyToken(token: string) {
+  if (!token) return null;
+  const decoded = await verifyJwtToken(token);
+  if (!decoded || !decoded.sub) return null;
+  const rows = await db.select().from(users).where(users.id.eq(decoded.sub)).limit(1);
+  if (!rows || rows.length === 0) return null;
+  const user = rows[0];
+  return { id: user.id, email: user.email, role: user.role } as AuthUser;
+}
+
+export async function requireAuth(request: Request | { headers?: Headers | Record<string, string> }) {
+  let token: string | null = null;
+  try {
+    if ((request as any).headers && typeof (request as any).headers.get === "function") {
+      const auth = (request as any).headers.get("authorization") || (request as any).headers.get("Authorization");
+      if (auth && auth.startsWith("Bearer ")) token = auth.substring(7);
+    } else if ((request as any).headers && typeof (request as any).headers === "object") {
+      const h = (request as any).headers as Record<string, string>;
+      const auth = h["authorization"] || h["Authorization"];
+      if (auth && auth.startsWith("Bearer ")) token = auth.substring(7);
+    }
+  } catch (err) {}
+  if (!token) throw new Error("Unauthorized");
+  const verified = await verifyToken(token);
+  if (!verified) throw new Error("Unauthorized");
+  return verified;
+}
+EOF
+
+          #################################################
+          # 5) app/api/auth/register/route.ts
+          #################################################
+          cat > app/api/auth/register/route.ts <<'EOF'
+// app/api/auth/register/route.ts
+import { NextRequest } from "next/server";
+import { createUser } from "@/server/services/auth.service";
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { email, password, name } = body;
+    if (!email || !password) {
+      return new Response(JSON.stringify({ error: "email and password required" }), { status: 400 });
+    }
+
+    const user = await createUser({ email, password, name, role: body.role || "collector" });
+    return new Response(JSON.stringify({ success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } }), { status: 201 });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || "Failed" }), { status: 400 });
+  }
+}
+EOF
+
+          #################################################
+          # 6) app/api/auth/login/route.ts
+          #################################################
+          cat > app/api/auth/login/route.ts <<'EOF'
+// app/api/auth/login/route.ts
+import { NextRequest } from "next/server";
+import { authenticate } from "@/server/services/auth.service";
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { email, password } = body;
+    if (!email || !password) {
+      return new Response(JSON.stringify({ error: "email and password required" }), { status: 400 });
+    }
+
+    const result = await authenticate(email, password);
+    if (!result) {
+      return new Response(JSON.stringify({ error: "Invalid credentials" }), { status: 401 });
+    }
+
+    return new Response(JSON.stringify({ success: true, user: result.user, token: result.token }), { status: 200 });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || "Failed" }), { status: 500 });
+  }
+}
+EOF
+
+          # Stage and commit changes
+          git add server/services/decision.engine.ts server/services/whatsapp.service.ts lib/api-secure.ts server/services/auth.service.ts app/api/auth/register/route.ts app/api/auth/login/route.ts
+          git commit -m "chore(auto): Group A+B - consolidate decision engine & whatsapp wrapper; add auth service and auth routes" || echo "No changes to commit"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(auto): Group A+B - consolidate decision engine & whatsapp wrapper; add auth service and auth routes"
+          branch: ${{ github.head_ref || github.ref_name }}
+          title: "Auto: Group A+B refactor — decision export, whatsapp wrapper & auth service"
+          body: |
+            This PR was created automatically by a workflow to apply Group A+B refactor:
+            - server/services/decision.engine.ts -> re-export core decision engine
+            - server/services/whatsapp.service.ts -> wrapper using core templates & logging
+            - lib/api-secure.ts -> helper requireUser/jsonResponse
+            - server/services/auth.service.ts -> email/password auth, JWT sessions
+            - app/api/auth/register/route.ts -> new register route
+            - app/api/auth/login/route.ts -> new login route
+
+            Please review changes and merge when ready.
+          base: main

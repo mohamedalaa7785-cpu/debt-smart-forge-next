@@ -27,17 +27,18 @@ export const portfolioEnum = pgEnum("portfolio_type", ["ACTIVE", "WRITEOFF"]);
 export const domainEnum = pgEnum("domain_type", ["FIRST", "THIRD", "WRITEOFF"]);
 
 /* =========================
-   USERS 👤 (SUPABASE SYNC)
+   USERS 👤 (SYNC WITH SUPABASE)
 ========================= */
 export const users = pgTable("users", {
   id: uuid("id")
     .primaryKey()
-    .notNull(), // لازم يساوي auth.users.id
+    .notNull(), // لازم = auth.users.id
 
-  email: text("email").notNull(),
+  email: text("email").notNull().unique(),
+
   name: text("name"),
 
-  role: roleEnum("role").default("collector"),
+  role: roleEnum("role").default("collector").notNull(),
 
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -61,8 +62,8 @@ export const clients = pgTable("clients", {
   ownerId: uuid("owner_id").references(() => users.id),
   teamLeaderId: uuid("team_leader_id").references(() => users.id),
 
-  portfolioType: portfolioEnum("portfolio_type").default("ACTIVE"),
-  domainType: domainEnum("domain_type").default("FIRST"),
+  portfolioType: portfolioEnum("portfolio_type").default("ACTIVE").notNull(),
+  domainType: domainEnum("domain_type").default("FIRST").notNull(),
 
   branch: text("branch"),
 
@@ -83,7 +84,7 @@ export const clientPhones = pgTable("client_phones", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   phone: text("phone").notNull(),
@@ -101,7 +102,7 @@ export const clientAddresses = pgTable("client_addresses", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   address: text("address").notNull(),
@@ -125,7 +126,7 @@ export const clientLoans = pgTable("client_loans", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   loanType: text("loan_type").notNull(),
@@ -153,7 +154,7 @@ export const clientActions = pgTable("client_actions", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   userId: uuid("user_id")
@@ -180,7 +181,7 @@ export const osintResults = pgTable("osint_results", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull()
     .unique(),
 
@@ -208,7 +209,7 @@ export const callLogs = pgTable("call_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   userId: uuid("user_id")
@@ -233,7 +234,7 @@ export const followups = pgTable("followups", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   userId: uuid("user_id")
@@ -273,7 +274,7 @@ export const legalCases = pgTable("legal_cases", {
   id: uuid("id").primaryKey().defaultRandom(),
 
   clientId: uuid("client_id")
-    .references(() => clients.id)
+    .references(() => clients.id, { onDelete: "cascade" })
     .notNull(),
 
   caseNumber: text("case_number").unique(),

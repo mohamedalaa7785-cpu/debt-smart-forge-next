@@ -1,5 +1,7 @@
 // file: app/api/auth/login/route.ts
 
+export const dynamic = "force-dynamic";
+
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -8,10 +10,23 @@ import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
 
+/* =========================
+   ENV CHECK 🔥
+========================= */
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  throw new Error("Missing SUPABASE URL");
+}
+
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  throw new Error("Missing SUPABASE ANON KEY");
+}
+
+/* =========================
+   LOGIN API 🔐
+========================= */
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { email, password } = body;
+    const { email, password } = await request.json();
 
     if (!email || !password) {
       return NextResponse.json(
@@ -23,21 +38,23 @@ export async function POST(request: Request) {
     const cookieStore = cookies();
 
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       {
         cookies: {
           get: (name: string) => cookieStore.get(name)?.value,
-          set: (name: string, value: string, options: CookieOptions) =>
-            cookieStore.set({ name, value, ...options }),
-          remove: (name: string, options: CookieOptions) =>
-            cookieStore.set({ name, value: "", ...options }),
+          set: (name: string, value: string, options: CookieOptions) => {
+            cookieStore.set({ name, value, ...options });
+          },
+          remove: (name: string, options: CookieOptions) => {
+            cookieStore.set({ name, value: "", ...options });
+          },
         },
       }
     );
 
     /* =========================
-       LOGIN 🔐
+       LOGIN
     ========================= */
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -52,7 +69,7 @@ export async function POST(request: Request) {
     }
 
     /* =========================
-       SESSION CHECK
+       SESSION VALIDATION
     ========================= */
     const { data: sessionCheck } = await supabase.auth.getSession();
 
@@ -64,21 +81,25 @@ export async function POST(request: Request) {
     }
 
     /* =========================
-       GET USER FROM DB 🔥
+       GET USER FROM DB
     ========================= */
-    const dbUser = await db.query.users.findFirst({
+    let dbUser = await db.query.users.findFirst({
       where: eq(users.id, data.user.id),
     });
 
-    // ❌ لو مش موجود → ده bug في sync
+    /* 🔥 AUTO FIX SYNC بدل ما يكسر */
     if (!dbUser) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "User not synced with database",
-        },
-        { status: 500 }
-      );
+      const inserted = await db
+        .insert(users)
+        .values({
+          id: data.user.id,
+          email: data.user.email!,
+          role: "collector",
+          name: data.user.user_metadata?.name || null,
+        })
+        .returning();
+
+      dbUser = inserted[0];
     }
 
     /* =========================
@@ -110,4 +131,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-                                                  }
+}

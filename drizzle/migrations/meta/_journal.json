@@ -15,6 +15,13 @@
       "when": 1775535867834,
       "tag": "0001_simple_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775540000000,
+      "tag": "0002_add_client_actions_columns",
+      "breakpoints": true
     }
   ]
 }

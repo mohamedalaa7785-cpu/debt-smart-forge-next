@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getClientsForMap } from "@/server/services/map.service";
 import { APIResponse } from "@/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   try {
     const clients = await getClientsForMap();

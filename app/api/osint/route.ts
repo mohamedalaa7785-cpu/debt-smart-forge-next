@@ -63,13 +63,10 @@ async function saveResult(clientId: string, result: any) {
     const payload = {
       summary: result.summary || null,
       confidenceScore: result.confidence || 0,
-
-      socialLinks: JSON.stringify(result.socialLinks || []),
-      workplace: JSON.stringify(result.workplace || []),
-      webResults: JSON.stringify(result.webResults || []),
-      imageResults: JSON.stringify(result.imageMatches || []),
-
-      updatedAt: new Date(),
+      social: result.socialLinks || [],
+      workplace: result.workplace || [],
+      webResults: result.webResults || [],
+      imageResults: result.imageMatches || [],
     };
 
     if (existing) {
@@ -84,7 +81,6 @@ async function saveResult(clientId: string, result: any) {
     await db.insert(osintResults).values({
       clientId,
       ...payload,
-      createdAt: new Date(),
     });
   } catch (error) {
     console.error("SAVE OSINT ERROR:", error);
@@ -193,4 +189,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-     }
+}

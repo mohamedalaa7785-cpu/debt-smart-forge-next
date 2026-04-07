@@ -6,8 +6,8 @@ import {
   clientPhones,
   clientAddresses,
   clientLoans,
-  clientActions, // 🔥
-  osintResults,  // 🔥
+  clientActions,
+  osintResults,
   callLogs,
   followups,
 } from "@/server/db/schema";
@@ -21,8 +21,7 @@ function normalizePhone(phone: string) {
 }
 
 function dedupePhones(phones: string[]) {
-  const set = new Set(phones.map(normalizePhone));
-  return Array.from(set);
+  return Array.from(new Set(phones.map(normalizePhone)));
 }
 
 function dedupeAddresses(addresses: any[]) {
@@ -69,7 +68,7 @@ export async function createClientFull(data: any, creatorId: string) {
   if (!data.phones?.length) throw new Error("Phones required");
   if (!data.loans?.length) throw new Error("Loans required");
 
-  return await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     const ownerId = data.ownerId || creatorId;
 
     const phones = dedupePhones(data.phones);
@@ -91,10 +90,15 @@ export async function createClientFull(data: any, creatorId: string) {
       cycleEndDate: data.cycleEndDate || null,
     }).returning();
 
+    /* PHONES */
     await tx.insert(clientPhones).values(
-      phones.map((p) => ({ clientId: client.id, phone: p }))
+      phones.map((p) => ({
+        clientId: client.id,
+        phone: p,
+      }))
     );
 
+    /* ADDRESSES */
     if (addresses.length) {
       await tx.insert(clientAddresses).values(
         addresses.map((a) => ({
@@ -109,6 +113,7 @@ export async function createClientFull(data: any, creatorId: string) {
       );
     }
 
+    /* LOANS */
     await tx.insert(clientLoans).values(
       data.loans.map((l: any) => ({
         clientId: client.id,
@@ -136,24 +141,32 @@ export async function getClientsForUser(userId: string, role: string) {
   }
 
   if (role === "admin") {
-    return db.select().from(clients)
+    return db
+      .select()
+      .from(clients)
       .where(eq(clients.portfolioType, "ACTIVE"))
       .orderBy(desc(clients.createdAt));
   }
 
   if (role === "supervisor") {
-    return db.select().from(clients)
+    return db
+      .select()
+      .from(clients)
       .where(eq(clients.portfolioType, "WRITEOFF"))
       .orderBy(desc(clients.createdAt));
   }
 
   if (role === "team_leader") {
-    return db.select().from(clients)
+    return db
+      .select()
+      .from(clients)
       .where(eq(clients.teamLeaderId, userId))
       .orderBy(desc(clients.createdAt));
   }
 
-  return db.select().from(clients)
+  return db
+    .select()
+    .from(clients)
     .where(eq(clients.ownerId, userId))
     .orderBy(desc(clients.createdAt));
 }
@@ -162,46 +175,64 @@ export async function getClientsForUser(userId: string, role: string) {
    GET CLIENT FULL 🔥🔥🔥
 ========================= */
 export async function getClientById(id: string) {
-  const client = await db.query.clients.findFirst({
-    where: eq(clients.id, id),
-  });
+  try {
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, id),
+    });
 
-  if (!client) return null;
+    if (!client) return null;
 
-  const [phones, addresses, loans, actions, osint, calls, followupsData] =
-    await Promise.all([
+    const [
+      phones,
+      addresses,
+      loans,
+      actions,
+      osint,
+      calls,
+      followupsData,
+    ] = await Promise.all([
       db.select().from(clientPhones).where(eq(clientPhones.clientId, id)),
       db.select().from(clientAddresses).where(eq(clientAddresses.clientId, id)),
       db.select().from(clientLoans).where(eq(clientLoans.clientId, id)),
 
-      // 🔥 actions
-      db.select().from(clientActions)
+      db
+        .select()
+        .from(clientActions)
         .where(eq(clientActions.clientId, id))
         .orderBy(desc(clientActions.createdAt)),
 
-      // 🔥 osint
-      db.select().from(osintResults)
+      db
+        .select()
+        .from(osintResults)
         .where(eq(osintResults.clientId, id))
         .limit(1)
-        .then(res => res[0] || null),
+        .then((res) => res[0] ?? null),
 
-      db.select().from(callLogs)
+      db
+        .select()
+        .from(callLogs)
         .where(eq(callLogs.clientId, id))
         .orderBy(desc(callLogs.createdAt)),
 
-      db.select().from(followups)
+      db
+        .select()
+        .from(followups)
         .where(eq(followups.clientId, id))
         .orderBy(desc(followups.scheduledFor)),
     ]);
 
-  return {
-    ...client,
-    phones,
-    addresses,
-    loans,
-    actions, // ✅
-    osint,   // ✅
-    calls,
-    followups: followupsData,
-  };
-        }
+    return {
+      ...client,
+      phones: phones || [],
+      addresses: addresses || [],
+      loans: loans || [],
+      actions: actions || [],
+      osint: osint || null,
+      calls: calls || [],
+      followups: followupsData || [],
+    };
+  } catch (error) {
+    console.error("getClientById error:", error);
+    return null;
+  }
+      }

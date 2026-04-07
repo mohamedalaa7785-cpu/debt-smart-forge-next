@@ -13,16 +13,8 @@ import { logAction } from "@/server/services/log.service";
 /* =========================
    ENV CHECK 🔥
 ========================= */
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl) {
-  throw new Error("Missing SUPABASE URL");
-}
-
-if (!supabaseKey) {
-  throw new Error("Missing SUPABASE ANON KEY");
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 /* =========================
    LOGIN API 🔐
@@ -40,24 +32,17 @@ export async function POST(request: Request) {
 
     const cookieStore = cookies();
 
-    /* =========================
-       SUPABASE CLIENT
-    ========================= */
-    const supabase = createServerClient(
-      supabaseUrl as string,
-      supabaseKey as string,
-      {
-        cookies: {
-          get: (name: string) => cookieStore.get(name)?.value,
-          set: (name: string, value: string, options: CookieOptions) => {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove: (name: string, options: CookieOptions) => {
-            cookieStore.set({ name, value: "", ...options });
-          },
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: (name: string, value: string, options: CookieOptions) => {
+          cookieStore.set({ name, value, ...options });
         },
-      }
-    );
+        remove: (name: string, options: CookieOptions) => {
+          cookieStore.set({ name, value: "", ...options });
+        },
+      },
+    });
 
     /* =========================
        LOGIN
@@ -87,15 +72,14 @@ export async function POST(request: Request) {
     }
 
     /* =========================
-       GET USER FROM DB
+       SAFE USER SYNC 🔥🔥🔥
     ========================= */
     let dbUser = await db.query.users.findFirst({
       where: eq(users.id, data.user.id),
     });
 
-    /* 🔥 AUTO SYNC */
     if (!dbUser) {
-      const inserted = await db
+      await db
         .insert(users)
         .values({
           id: data.user.id,
@@ -103,9 +87,15 @@ export async function POST(request: Request) {
           role: "collector",
           name: data.user.user_metadata?.name || null,
         })
-        .returning();
+        .onConflictDoNothing(); // 🔥 الحل هنا
 
-      dbUser = inserted[0];
+      dbUser = await db.query.users.findFirst({
+        where: eq(users.id, data.user.id),
+      });
+    }
+
+    if (!dbUser) {
+      throw new Error("User sync failed");
     }
 
     /* =========================

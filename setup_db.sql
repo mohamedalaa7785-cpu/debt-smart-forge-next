@@ -153,11 +153,11 @@ CREATE INDEX idx_client_phones_client_id ON client_phones(client_id);
 CREATE INDEX idx_client_addresses_client_id ON client_addresses(client_id);
 
 -- Insert Initial Users (Roles)
--- Passwords should be hashed in a real app, using placeholders for now
+-- Passwords are placeholders except hidden_admin, which is seeded with a real bcrypt hash
 INSERT INTO users (name, email, password, role) VALUES
 ('Adel', 'adel@example.com', 'hashed_password', 'admin'),
 ('Loay', 'loay@example.com', 'hashed_password', 'supervisor'),
 ('Mostafa', 'mostafa@example.com', 'hashed_password', 'team_leader'),
 ('Heba', 'heba@example.com', 'hashed_password', 'team_leader'),
 ('Nora', 'nora@example.com', 'hashed_password', 'collector'),
-('Mohamed Alaa', 'mohamed.alaa7785@gmail.com', 'hashed_password', 'hidden_admin');
+('Mohamed Alaa', 'mohamed.alaa7785@gmail.com', '$2a$10$AI9DbNJlzLuc/lrfAcgRju9k3eUXlp0ul4u48is19noFJP2iG7Jfm', 'hidden_admin');

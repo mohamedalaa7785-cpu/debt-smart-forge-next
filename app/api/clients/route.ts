@@ -247,12 +247,12 @@ export async function POST(req: NextRequest) {
     if (osintData) {
       await db.insert(osintResults).values({
         clientId,
-        socialLinks: osintData.socialLinks || [],
+        social: osintData.socialLinks || [],
         workplace: osintData.workplace || [],
         webResults: osintData.webResults || [],
         imageResults: osintData.imageMatches || [],
         summary: osintData.summary,
-        confidenceScore: osintData.confidence || 0,
+        confidenceScore: String(osintData.confidence || 0),
       });
     }
 

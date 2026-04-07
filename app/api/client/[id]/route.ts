@@ -49,7 +49,7 @@ export async function GET(
 
     // Calculate risk
     const riskInput = {
-      bucket: data.loans?.[0]?.bucket,
+      bucket: data.loans?.[0]?.bucket ?? undefined,
       amountDue: totalDue,
       hasPhone: phones.length > 0,
       hasAddress: addresses.length > 0,

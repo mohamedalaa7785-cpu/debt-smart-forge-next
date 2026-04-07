@@ -73,7 +73,7 @@ export async function searchClients(query: string) {
     if (!map.has(row.id)) {
       map.set(row.id, {
         id: row.id,
-        name: row.name,
+        name: row.name || "Unknown Client",
         email: row.email ?? undefined,
         company: row.company ?? undefined,
         phones: [],

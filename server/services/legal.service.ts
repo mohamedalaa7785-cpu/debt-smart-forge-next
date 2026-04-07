@@ -1,5 +1,5 @@
 import { db } from "@/server/db";
-import { legalCases, clients } from "@/server/db/schema";
+import { legalCases } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
 /* =========================

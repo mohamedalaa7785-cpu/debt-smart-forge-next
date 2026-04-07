@@ -68,7 +68,7 @@ export async function GET() {
          AI ANALYSIS 🔥
       ========================= */
       const ai = await analyzeClient({
-        clientName: client.name,
+        clientName: client.name || "Unknown Client",
         totalAmountDue: totalDue,
         riskScore: actionScore,
         lastActionDays,

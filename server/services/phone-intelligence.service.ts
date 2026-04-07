@@ -26,7 +26,7 @@ export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligence
   const phoneRecord = await db.select().from(clientPhones).where(like(clientPhones.phone, `%${normalized}%`)).limit(1).then(res => res[0]);
   
   let linkedClient = undefined;
-  if (phoneRecord) {
+  if (phoneRecord?.clientId) {
     const client = await db.select().from(clients).where(eq(clients.id, phoneRecord.clientId)).limit(1).then(res => res[0]);
     if (client) {
       linkedClient = {
@@ -38,7 +38,9 @@ export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligence
   }
 
   // 3. Search OSINT (Mocked for now, in real app would call SerpAPI/Truecaller API)
-  const osintRecord = phoneRecord ? await db.select().from(osintResults).where(eq(osintResults.clientId, phoneRecord.clientId)).limit(1).then(res => res[0]) : null;
+  const osintRecord = phoneRecord?.clientId
+    ? await db.select().from(osintResults).where(eq(osintResults.clientId, phoneRecord.clientId)).limit(1).then(res => res[0])
+    : null;
 
   // 4. Return combined intelligence
   return {

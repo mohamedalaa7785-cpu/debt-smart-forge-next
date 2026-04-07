@@ -6,8 +6,6 @@ import {
   clientPhones,
   clientAddresses,
   clientLoans,
-  clientActions,
-  osintResults,
   callLogs,
   followups,
 } from "@/server/db/schema";
@@ -40,6 +38,37 @@ function toSafeNumber(val: any) {
 }
 
 /* =========================
+   ACCESS CONTROL 🔐
+========================= */
+export function canAccessClient(
+  client: {
+    ownerId: string | null;
+    teamLeaderId: string | null;
+    portfolioType: string | null;
+  } | null,
+  userId: string,
+  role: string
+) {
+  if (!client) return false;
+
+  if (role === "hidden_admin") return true;
+
+  if (role === "admin") {
+    return client.portfolioType === "ACTIVE";
+  }
+
+  if (role === "supervisor") {
+    return client.portfolioType === "WRITEOFF";
+  }
+
+  if (role === "team_leader") {
+    return client.teamLeaderId === userId;
+  }
+
+  return client.ownerId === userId;
+}
+
+/* =========================
    CREATE CLIENT 🔥🔥🔥
 ========================= */
 export async function createClientFull(data: any, creatorId: string) {
@@ -48,10 +77,8 @@ export async function createClientFull(data: any, creatorId: string) {
   if (!data.loans?.length) throw new Error("Loans required");
 
   return await db.transaction(async (tx) => {
-    // 🔥 enforce owner STRICT
     const ownerId = data.ownerId || creatorId;
 
-    // 🔥 normalize
     const phones = dedupePhones(data.phones);
     const addresses = data.addresses ? dedupeAddresses(data.addresses) : [];
 
@@ -74,9 +101,7 @@ export async function createClientFull(data: any, creatorId: string) {
       })
       .returning();
 
-    /* =========================
-       PHONES 🔥
-    ========================= */
+    /* PHONES */
     await tx.insert(clientPhones).values(
       phones.map((p) => ({
         clientId: client.id,
@@ -84,9 +109,7 @@ export async function createClientFull(data: any, creatorId: string) {
       }))
     );
 
-    /* =========================
-       ADDRESSES 🔥
-    ========================= */
+    /* ADDRESSES */
     if (addresses.length) {
       await tx.insert(clientAddresses).values(
         addresses.map((a) => ({
@@ -101,9 +124,7 @@ export async function createClientFull(data: any, creatorId: string) {
       );
     }
 
-    /* =========================
-       LOANS 🔥
-    ========================= */
+    /* LOANS */
     await tx.insert(clientLoans).values(
       data.loans.map((l: any) => ({
         clientId: client.id,
@@ -196,4 +217,4 @@ export async function getClientById(id: string) {
     calls,
     followups: followupsData,
   };
-           }
+      }

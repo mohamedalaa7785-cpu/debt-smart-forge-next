@@ -1,0 +1,138 @@
+name: Apply Group A Refactor
+
+on:
+  workflow_dispatch:
+
+jobs:
+  apply-group-a:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up git user
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Prepare branch and files
+        env:
+          BRANCH: "bots/auto-refactor-group-a-$(date +%s)"
+        run: |
+          set -e
+          echo "Creating branch $BRANCH"
+          git checkout -b "$BRANCH" || git checkout "$BRANCH"
+
+          # Ensure directories exist
+          mkdir -p server/services
+          mkdir -p lib
+
+          # 1) server/services/decision.engine.ts
+          cat > server/services/decision.engine.ts <<'EOF'
+// server/services/decision.engine.ts
+// Thin re-export wrapper: canonical decision engine lives in server/core
+export * from "@/server/core/decision.engine";
+EOF
+
+          # 2) server/services/whatsapp.service.ts
+          cat > server/services/whatsapp.service.ts <<'EOF'
+// server/services/whatsapp.service.ts
+import { db } from "@/server/db";
+import { clientActions } from "@/server/db/schema";
+import { buildMessage, buildWhatsAppUrl } from "@/server/core/whatsapp.service";
+import { normalizePhone } from "@/lib/utils";
+
+/**
+ * WhatsAppMessage payload for sending and logging
+ */
+export interface WhatsAppMessage {
+  phone: string;
+  name?: string; // optional - used for template building
+  type?: "reminder" | "warning" | "legal";
+  message?: string; // optional explicit message
+  clientId: string;
+  userId: string;
+}
+
+/**
+ * sendWhatsAppMessage
+ * - normalizes phone
+ * - builds message if not provided
+ * - generates a wa.me link
+ * - logs a client action via Drizzle schema clientActions
+ */
+export async function sendWhatsAppMessage(payload: WhatsAppMessage) {
+  try {
+    if (!payload || !payload.phone || !payload.clientId || !payload.userId) {
+      return { success: false, error: "Missing required parameters" };
+    }
+
+    const normalized = normalizePhone(payload.phone);
+    if (!normalized) {
+      return { success: false, error: "Invalid phone number" };
+    }
+
+    const message = payload.message ?? buildMessage(payload.type ?? "reminder", payload.name ?? "Customer", undefined);
+    const link = buildWhatsAppUrl(normalized, message);
+
+    // Log action in DB using Drizzle table clientActions
+    await db.insert(clientActions).values({
+      clientId: payload.clientId,
+      userId: payload.userId,
+      actionType: "WHATSAPP",
+      note: message.slice(0, 2000),
+      createdAt: new Date().toISOString(),
+    });
+
+    return { success: true, link };
+  } catch (err) {
+    console.error("sendWhatsAppMessage error:", err);
+    return { success: false, error: (err as Error).message || "Unexpected error" };
+  }
+}
+EOF
+
+          # 3) lib/api-secure.ts
+          cat > lib/api-secure.ts <<'EOF'
+// lib/api-secure.ts
+import { requireAuth as _requireAuth } from "@/server/services/auth.service";
+
+/**
+ * requireUser - wrapper to get user context in Next.js route handler
+ */
+export async function requireUser(req: Request) {
+  return await _requireAuth(req);
+}
+
+/**
+ * jsonResponse - helper to return Response with JSON content-type
+ */
+export function jsonResponse(body: any, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+EOF
+
+          # git add / commit
+          git add server/services/decision.engine.ts server/services/whatsapp.service.ts lib/api-secure.ts
+          git commit -m "chore(refactor): Group A - consolidate decision engine; whatsapp wrapper; add api-secure helper" || echo "No changes to commit"
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore(refactor): Group A - consolidate decision engine; whatsapp wrapper; add api-secure helper"
+          branch: ${{ github.head_ref || github.ref_name }}
+          title: "Auto: Group A refactor — consolidate decision engine & whatsapp wrapper"
+          body: |
+            This PR was created automatically by a workflow to apply Group A refactor changes:
+            - server/services/decision.engine.ts -> re-export core decision engine
+            - server/services/whatsapp.service.ts -> wrapper using core templates & logging
+            - lib/api-secure.ts -> helper requireUser/jsonResponse
+
+            Please review changes and merge when ready.
+          base: main

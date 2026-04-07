@@ -1,3 +1,7 @@
+// file: app/api/client/[id]/route.ts
+
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getClientById, canAccessClient } from "@/server/services/client.service";
@@ -8,31 +12,57 @@ import { logAction } from "@/server/services/log.service";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   return withAuth(req, async (user) => {
     try {
-      const clientId = params.id;
+      const clientId = context.params?.id;
+
+      if (!clientId) {
+        return NextResponse.json(
+          { success: false, error: "Client ID missing" },
+          { status: 400 }
+        );
+      }
+
       const data = await getClientById(clientId);
 
       if (!data) {
-        return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
+        return NextResponse.json(
+          { success: false, error: "Client not found" },
+          { status: 404 }
+        );
       }
 
       if (!canAccessClient(data as any, user.id, user.role)) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        return NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 }
+        );
       }
 
-      const phones = data.phones || [];
-      const addresses = data.addresses || [];
-      const loans = data.loans || [];
-      const osint = data.osint || null;
+      /* =========================
+         SAFE DATA
+      ========================= */
+      const phones = data.phones ?? [];
+      const addresses = data.addresses ?? [];
+      const loans = data.loans ?? [];
+      const osint = data.osint ?? null;
+      const actions = data.actions ?? [];
 
-      // Calculate total due
-      const totalDue = loans.reduce((sum: number, l: any) => sum + (parseFloat(l.amountDue as any) || 0), 0);
+      /* =========================
+         TOTAL DUE
+      ========================= */
+      const totalDue = loans.reduce(
+        (sum: number, l: any) =>
+          sum + (parseFloat(l.amountDue as any) || 0),
+        0
+      );
 
-      // Calculate risk
-      const riskInput = {
+      /* =========================
+         RISK
+      ========================= */
+      const risk = calculateRisk({
         bucket: loans[0]?.bucket ?? undefined,
         amountDue: totalDue,
         hasPhone: phones.length > 0,
@@ -40,42 +70,57 @@ export async function GET(
         hasLoans: loans.length > 0,
         hasOsint: !!osint,
         lastActionDays: 0,
-        aiSignalsScore: 50
-      };
-      const risk = calculateRisk(riskInput);
+        aiSignalsScore: 50,
+      });
 
-      // AI Analysis
-      const aiInput = {
-        clientName: data.name || "Unknown",
-        totalAmountDue: totalDue,
-        riskScore: risk.score,
-        riskLabel: risk.label,
-        phonesCount: phones.length,
-        addressesCount: addresses.length,
-        loansCount: loans.length,
-        osintConfidence: Number(osint?.confidenceScore || 0),
-        osintSummary: osint?.summary || ""
-      };
-      const aiResult = await analyzeClient(aiInput);
+      /* =========================
+         AI SAFE WRAPPER 🔥
+      ========================= */
+      let aiResult: any = null;
+      let script: any = null;
 
-      // Generate script
-      const script = await generateCallScript(aiInput, aiResult);
+      try {
+        const aiInput = {
+          clientName: data.name || "Unknown",
+          totalAmountDue: totalDue,
+          riskScore: risk.score,
+          riskLabel: risk.label,
+          phonesCount: phones.length,
+          addressesCount: addresses.length,
+          loansCount: loans.length,
+          osintConfidence: Number(osint?.confidenceScore || 0),
+          osintSummary: osint?.summary || "",
+        };
 
-      // Decision engine
+        aiResult = await analyzeClient(aiInput);
+        script = await generateCallScript(aiInput, aiResult);
+      } catch (err) {
+        console.error("AI ERROR:", err);
+      }
+
+      /* =========================
+         DECISION ENGINE
+      ========================= */
       const decision = decideAction({
         risk,
         ai: aiResult,
         osintConfidence: Number(osint?.confidenceScore || 0),
         lastActionDays: 0,
-        totalDue
+        totalDue,
       });
 
+      /* =========================
+         LOG
+      ========================= */
       await logAction(user.id, "VIEW_CLIENT", {
         clientId,
         risk: risk.label,
         nextAction: decision.action,
       });
 
+      /* =========================
+         RESPONSE
+      ========================= */
       return NextResponse.json({
         success: true,
         data: {
@@ -83,18 +128,25 @@ export async function GET(
           phones,
           addresses,
           loans,
-          actions: data.actions || [],
+          actions,
           osint,
           risk,
           ai: aiResult,
           script,
           decision,
-          totalDue
-        }
+          totalDue,
+        },
       });
     } catch (error: any) {
       console.error("GET CLIENT ERROR:", error);
-      return NextResponse.json({ success: false, error: "Internal Server Error" }, { status: 500 });
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message || "Internal Server Error",
+        },
+        { status: 500 }
+      );
     }
   });
-}
+          }

@@ -1,12 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { runOSINT } from "@/server/services/osint.service";
 import { db } from "@/server/db";
 import { osintResults } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { requireUser } from "@/server/lib/auth";
+import { canAccessClient, getClientById } from "@/server/services/client.service";
 
-/* =========================
-   RATE LIMIT 🔥
-========================= */
 const rateMap = new Map<string, { count: number; time: number }>();
 
 function rateLimit(key: string, limit = 10) {
@@ -27,9 +26,6 @@ function rateLimit(key: string, limit = 10) {
   }
 }
 
-/* =========================
-   VALIDATION
-========================= */
 function validate(body: any) {
   if (!body.name && !body.phone) {
     return "Name or phone required";
@@ -37,9 +33,6 @@ function validate(body: any) {
   return null;
 }
 
-/* =========================
-   SANITIZE
-========================= */
 function sanitize(body: any) {
   return {
     clientId: body.clientId || null,
@@ -51,9 +44,6 @@ function sanitize(body: any) {
   };
 }
 
-/* =========================
-   SAVE RESULT 🔥 (FIXED)
-========================= */
 async function saveResult(clientId: string, result: any) {
   try {
     const existing = await db.query.osintResults.findFirst({
@@ -70,57 +60,38 @@ async function saveResult(clientId: string, result: any) {
     };
 
     if (existing) {
-      await db
-        .update(osintResults)
-        .set(payload)
-        .where(eq(osintResults.clientId, clientId));
-
+      await db.update(osintResults).set(payload).where(eq(osintResults.clientId, clientId));
       return;
     }
 
-    await db.insert(osintResults).values({
-      clientId,
-      ...payload,
-    });
+    await db.insert(osintResults).values({ clientId, ...payload });
   } catch (error) {
     console.error("SAVE OSINT ERROR:", error);
   }
 }
 
-/* =========================
-   POST OSINT 🔥
-========================= */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
-    /* =========================
-       RATE LIMIT
-    ========================= */
-    const ip =
-      req.headers.get("x-forwarded-for") ||
-      req.headers.get("x-real-ip") ||
-      "unknown";
-
-    rateLimit(ip);
+    const user = await requireUser(req);
+    const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
+    rateLimit(`${user.id}:${ip}`);
 
     const body = await req.json();
-
-    /* =========================
-       VALIDATION
-    ========================= */
     const error = validate(body);
 
     if (error) {
-      return NextResponse.json(
-        { success: false, error },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error }, { status: 400 });
     }
 
     const clean = sanitize(body);
 
-    /* =========================
-       RUN OSINT
-    ========================= */
+    if (clean.clientId) {
+      const client = await getClientById(clean.clientId);
+      if (!client || !canAccessClient(client, user.id, user.role)) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+      }
+    }
+
     let result = null;
 
     try {
@@ -135,33 +106,20 @@ export async function POST(req: Request) {
       console.error("OSINT ENGINE ERROR:", err);
     }
 
-    /* =========================
-       FALLBACK
-    ========================= */
     if (!result) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "OSINT temporarily unavailable",
-        },
+        { success: false, error: "OSINT temporarily unavailable" },
         { status: 503 }
       );
     }
 
-    /* =========================
-       SAVE TO DB
-    ========================= */
     if (clean.clientId) {
       await saveResult(clean.clientId, result);
     }
 
-    /* =========================
-       RESPONSE
-    ========================= */
     return NextResponse.json({
       success: true,
       data: result,
-
       meta: {
         confidence: result.confidence || 0,
         hasImage: !!clean.imageUrl,
@@ -169,24 +127,14 @@ export async function POST(req: Request) {
     });
   } catch (error: any) {
     console.error("OSINT ERROR:", error);
-
-    /* 🔥 RATE LIMIT ERROR */
     if (error.message === "Too many requests") {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Too many requests",
-        },
-        { status: 429 }
-      );
+      return NextResponse.json({ success: false, error: "Too many requests" }, { status: 429 });
     }
 
+    const status = error?.message === "Unauthorized" || error?.message === "Invalid session" ? 401 : 500;
     return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "OSINT failed",
-      },
-      { status: 500 }
+      { success: false, error: error.message || "OSINT failed" },
+      { status }
     );
   }
 }

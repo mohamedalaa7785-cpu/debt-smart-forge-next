@@ -1,16 +1,23 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
-import { clients, clientLoans } from "@/server/db/schema";
+import { clientLoans } from "@/server/db/schema";
+import { inArray } from "drizzle-orm";
+import { requireUser } from "@/server/lib/auth";
+import { getClientsForUser } from "@/server/services/client.service";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
-    const allClients = await db.select().from(clients);
-    const allLoans = await db.select().from(clientLoans);
+    const user = await requireUser(req);
+    const scopedClients = await getClientsForUser(user.id, user.role);
+    const clientIds = scopedClients.map((c: any) => c.id);
 
-    const totalClients = allClients.length;
+    const scopedLoans = clientIds.length
+      ? await db.select().from(clientLoans).where(inArray(clientLoans.clientId, clientIds))
+      : [];
 
-    const totalBalance = allLoans.reduce(
+    const totalClients = scopedClients.length;
+    const totalBalance = scopedLoans.reduce(
       (sum: number, l: any) => sum + Number(l.balance || 0),
       0
     );
@@ -22,10 +29,10 @@ export async function GET() {
         totalBalance,
       },
     });
-  } catch {
+  } catch (error: any) {
     return NextResponse.json(
-      { success: false },
-      { status: 500 }
+      { success: false, error: error?.message || "Unauthorized" },
+      { status: 401 }
     );
   }
 }

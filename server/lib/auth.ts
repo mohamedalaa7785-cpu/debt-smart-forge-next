@@ -26,15 +26,18 @@ function fail(error: string, status = 401) {
 function extractToken(req: NextRequest): string | null {
   const authHeader = req.headers.get("authorization");
 
-  if (!authHeader) return null;
-
-  const clean = authHeader.trim();
-
-  if (clean.toLowerCase().startsWith("bearer ")) {
-    return clean.slice(7).trim();
+  if (authHeader) {
+    const clean = authHeader.trim();
+    if (clean.toLowerCase().startsWith("bearer ")) {
+      return clean.slice(7).trim();
+    }
+    if (clean) return clean;
   }
 
-  return clean;
+  const cookieToken = req.cookies.get("token")?.value?.trim();
+  if (cookieToken) return cookieToken;
+
+  return null;
 }
 
 /* =========================

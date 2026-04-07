@@ -6,6 +6,7 @@ import {
   clientPhones,
   clientAddresses,
   clientLoans,
+  clientActions, // 🔥 مهم
   callLogs,
   followups,
 } from "@/server/db/schema";
@@ -53,17 +54,9 @@ export function canAccessClient(
 
   if (role === "hidden_admin") return true;
 
-  if (role === "admin") {
-    return client.portfolioType === "ACTIVE";
-  }
-
-  if (role === "supervisor") {
-    return client.portfolioType === "WRITEOFF";
-  }
-
-  if (role === "team_leader") {
-    return client.teamLeaderId === userId;
-  }
+  if (role === "admin") return client.portfolioType === "ACTIVE";
+  if (role === "supervisor") return client.portfolioType === "WRITEOFF";
+  if (role === "team_leader") return client.teamLeaderId === userId;
 
   return client.ownerId === userId;
 }
@@ -101,7 +94,6 @@ export async function createClientFull(data: any, creatorId: string) {
       })
       .returning();
 
-    /* PHONES */
     await tx.insert(clientPhones).values(
       phones.map((p) => ({
         clientId: client.id,
@@ -109,7 +101,6 @@ export async function createClientFull(data: any, creatorId: string) {
       }))
     );
 
-    /* ADDRESSES */
     if (addresses.length) {
       await tx.insert(clientAddresses).values(
         addresses.map((a) => ({
@@ -124,7 +115,6 @@ export async function createClientFull(data: any, creatorId: string) {
       );
     }
 
-    /* LOANS */
     await tx.insert(clientLoans).values(
       data.loans.map((l: any) => ({
         clientId: client.id,
@@ -192,11 +182,16 @@ export async function getClientById(id: string) {
 
   if (!client) return null;
 
-  const [phones, addresses, loans, calls, followupsData] =
+  const [phones, addresses, loans, actions, calls, followupsData] =
     await Promise.all([
       db.select().from(clientPhones).where(eq(clientPhones.clientId, id)),
       db.select().from(clientAddresses).where(eq(clientAddresses.clientId, id)),
       db.select().from(clientLoans).where(eq(clientLoans.clientId, id)),
+      db
+        .select()
+        .from(clientActions)
+        .where(eq(clientActions.clientId, id))
+        .orderBy(desc(clientActions.createdAt)),
       db
         .select()
         .from(callLogs)
@@ -214,7 +209,8 @@ export async function getClientById(id: string) {
     phones,
     addresses,
     loans,
+    actions, // 🔥 fix
     calls,
     followups: followupsData,
   };
-      }
+          }

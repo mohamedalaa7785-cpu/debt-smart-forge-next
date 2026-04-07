@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
-import { clients, clientPhones, clientAddresses, clientLoans, osintResults } from "@/server/db/schema";
-import { desc } from "drizzle-orm";
+import { osintResults } from "@/server/db/schema";
 
 import { requireUser } from "@/server/lib/auth";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
+import { createClientFull, getClientsForUser } from "@/server/services/client.service";
 
 /* =========================
    RATE LIMIT 🔥
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     ========================= */
     const { page, limit, offset } = getPagination(req);
 
-    const cacheKey = `${page}-${limit}`;
+    const cacheKey = `${user.id}-${user.role}-${page}-${limit}`;
 
     /* =========================
        CACHE HIT
@@ -102,25 +102,19 @@ export async function GET(req: NextRequest) {
     /* =========================
        FETCH DATA
     ========================= */
-    let data: any[] = [];
-
-    try {
-      data = await db
-        .select({
-          id: clients.id,
-          name: clients.name,
-          email: clients.email,
-          company: clients.company,
-          createdAt: clients.createdAt,
-        })
-        .from(clients)
-        .orderBy(desc(clients.createdAt))
-        .limit(limit + 1) // 🔥 مهم
-        .offset(offset);
-    } catch (err) {
-      console.error("DB ERROR:", err);
-      return fail("Database error", 500);
-    }
+    const scopedClients = await getClientsForUser(user.id, user.role);
+    const sortedClients = scopedClients
+      .slice()
+      .sort((a, b) => (new Date(b.createdAt as any).getTime() - new Date(a.createdAt as any).getTime()));
+    const data = sortedClients
+      .slice(offset, offset + limit + 1)
+      .map((client) => ({
+        id: client.id,
+        name: client.name,
+        email: client.email,
+        company: client.company,
+        createdAt: client.createdAt,
+      }));
 
     /* =========================
        HAS MORE FIX 🔥
@@ -188,60 +182,19 @@ export async function POST(req: NextRequest) {
       return fail("At least one loan is required");
     }
 
-    // Create client
-    const clientResult = await db
-      .insert(clients)
-      .values({
+    const newClient = await createClientFull(
+      {
         name,
         email: email || null,
         company: company || null,
         imageUrl: imageUrl || null,
-      })
-      .returning();
-
-    const clientId = clientResult[0].id;
-
-    // Create phones
-    if (phones && phones.length > 0) {
-      await db.insert(clientPhones).values(
-        phones.map((phone: string) => ({
-          clientId,
-          phone,
-        }))
-      );
-    }
-
-    // Create addresses
-    if (addresses && addresses.length > 0) {
-      await db.insert(clientAddresses).values(
-        addresses.map((address: any, index: number) => ({
-          clientId,
-          address: address.address || address,
-          city: address.city,
-          area: address.area,
-          lat: address.lat?.toString(),
-          lng: address.lng?.toString(),
-          isPrimary: index === 0,
-        }))
-      );
-    }
-
-    // Create loans
-    if (loans && loans.length > 0) {
-      await db.insert(clientLoans).values(
-        loans.map((loan: any) => ({
-          clientId,
-          loanType: loan.loanType,
-          balance: loan.balance?.toString(),
-          overdue: loan.overdue?.toString(),
-          emi: loan.emi?.toString(),
-          amountDue: loan.amountDue?.toString(),
-          bucket: loan.bucket || 1,
-          penaltyEnabled: loan.penaltyEnabled || false,
-          penaltyAmount: loan.penaltyAmount?.toString() || "0"
-        }))
-      );
-    }
+        phones,
+        addresses,
+        loans,
+      },
+      user.id
+    );
+    const clientId = newClient.id;
 
     // Save OSINT data if available
     if (osintData) {

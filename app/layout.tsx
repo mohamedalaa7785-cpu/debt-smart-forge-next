@@ -55,6 +55,14 @@ export default function RootLayout({
                   + Add
                 </Link>
 
+
+                <Link
+                  href="/dashboard/admin/users"
+                  className="px-3 py-1 rounded-lg hover:bg-gray-100"
+                >
+                  Admin
+                </Link>
+
                 <Link
                   href="/login"
                   className="px-3 py-1 rounded-lg hover:bg-gray-100"

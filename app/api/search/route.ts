@@ -1,40 +1,24 @@
 export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
-import {
-  clients,
-  clientPhones,
-} from "@/server/db/schema";
+import { clients, clientPhones } from "@/server/db/schema";
 
-import { ilike, or, desc, eq, SQL } from "drizzle-orm";
+import { ilike, or, desc, eq, SQL, inArray, and } from "drizzle-orm";
 import { normalizePhone } from "@/lib/utils";
+import { requireUser } from "@/server/lib/auth";
+import { getClientsForUser } from "@/server/services/client.service";
 
-/* =========================
-   SIMPLE CACHE (BEST EFFORT)
-========================= */
-const cache = new Map<
-  string,
-  { data: any; expiry: number }
->();
-
+const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 60 * 3;
 
-/* =========================
-   SANITIZE
-========================= */
 function sanitizeQuery(q: string) {
   return q.trim().slice(0, 100);
 }
 
-/* =========================
-   BUILD CONDITIONS
-========================= */
 function buildConditions(q: string) {
   const phone = normalizePhone(q);
 
-  const conditions: SQL[] = [
-    ilike(clients.name, `%${q}%`),
-  ];
+  const conditions: SQL[] = [ilike(clients.name, `%${q}%`)];
 
   if (clients.email) {
     conditions.push(ilike(clients.email, `%${q}%`));
@@ -44,25 +28,18 @@ function buildConditions(q: string) {
   }
 
   if (phone && phone.length >= 3) {
-    conditions.push(
-      ilike(clientPhones.phone, `%${phone}%`)
-    );
+    conditions.push(ilike(clientPhones.phone, `%${phone}%`));
   }
 
   return or(...conditions);
 }
 
-/* =========================
-   GET SEARCH
-========================= */
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
+    const user = await requireUser(req);
     const { searchParams } = new URL(req.url);
     const rawQuery = searchParams.get("q");
 
-    /* =========================
-       VALIDATION
-    ========================= */
     if (!rawQuery || rawQuery.trim().length < 2) {
       return NextResponse.json({
         success: true,
@@ -72,11 +49,14 @@ export async function GET(req: Request) {
     }
 
     const q = sanitizeQuery(rawQuery);
-    const cacheKey = q.toLowerCase();
+    const scopedClients = await getClientsForUser(user.id, user.role);
+    const scopedClientIds = scopedClients.map((c: any) => c.id);
 
-    /* =========================
-       CACHE HIT
-    ========================= */
+    if (!scopedClientIds.length) {
+      return NextResponse.json({ success: true, count: 0, data: [] });
+    }
+
+    const cacheKey = `${user.id}:${user.role}:${q.toLowerCase()}`;
     const cached = cache.get(cacheKey);
 
     if (cached && cached.expiry > Date.now()) {
@@ -88,9 +68,6 @@ export async function GET(req: Request) {
       });
     }
 
-    /* =========================
-       QUERY DB
-    ========================= */
     const results = await db
       .select({
         id: clients.id,
@@ -101,28 +78,12 @@ export async function GET(req: Request) {
         phone: clientPhones.phone,
       })
       .from(clients)
-      .leftJoin(
-        clientPhones,
-        eq(clients.id, clientPhones.clientId)
-      )
-      .where(buildConditions(q))
+      .leftJoin(clientPhones, eq(clients.id, clientPhones.clientId))
+      .where(and(inArray(clients.id, scopedClientIds), buildConditions(q)))
       .orderBy(desc(clients.createdAt))
       .limit(30);
 
-    /* =========================
-       MERGE RESULTS
-    ========================= */
-    const map = new Map<
-      string,
-      {
-        id: string;
-        name: string;
-        email?: string;
-        company?: string;
-        createdAt: Date;
-        phones: string[];
-      }
-    >();
+    const map = new Map<string, { id: string; name: string; email?: string; company?: string; createdAt: Date; phones: string[] }>();
 
     for (const row of results) {
       if (!map.has(row.id)) {
@@ -141,32 +102,17 @@ export async function GET(req: Request) {
       }
     }
 
-    /* =========================
-       FINAL FORMAT
-    ========================= */
     const final = Array.from(map.values()).map((c) => ({
       ...c,
       phones: Array.from(new Set(c.phones)),
     }));
 
-    /* =========================
-       SMART SORT
-    ========================= */
     final.sort((a, b) => {
-      const phoneScore =
-        b.phones.length - a.phones.length;
-
+      const phoneScore = b.phones.length - a.phones.length;
       if (phoneScore !== 0) return phoneScore;
-
-      return (
-        new Date(b.createdAt).getTime() -
-        new Date(a.createdAt).getTime()
-      );
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
 
-    /* =========================
-       SAVE CACHE
-    ========================= */
     cache.set(cacheKey, {
       data: final,
       expiry: Date.now() + TTL,
@@ -178,13 +124,13 @@ export async function GET(req: Request) {
       count: final.length,
       data: final,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("SEARCH ERROR:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: "Search failed",
+        error: error?.message || "Search failed",
       },
       { status: 500 }
     );

@@ -95,6 +95,25 @@ export async function getClientById(id: string) {
 }
 
 /* =========================
+   ACCESS CONTROL 🔐
+========================= */
+export function canAccessClient(
+  client: { ownerId: string | null; portfolioType: string | null } | null,
+  userId: string,
+  role: string
+) {
+  if (!client) return false;
+
+  if (role === "hidden_admin" || role === "admin") return true;
+  if (role === "supervisor") return client.portfolioType === "WRITEOFF";
+  if (role === "team_leader") {
+    return client.portfolioType === "ACTIVE" || client.ownerId === userId;
+  }
+
+  return client.ownerId === userId;
+}
+
+/* =========================
    CREATE CLIENT
 ========================= */
 export async function createClientFull(data: any, ownerId: string) {

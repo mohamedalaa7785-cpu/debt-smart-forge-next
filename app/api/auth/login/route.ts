@@ -2,9 +2,6 @@ import { NextResponse } from "next/server";
 import { login } from "@/server/services/auth.service";
 import { logAction } from "@/server/services/log.service";
 
-/* =========================
-   LOGIN
-========================= */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -22,10 +19,20 @@ export async function POST(req: Request) {
       email: body.email,
     });
 
-    return NextResponse.json({
+    const res = NextResponse.json({
       success: true,
       data: result,
     });
+
+    res.cookies.set("token", result.token, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return res;
   } catch (error: any) {
     return NextResponse.json(
       { success: false, error: error.message },

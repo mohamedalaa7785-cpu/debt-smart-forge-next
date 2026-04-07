@@ -6,7 +6,8 @@ import {
   clientPhones,
   clientAddresses,
   clientLoans,
-  clientActions, // 🔥 مهم
+  clientActions, // 🔥
+  osintResults,  // 🔥
   callLogs,
   followups,
 } from "@/server/db/schema";
@@ -53,7 +54,6 @@ export function canAccessClient(
   if (!client) return false;
 
   if (role === "hidden_admin") return true;
-
   if (role === "admin") return client.portfolioType === "ACTIVE";
   if (role === "supervisor") return client.portfolioType === "WRITEOFF";
   if (role === "team_leader") return client.teamLeaderId === userId;
@@ -62,7 +62,7 @@ export function canAccessClient(
 }
 
 /* =========================
-   CREATE CLIENT 🔥🔥🔥
+   CREATE CLIENT 🔥
 ========================= */
 export async function createClientFull(data: any, creatorId: string) {
   if (!data.name) throw new Error("Name is required");
@@ -75,30 +75,24 @@ export async function createClientFull(data: any, creatorId: string) {
     const phones = dedupePhones(data.phones);
     const addresses = data.addresses ? dedupeAddresses(data.addresses) : [];
 
-    const [client] = await tx
-      .insert(clients)
-      .values({
-        name: data.name.trim(),
-        customerId: data.customerId || null,
-        email: data.email || null,
-        company: data.company || null,
-        notes: data.notes || null,
-        ownerId,
-        teamLeaderId: data.teamLeaderId || null,
-        portfolioType: data.portfolioType || "ACTIVE",
-        domainType: data.domainType || "FIRST",
-        branch: data.branch || null,
-        cycleStartDate:
-          data.cycleStartDate || new Date().toISOString().split("T")[0],
-        cycleEndDate: data.cycleEndDate || null,
-      })
-      .returning();
+    const [client] = await tx.insert(clients).values({
+      name: data.name.trim(),
+      customerId: data.customerId || null,
+      email: data.email || null,
+      company: data.company || null,
+      notes: data.notes || null,
+      ownerId,
+      teamLeaderId: data.teamLeaderId || null,
+      portfolioType: data.portfolioType || "ACTIVE",
+      domainType: data.domainType || "FIRST",
+      branch: data.branch || null,
+      cycleStartDate:
+        data.cycleStartDate || new Date().toISOString().split("T")[0],
+      cycleEndDate: data.cycleEndDate || null,
+    }).returning();
 
     await tx.insert(clientPhones).values(
-      phones.map((p) => ({
-        clientId: client.id,
-        phone: p,
-      }))
+      phones.map((p) => ({ clientId: client.id, phone: p }))
     );
 
     if (addresses.length) {
@@ -142,38 +136,30 @@ export async function getClientsForUser(userId: string, role: string) {
   }
 
   if (role === "admin") {
-    return db
-      .select()
-      .from(clients)
+    return db.select().from(clients)
       .where(eq(clients.portfolioType, "ACTIVE"))
       .orderBy(desc(clients.createdAt));
   }
 
   if (role === "supervisor") {
-    return db
-      .select()
-      .from(clients)
+    return db.select().from(clients)
       .where(eq(clients.portfolioType, "WRITEOFF"))
       .orderBy(desc(clients.createdAt));
   }
 
   if (role === "team_leader") {
-    return db
-      .select()
-      .from(clients)
+    return db.select().from(clients)
       .where(eq(clients.teamLeaderId, userId))
       .orderBy(desc(clients.createdAt));
   }
 
-  return db
-    .select()
-    .from(clients)
+  return db.select().from(clients)
     .where(eq(clients.ownerId, userId))
     .orderBy(desc(clients.createdAt));
 }
 
 /* =========================
-   GET CLIENT FULL 🔥
+   GET CLIENT FULL 🔥🔥🔥
 ========================= */
 export async function getClientById(id: string) {
   const client = await db.query.clients.findFirst({
@@ -182,24 +168,28 @@ export async function getClientById(id: string) {
 
   if (!client) return null;
 
-  const [phones, addresses, loans, actions, calls, followupsData] =
+  const [phones, addresses, loans, actions, osint, calls, followupsData] =
     await Promise.all([
       db.select().from(clientPhones).where(eq(clientPhones.clientId, id)),
       db.select().from(clientAddresses).where(eq(clientAddresses.clientId, id)),
       db.select().from(clientLoans).where(eq(clientLoans.clientId, id)),
-      db
-        .select()
-        .from(clientActions)
+
+      // 🔥 actions
+      db.select().from(clientActions)
         .where(eq(clientActions.clientId, id))
         .orderBy(desc(clientActions.createdAt)),
-      db
-        .select()
-        .from(callLogs)
+
+      // 🔥 osint
+      db.select().from(osintResults)
+        .where(eq(osintResults.clientId, id))
+        .limit(1)
+        .then(res => res[0] || null),
+
+      db.select().from(callLogs)
         .where(eq(callLogs.clientId, id))
         .orderBy(desc(callLogs.createdAt)),
-      db
-        .select()
-        .from(followups)
+
+      db.select().from(followups)
         .where(eq(followups.clientId, id))
         .orderBy(desc(followups.scheduledFor)),
     ]);
@@ -209,8 +199,9 @@ export async function getClientById(id: string) {
     phones,
     addresses,
     loans,
-    actions, // 🔥 fix
+    actions, // ✅
+    osint,   // ✅
     calls,
     followups: followupsData,
   };
-          }
+        }

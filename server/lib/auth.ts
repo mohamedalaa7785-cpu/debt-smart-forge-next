@@ -5,6 +5,8 @@ import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 
+/* ================= TYPES ================= */
+
 export type AuthRole =
   | "admin"
   | "supervisor"
@@ -20,21 +22,25 @@ export interface AuthUser {
   isSuperUser?: boolean;
 }
 
-/* =========================
-   CACHE ⚡
-========================= */
+/* ================= CACHE (SAFE) ================= */
+
 const userCache = new Map<string, { data: AuthUser; expiry: number }>();
 const TTL = 1000 * 30;
 
-/* =========================
-   HELPERS
-========================= */
+/* 🔥 cleanup every minute */
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of userCache.entries()) {
+    if (val.expiry < now) {
+      userCache.delete(key);
+    }
+  }
+}, 60000);
+
+/* ================= HELPERS ================= */
 
 function fail(message: string, status = 401) {
-  return NextResponse.json(
-    { success: false, error: message },
-    { status }
-  );
+  return NextResponse.json({ success: false, error: message }, { status });
 }
 
 function getEnv() {
@@ -48,11 +54,16 @@ function getEnv() {
   return { url, key };
 }
 
+/* 🔥 singleton client */
+let supabaseClient: ReturnType<typeof createServerClient> | null = null;
+
 function getSupabaseServerClient() {
+  if (supabaseClient) return supabaseClient;
+
   const cookieStore = cookies();
   const { url, key } = getEnv();
 
-  return createServerClient(url, key, {
+  supabaseClient = createServerClient(url, key, {
     cookies: {
       get: (name: string) => cookieStore.get(name)?.value,
       set: (name: string, value: string, options: any) =>
@@ -60,11 +71,11 @@ function getSupabaseServerClient() {
       remove: (name: string) => cookieStore.delete(name),
     },
   });
+
+  return supabaseClient;
 }
 
-/* =========================
-   CORE 🔥
-========================= */
+/* ================= CORE ================= */
 
 export async function requireUser(): Promise<AuthUser> {
   const supabase = getSupabaseServerClient();
@@ -96,12 +107,9 @@ export async function requireUser(): Promise<AuthUser> {
     throw new Error("User record not synced");
   }
 
-  /* 🔥 HIDDEN ADMIN LOGIC */
+  /* 🔥 hidden admin */
   let role: AuthRole = dbUser.role as AuthRole;
-
-  if (dbUser.isSuperUser) {
-    role = "hidden_admin";
-  }
+  if (dbUser.isSuperUser) role = "hidden_admin";
 
   const authUser: AuthUser = {
     id: dbUser.id,
@@ -119,9 +127,7 @@ export async function requireUser(): Promise<AuthUser> {
   return authUser;
 }
 
-/* =========================
-   ROLE SYSTEM 🔐
-========================= */
+/* ================= ROLES ================= */
 
 export function requireRole(user: AuthUser, roles: AuthRole[]) {
   if (user.role === "hidden_admin") return;
@@ -131,9 +137,7 @@ export function requireRole(user: AuthUser, roles: AuthRole[]) {
   }
 }
 
-/* =========================
-   ADVANCED CHECKS 🔥
-========================= */
+/* ================= HELPERS ================= */
 
 export function isAdmin(user: AuthUser) {
   return user.role === "admin" || user.role === "hidden_admin";
@@ -147,9 +151,7 @@ export function isPrivileged(user: AuthUser) {
   );
 }
 
-/* =========================
-   WRAPPERS
-========================= */
+/* ================= WRAPPERS ================= */
 
 export async function withAuth(
   handler: (user: AuthUser) => Promise<NextResponse>
@@ -161,9 +163,7 @@ export async function withAuth(
     const message = error?.message || "Unauthorized";
 
     const status =
-      message === "User record not synced"
-        ? 500
-        : 401;
+      message === "User record not synced" ? 500 : 401;
 
     return fail(message, status);
   }
@@ -190,4 +190,4 @@ export async function withRole(
 
     return fail(message, status);
   }
-}
+    }

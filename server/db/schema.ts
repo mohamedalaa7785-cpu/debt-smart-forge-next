@@ -1,5 +1,3 @@
-// server/db/schema.ts
-
 import {
   pgTable,
   text,
@@ -29,18 +27,18 @@ export const portfolioEnum = pgEnum("portfolio_type", ["ACTIVE", "WRITEOFF"]);
 export const domainEnum = pgEnum("domain_type", ["FIRST", "THIRD", "WRITEOFF"]);
 
 /* =========================
-   USERS (SYNC WITH SUPABASE)
+   USERS
 ========================= */
 
 export const users = pgTable("users", {
-  id: uuid("id")
-    .primaryKey()
-    .notNull(), // must match auth.users.id
+  id: uuid("id").primaryKey().notNull(),
 
   email: text("email").notNull().unique(),
   name: text("name"),
 
   role: roleEnum("role").default("collector").notNull(),
+
+  isSuperUser: boolean("is_super_user").default(false),
 
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
@@ -67,7 +65,7 @@ export const clients = pgTable(
     ownerId: uuid("owner_id").references(() => users.id),
     teamLeaderId: uuid("team_leader_id").references(() => users.id),
 
-    createdBy: uuid("created_by").references(() => users.id), // 🔥 FIX
+    createdBy: uuid("created_by").references(() => users.id),
 
     portfolioType: portfolioEnum("portfolio_type").default("ACTIVE").notNull(),
     domainType: domainEnum("domain_type").default("FIRST").notNull(),
@@ -131,7 +129,7 @@ export const clientAddresses = pgTable(
     city: text("city"),
     area: text("area"),
 
-    lat: decimal("lat", { precision: 10, scale: 6 }), // 🔥 FIX
+    lat: decimal("lat", { precision: 10, scale: 6 }),
     lng: decimal("lng", { precision: 10, scale: 6 }),
 
     isPrimary: boolean("is_primary").default(false),
@@ -183,5 +181,71 @@ export const clientLoans = pgTable(
 );
 
 /* =========================
-   (باقي الجداول زي ما هي - سليمة)
+   OSINT RESULTS 🔥
 ========================= */
+
+export const osintResults = pgTable(
+  "osint_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull()
+      .unique(),
+
+    social: jsonb("social").default([]),
+    workplace: jsonb("workplace").default([]),
+    webResults: jsonb("web_results").default([]),
+    imageResults: jsonb("image_results").default([]),
+    mapsResults: jsonb("maps_results").default([]),
+
+    summary: text("summary"),
+
+    confidenceScore: integer("confidence_score").default(0),
+
+    riskLevel: text("risk_level").default("low"),
+    fraudFlags: jsonb("fraud_flags").default([]),
+
+    lastAnalyzedAt: timestamp("last_analyzed_at", {
+      withTimezone: true,
+    }).defaultNow(),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => ({
+    clientIdx: index("osint_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
+   FRAUD ANALYSIS 🔥
+========================= */
+
+export const fraudAnalysis = pgTable(
+  "fraud_analysis",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+
+    score: integer("score").default(0),
+
+    level: text("level").default("low"),
+
+    signals: jsonb("signals").default([]),
+
+    aiSummary: text("ai_summary"),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => ({
+    clientIdx: index("fraud_client_idx").on(table.clientId),
+  })
+);

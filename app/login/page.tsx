@@ -1,8 +1,7 @@
-// file: app/login/page.tsx
-
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
@@ -29,26 +28,25 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Login failed");
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Login failed");
       }
 
-      // 🔥 مهم جدًا
       router.refresh();
       router.push("/");
     } catch (err: any) {
-      setError(err.message || "Login failed");
+      setError(err?.message || "Login failed");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
-      <div className="max-w-md w-full bg-white p-8 rounded-xl shadow-lg space-y-6">
-        <div className="text-center space-y-2">
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <div className="w-full max-w-md space-y-6 rounded-xl bg-white p-8 shadow-lg">
+        <div className="space-y-2 text-center">
           <h1 className="text-3xl font-bold text-gray-900">Debt Smart OS</h1>
           <p className="text-sm text-gray-500">
             Sign in to access your dashboard and manage collections.
@@ -62,7 +60,7 @@ export default function LoginPage() {
             </label>
             <input
               type="email"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
               placeholder="name@company.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -76,7 +74,7 @@ export default function LoginPage() {
             </label>
             <input
               type="password"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+              className="w-full rounded-lg border border-gray-300 px-4 py-2 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
               placeholder="••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -84,21 +82,28 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && (
-            <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
+          {error ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
               {error}
             </div>
-          )}
+          ) : null}
 
           <button
             type="submit"
-            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white shadow-md transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={loading}
           >
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+
+        <div className="text-center text-sm text-gray-600">
+          Don&apos;t have an account?{" "}
+          <Link href="/signup" className="font-medium text-blue-600 hover:underline">
+            Sign up
+          </Link>
+        </div>
       </div>
     </div>
   );
-  }
+}

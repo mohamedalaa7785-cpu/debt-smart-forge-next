@@ -1,119 +1,132 @@
 import Link from "next/link";
-import RiskBadge from "@/components/RiskBadge";
-import { formatCurrency } from "@/lib/utils";
-import { getClientsForUser, getClientById } from "@/server/services/client.service";
-import { requireUser } from "@/server/lib/auth";
-import { headers } from "next/headers";
-import { NextRequest } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-export const dynamic = "force-dynamic";
+export default async function HomePage() {
+  const cookieStore = cookies();
 
-export default async function DashboardPage() {
-  // We need to simulate a NextRequest for requireUser
-  const headerList = headers();
-  const req = new NextRequest(new URL("/", "http://localhost"), { headers: headerList });
-  
-  let user;
-  try {
-    user = await requireUser(req);
-  } catch (e) {
-    // Middleware should handle redirection, but as a fallback:
-    return <div className="p-4 text-center">Unauthorized. Please login.</div>;
-  }
-
-  const baseClients = await getClientsForUser(user.id, user.role);
-  
-  // Enrich with summary data
-  const clients = await Promise.all(
-    baseClients.slice(0, 10).map(async (c) => {
-      const d = await getClientById(c.id);
-      if (!d) return null;
-      
-      const totalDue = d.loans.reduce((acc, loan) => acc + Number(loan.overdue || 0), 0);
-      // Simplified risk for list
-      const riskScore = d.loans[0]?.bucket ? d.loans[0].bucket * 20 : 20;
-      const riskLabel = riskScore >= 80 ? "HIGH" : riskScore >= 40 ? "MEDIUM" : "LOW";
-      
-      return {
-        client: c,
-        summary: {
-          totalAmountDue: totalDue,
-          riskScore,
-          riskLabel
-        }
-      };
-    })
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    }
   );
 
-  const validClients = clients.filter(Boolean) as any[];
-  validClients.sort((a, b) => b.summary.totalAmountDue - a.summary.totalAmountDue);
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  const totalClients = baseClients.length;
-  const totalDue = validClients.reduce((sum, c) => sum + (c.summary?.totalAmountDue || 0), 0);
-  const highRisk = validClients.filter((c) => c.summary?.riskLabel === "HIGH").length;
+  if (user) {
+    redirect("/dashboard");
+  }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto py-8">
-      <div className="flex justify-between items-center px-4 md:px-0">
-        <h1 className="text-2xl font-bold text-gray-900">📊 Smart Dashboard</h1>
-        <Link href="/add-client" className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition">
-          + Add Client
-        </Link>
-      </div>
+    <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.25),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.18),transparent_30%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(15,23,42,0.4),rgba(2,6,23,0.95))]" />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 px-4 md:px-0">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
-          <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Clients</p>
-          <p className="mt-2 text-3xl font-bold text-gray-900">{totalClients}</p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
-          <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">Total Overdue</p>
-          <p className="mt-2 text-3xl font-bold text-blue-600">{formatCurrency(totalDue)}</p>
-        </div>
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 text-center">
-          <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">High Risk</p>
-          <p className="mt-2 text-3xl font-bold text-red-500">{highRisk}</p>
-        </div>
-      </div>
-
-      {validClients[0] && (
-        <div className="mx-4 md:px-0">
-          <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex justify-between items-center">
-            <div>
-              <p className="text-xs font-semibold text-blue-600 uppercase">Top Priority</p>
-              <p className="text-lg font-bold text-gray-900">{validClients[0].client.name}</p>
+      <div className="relative mx-auto flex min-h-screen max-w-6xl items-center px-4 py-10">
+        <div className="grid w-full gap-8 lg:grid-cols-2 lg:gap-12">
+          <section className="flex flex-col justify-center">
+            <div className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-200 backdrop-blur">
+              Debt Smart OS
             </div>
-            <Link href={`/client/${validClients[0].client.id}`} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition">
-              Open Case
-            </Link>
-          </div>
-        </div>
-      )}
 
-      <div className="space-y-3 px-4 md:px-0">
-        <h2 className="text-lg font-semibold text-gray-900">Client List</h2>
-        {validClients.length === 0 && (
-          <div className="bg-white p-12 rounded-xl border border-dashed border-gray-300 text-center text-gray-500">
-            No clients assigned to you yet.
-          </div>
-        )}
+            <h1 className="mt-6 max-w-xl text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Collections intelligence.
+              <span className="block text-sky-300">One system.</span>
+            </h1>
 
-        {validClients.map((c) => (
-          <Link key={c.client.id} href={`/client/${c.client.id}`} className="block bg-white p-4 rounded-xl border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-200 transition">
-            <div className="flex justify-between items-start">
-              <div className="space-y-1">
-                <p className="font-bold text-gray-900">{c.client.name}</p>
-                <p className="text-sm text-gray-500">{c.client.company || "No Company"}</p>
+            <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+              Sign in to manage portfolios, review clients, and work from a single
+              controlled workspace built for fast collection operations.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-100"
+              >
+                Sign In
+              </Link>
+
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-6 py-3 font-semibold text-white backdrop-blur transition hover:bg-white/10"
+              >
+                Sign Up
+              </Link>
+            </div>
+
+            <div className="mt-8 grid max-w-xl gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-sm font-semibold text-white">Secure login</p>
+                <p className="mt-1 text-sm text-slate-400">Supabase session flow</p>
               </div>
-              <RiskBadge label={c.summary.riskLabel} score={c.summary.riskScore} size="sm" />
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-sm font-semibold text-white">Role-based access</p>
+                <p className="mt-1 text-sm text-slate-400">Admin, leader, collector</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-sm font-semibold text-white">Client tracking</p>
+                <p className="mt-1 text-sm text-slate-400">Portfolios and cases</p>
+              </div>
             </div>
-            <div className="mt-4 flex items-center justify-between">
-              <div className="text-lg font-bold text-blue-600">{formatCurrency(c.summary.totalAmountDue)}</div>
-              <div className="text-xs font-medium text-gray-400">Created {new Date(c.client.createdAt).toLocaleDateString()}</div>
+          </section>
+
+          <section className="flex items-center justify-center">
+            <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/8 p-6 shadow-2xl shadow-sky-950/30 backdrop-blur-xl">
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-300">
+                  Welcome back
+                </p>
+                <h2 className="mt-3 text-2xl font-bold text-white">
+                  Start from the secure auth screen
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Sign in for existing users or create a new account. The next step is
+                  fully routed through the server auth flow.
+                </p>
+
+                <div className="mt-5 grid gap-3">
+                  <Link
+                    href="/login"
+                    className="rounded-xl bg-sky-500 px-4 py-3 text-center font-semibold text-white transition hover:bg-sky-400"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="rounded-xl border border-white/10 px-4 py-3 text-center font-semibold text-white transition hover:bg-white/5"
+                  >
+                    Create Account
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Access
+                </p>
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <span className="text-slate-300">Collectors</span>
+                  <span className="text-emerald-300">Default</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="text-slate-300">Admin account</span>
+                  <span className="text-sky-300">Role-based</span>
+                </div>
+              </div>
             </div>
-          </Link>
-        ))}
+          </section>
+        </div>
       </div>
-    </div>
+    </main>
   );
 }

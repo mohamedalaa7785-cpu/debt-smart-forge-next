@@ -5,14 +5,19 @@ import { osintResults } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { requireUser } from "@/server/lib/auth";
 import {
-  canAccessClient,
   getClientById,
 } from "@/server/services/client.service";
 
-/* =========================
-   RATE LIMIT
-========================= */
+/* ================= RATE LIMIT ================= */
+
 const rateMap = new Map<string, { count: number; time: number }>();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateMap.entries()) {
+    if (now - v.time > 60000) rateMap.delete(k);
+  }
+}, 60000);
 
 function rateLimit(key: string, limit = 15) {
   const now = Date.now();
@@ -24,17 +29,12 @@ function rateLimit(key: string, limit = 15) {
   }
 
   data.count++;
-
   rateMap.set(key, data);
 
-  if (data.count > limit) {
-    throw new Error("Too many requests");
-  }
+  if (data.count > limit) throw new Error("Too many requests");
 }
 
-/* =========================
-   VALIDATION
-========================= */
+/* ================= VALIDATION ================= */
 
 function validate(body: any) {
   if (!body.name && !body.phone && !body.clientId) {
@@ -54,30 +54,36 @@ function sanitize(body: any) {
   };
 }
 
-/* =========================
-   CACHE (DB)
-========================= */
+/* ================= CACHE ================= */
 
-async function getCached(clientId: string) {
+async function getCached(clientId: string, allowStale = false) {
   const existing = await db.query.osintResults.findFirst({
     where: eq(osintResults.clientId, clientId),
   });
 
   if (!existing) return null;
 
-  const isFresh =
-    Date.now() -
-      new Date(existing.lastAnalyzedAt || 0).getTime() <
-    1000 * 60 * 60; // 1h
+  const age =
+    Date.now() - new Date(existing.lastAnalyzedAt || 0).getTime();
 
-  if (!isFresh) return null;
+  const isFresh = age < 1000 * 60 * 60;
 
-  return existing;
+  if (!isFresh && !allowStale) return null;
+
+  return {
+    socialLinks: existing.social || [],
+    webResults: existing.webResults || [],
+    workplace: existing.workplace || [],
+    imageMatches: existing.imageResults || [],
+    mapsResults: existing.mapsResults || [],
+    summary: existing.summary,
+    confidence: existing.confidenceScore,
+    fraudFlags: existing.fraudFlags || [],
+    riskLevel: existing.riskLevel || "low",
+  };
 }
 
-/* =========================
-   MAIN 🔥
-========================= */
+/* ================= MAIN ================= */
 
 export async function POST(req: NextRequest) {
   try {
@@ -118,31 +124,21 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      /* 🔥 CACHE */
+      /* 🔥 CACHE (fresh) */
       const cached = await getCached(clean.clientId);
 
       if (cached) {
         return NextResponse.json({
           success: true,
-          data: {
-            socialLinks: cached.social,
-            webResults: cached.webResults,
-            workplace: cached.workplace,
-            imageMatches: cached.imageResults,
-            mapsResults: cached.mapsResults,
-            summary: cached.summary,
-            confidence: cached.confidenceScore,
-          },
-          meta: {
-            cached: true,
-          },
+          data: cached,
+          meta: { cached: true },
         });
       }
     }
 
     /* ================= RUN ENGINE ================= */
 
-    let result;
+    let result: any = null;
 
     try {
       result = await Promise.race([
@@ -162,6 +158,19 @@ export async function POST(req: NextRequest) {
       console.error("OSINT ENGINE ERROR:", err);
     }
 
+    /* 🔥 FALLBACK TO STALE CACHE */
+    if (!result && clean.clientId) {
+      const stale = await getCached(clean.clientId, true);
+
+      if (stale) {
+        return NextResponse.json({
+          success: true,
+          data: stale,
+          meta: { stale: true },
+        });
+      }
+    }
+
     if (!result) {
       return NextResponse.json(
         { success: false, error: "OSINT unavailable" },
@@ -173,7 +182,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: result,
+      data: {
+        ...result,
+        fraudFlags: result.fraudFlags || [],
+        riskLevel: result.riskLevel || "low",
+      },
       meta: {
         hasImage: !!clean.imageUrl,
         processedAt: new Date(),
@@ -203,4 +216,4 @@ export async function POST(req: NextRequest) {
       { status }
     );
   }
-            }
+    }

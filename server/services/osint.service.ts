@@ -1,3 +1,5 @@
+// server/services/osint.service.ts
+
 import axios from "axios";
 import { uniqueArray } from "@/lib/utils";
 import { db } from "@/server/db";
@@ -8,13 +10,6 @@ import { getRequiredEnv } from "@/lib/env";
 
 const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 60 * 10;
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of cache.entries()) {
-    if (v.expiry < now) cache.delete(k);
-  }
-}, 60000);
 
 /* ================= TYPES ================= */
 
@@ -47,6 +42,18 @@ const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 /* ================= HELPERS ================= */
 
+function cacheKey(input: OSINTInput) {
+  return `${input.name}-${input.phone}-${input.company}-${input.city}`;
+}
+
+function safeJSONParse(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
 function generateQueries(input: OSINTInput): string[] {
   const queries: string[] = [];
 
@@ -62,51 +69,47 @@ function generateQueries(input: OSINTInput): string[] {
   return uniqueArray(queries).slice(0, 5);
 }
 
-/* 🔥 RETRY */
 async function safeRequest(url: string, params: any, retries = 2) {
   try {
     const res = await axios.get(url, { params, timeout: 8000 });
     return res.data;
-  } catch (err) {
-    if (retries > 0) {
-      return safeRequest(url, params, retries - 1);
-    }
+  } catch {
+    if (retries > 0) return safeRequest(url, params, retries - 1);
     return null;
   }
 }
 
+async function runLimited(arr: any[], fn: any, limit = 2) {
+  const results: any[] = [];
+  for (let i = 0; i < arr.length; i += limit) {
+    const chunk = arr.slice(i, i + limit);
+    const res = await Promise.all(chunk.map(fn));
+    results.push(...res);
+  }
+  return results;
+}
+
 /* ================= PROVIDERS ================= */
 
-async function searchWeb(query: string) {
-  const data = await safeRequest("https://serpapi.com/search.json", {
-    q: query,
-    api_key: SERP_KEY,
-  });
+const searchWeb = (q: string) =>
+  safeRequest("https://serpapi.com/search.json", { q, api_key: SERP_KEY });
 
-  return data?.organic_results?.slice(0, 5) || [];
-}
+const searchMaps = (q: string) =>
+  MAPS_KEY
+    ? safeRequest("https://maps.googleapis.com/maps/api/place/textsearch/json", {
+        query: q,
+        key: MAPS_KEY,
+      })
+    : null;
 
-async function searchImage(imageUrl: string) {
-  if (!imageUrl) return [];
-
+async function searchImage(url: string) {
+  if (!url) return [];
   const data = await safeRequest("https://serpapi.com/search.json", {
     engine: "google_lens",
-    url: imageUrl,
+    url,
     api_key: SERP_KEY,
   });
-
-  return data?.visual_matches?.slice(0, 5) || [];
-}
-
-async function searchMaps(query: string) {
-  if (!MAPS_KEY) return [];
-
-  const data = await safeRequest(
-    "https://maps.googleapis.com/maps/api/place/textsearch/json",
-    { query, key: MAPS_KEY }
-  );
-
-  return data?.results?.slice(0, 3) || [];
+  return data?.visual_matches || [];
 }
 
 /* ================= AI ================= */
@@ -136,117 +139,55 @@ async function analyzeAI(payload: any) {
       }
     );
 
-    return JSON.parse(
-      res.data?.choices?.[0]?.message?.content || "{}"
-    );
+    const raw = res.data?.choices?.[0]?.message?.content;
+    return safeJSONParse(raw || "");
   } catch {
     return null;
   }
 }
 
-/* ================= EXTRACT ================= */
-
-function extractData(results: any[]) {
-  const social = new Set<string>();
-  const workplace = new Set<string>();
-  const links = new Set<string>();
-
-  for (const r of results) {
-    const link = r?.link;
-    if (!link) continue;
-
-    links.add(link);
-
-    const l = link.toLowerCase();
-
-    if (
-      l.includes("facebook") ||
-      l.includes("linkedin") ||
-      l.includes("instagram")
-    ) {
-      social.add(link);
-    }
-
-    if (r?.snippet?.toLowerCase().includes("works")) {
-      workplace.add(r.snippet);
-    }
-  }
-
-  return {
-    social: Array.from(social),
-    workplace: Array.from(workplace),
-    links: Array.from(links),
-  };
-}
-
-/* ================= FRAUD DETECTION ================= */
-
-function detectFraudSignals(data: any) {
-  const flags: string[] = [];
-
-  if (!data.social.length) flags.push("NO_SOCIAL_PRESENCE");
-  if (!data.workplace.length) flags.push("NO_WORK_HISTORY");
-  if (data.links.length < 3) flags.push("LOW_WEB_FOOTPRINT");
-
-  return flags;
-}
-
-/* ================= SCORE ================= */
-
-function calculateScore(data: any, flags: string[]) {
-  let score = 0;
-
-  if (data.social.length) score += 30;
-  if (data.workplace.length) score += 20;
-  if (data.links.length) score += 10;
-  if (data.maps?.length) score += 20;
-
-  score += flags.length * 10;
-
-  return Math.min(score, 100);
-}
-
 /* ================= MAIN ================= */
 
 export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
-  const cacheKey = JSON.stringify(input);
+  const key = cacheKey(input);
 
-  const cached = cache.get(cacheKey);
+  const cached = cache.get(key);
   if (cached && cached.expiry > Date.now()) return cached.data;
 
   const queries = generateQueries(input);
 
-  const [webRaw, mapsRaw, imageRaw] = await Promise.all([
-    Promise.all(queries.map(searchWeb)),
-    Promise.all(queries.map(searchMaps)),
-    input.imageUrl ? searchImage(input.imageUrl) : [],
-  ]);
+  const webRaw = await runLimited(queries, searchWeb);
+  const mapsRaw = await runLimited(queries, searchMaps);
 
-  const webFlat = webRaw.flat();
-  const mapsFlat = mapsRaw.flat();
+  const webFlat = webRaw.flatMap((r: any) => r?.organic_results || []);
+  const mapsFlat = mapsRaw.flatMap((r: any) => r?.results || []);
 
-  const extracted = extractData(webFlat);
+  const social = webFlat
+    .map((r: any) => r.link)
+    .filter((l: string) => l?.includes("facebook") || l?.includes("linkedin"));
 
-  const mapsResults = mapsFlat.map((m: any) => m?.name).filter(Boolean);
-  const imageMatches = imageRaw.map((i: any) => i?.link).filter(Boolean);
+  const links = webFlat.map((r: any) => r.link).filter(Boolean);
+  const workplace = webFlat
+    .map((r: any) => r.snippet)
+    .filter((s: string) => s?.toLowerCase().includes("works"));
 
-  const fraudFlags = detectFraudSignals(extracted);
+  const mapsResults = mapsFlat.map((m: any) => m.name).filter(Boolean);
 
-  const ai = await analyzeAI({
-    web: extracted,
-    maps: mapsResults,
-    images: imageMatches,
-  });
+  const imageMatches = input.imageUrl
+    ? (await searchImage(input.imageUrl)).map((i: any) => i.link)
+    : [];
 
-  const confidence = calculateScore(
-    { ...extracted, maps: mapsResults },
-    fraudFlags
-  );
+  const fraudFlags = [];
+  if (!social.length) fraudFlags.push("NO_SOCIAL");
+
+  const ai = await analyzeAI({ social, links, mapsResults });
+
+  const confidence = Math.min(100, social.length * 20 + links.length * 5);
 
   const result: OSINTResult = {
-    socialLinks: extracted.social,
-    webResults: extracted.links,
-    workplace: extracted.workplace,
+    socialLinks: social,
+    webResults: links,
+    workplace,
     imageMatches,
     mapsResults,
     summary: ai?.summary || "No strong signals",
@@ -255,49 +196,52 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
     riskLevel: ai?.riskLevel || "low",
   };
 
-  /* ================= SAVE ================= */
-
   if (input.clientId) {
-    await db
-      .insert(osintResults)
-      .values({
-        clientId: input.clientId,
-        social: result.socialLinks,
-        workplace: result.workplace,
-        webResults: result.webResults,
-        imageResults: result.imageMatches,
-        mapsResults: result.mapsResults,
-        summary: result.summary,
-        confidenceScore: result.confidence,
-        riskLevel: result.riskLevel,
-        fraudFlags: result.fraudFlags,
-      })
-      .onConflictDoUpdate({
-        target: osintResults.clientId,
-        set: {
-          social: result.socialLinks,
-          workplace: result.workplace,
-          webResults: result.webResults,
-          imageResults: result.imageMatches,
-          mapsResults: result.mapsResults,
+    try {
+      await db
+        .insert(osintResults)
+        .values({
+          clientId: input.clientId,
+          social,
+          workplace,
+          webResults: links,
+          imageResults: imageMatches,
+          mapsResults,
           summary: result.summary,
           confidenceScore: result.confidence,
           riskLevel: result.riskLevel,
-          fraudFlags: result.fraudFlags,
-        },
-      });
+          fraudFlags,
+          updatedAt: new Date(),
+          lastAnalyzedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: osintResults.clientId,
+          set: {
+            social,
+            workplace,
+            webResults: links,
+            imageResults: imageMatches,
+            mapsResults,
+            summary: result.summary,
+            confidenceScore: result.confidence,
+            riskLevel: result.riskLevel,
+            fraudFlags,
+            updatedAt: new Date(),
+            lastAnalyzedAt: new Date(),
+          },
+        });
 
-    await db.insert(osintHistory).values({
-      clientId: input.clientId,
-      result,
-      confidence: result.confidence,
-    });
+      await db.insert(osintHistory).values({
+        clientId: input.clientId,
+        result,
+        confidence: result.confidence,
+      });
+    } catch (err) {
+      console.error("OSINT SAVE ERROR:", err);
+    }
   }
 
-  cache.set(cacheKey, {
-    data: result,
-    expiry: Date.now() + TTL,
-  });
+  cache.set(key, { data: result, expiry: Date.now() + TTL });
 
   return result;
-     }
+  }

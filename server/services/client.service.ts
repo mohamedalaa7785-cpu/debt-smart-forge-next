@@ -1,4 +1,4 @@
-// file: server/services/client.service.ts
+// server/services/client.service.ts
 
 import { db } from "@/server/db";
 import {
@@ -14,8 +14,9 @@ import {
 import { eq, desc } from "drizzle-orm";
 
 /* =========================
-   HELPERS 🔥
+   HELPERS
 ========================= */
+
 function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
@@ -35,12 +36,14 @@ function dedupeAddresses(addresses: any[]) {
 
 function toSafeNumber(val: any) {
   const num = Number(val);
-  return isNaN(num) ? "0" : num.toString();
+  if (isNaN(num)) return 0;
+  return num;
 }
 
 /* =========================
    ACCESS CONTROL 🔐
 ========================= */
+
 export function canAccessClient(
   client: {
     ownerId: string | null;
@@ -63,10 +66,13 @@ export function canAccessClient(
 /* =========================
    CREATE CLIENT 🔥
 ========================= */
+
 export async function createClientFull(data: any, creatorId: string) {
-  if (!data.name) throw new Error("Name is required");
-  if (!data.phones?.length) throw new Error("Phones required");
-  if (!data.loans?.length) throw new Error("Loans required");
+  if (!data.name?.trim()) throw new Error("Name is required");
+  if (!Array.isArray(data.phones) || data.phones.length === 0)
+    throw new Error("Phones required");
+  if (!Array.isArray(data.loans) || data.loans.length === 0)
+    throw new Error("Loans required");
 
   return db.transaction(async (tx) => {
     const ownerId = data.ownerId || creatorId;
@@ -74,41 +80,47 @@ export async function createClientFull(data: any, creatorId: string) {
     const phones = dedupePhones(data.phones);
     const addresses = data.addresses ? dedupeAddresses(data.addresses) : [];
 
-    const [client] = await tx.insert(clients).values({
-      name: data.name.trim(),
-      customerId: data.customerId || null,
-      email: data.email || null,
-      company: data.company || null,
-      notes: data.notes || null,
-      ownerId,
-      teamLeaderId: data.teamLeaderId || null,
-      portfolioType: data.portfolioType || "ACTIVE",
-      domainType: data.domainType || "FIRST",
-      branch: data.branch || null,
-      cycleStartDate:
-        data.cycleStartDate || new Date().toISOString().split("T")[0],
-      cycleEndDate: data.cycleEndDate || null,
-    }).returning();
+    const [client] = await tx
+      .insert(clients)
+      .values({
+        name: data.name.trim(),
+        customerId: data.customerId || null,
+        email: data.email || null,
+        company: data.company || null,
+        notes: data.notes || null,
+        ownerId,
+        teamLeaderId: data.teamLeaderId || null,
+        portfolioType: data.portfolioType || "ACTIVE",
+        domainType: data.domainType || "FIRST",
+        branch: data.branch || null,
+        createdBy: creatorId, // 🔥 مهم
+        cycleStartDate:
+          data.cycleStartDate || new Date().toISOString().split("T")[0],
+        cycleEndDate: data.cycleEndDate || null,
+      })
+      .returning();
 
     /* PHONES */
-    await tx.insert(clientPhones).values(
-      phones.map((p) => ({
-        clientId: client.id,
-        phone: p,
-      }))
-    );
+    if (phones.length) {
+      await tx.insert(clientPhones).values(
+        phones.map((p) => ({
+          clientId: client.id,
+          phone: p,
+        }))
+      );
+    }
 
     /* ADDRESSES */
     if (addresses.length) {
       await tx.insert(clientAddresses).values(
         addresses.map((a) => ({
           clientId: client.id,
-          address: a.address,
-          city: a.city,
-          area: a.area,
-          lat: a.lat?.toString() || null,
-          lng: a.lng?.toString() || null,
-          isPrimary: a.isPrimary || false,
+          address: a.address || null,
+          city: a.city || null,
+          area: a.area || null,
+          lat: a.lat ? String(a.lat) : null,
+          lng: a.lng ? String(a.lng) : null,
+          isPrimary: Boolean(a.isPrimary),
         }))
       );
     }
@@ -117,13 +129,13 @@ export async function createClientFull(data: any, creatorId: string) {
     await tx.insert(clientLoans).values(
       data.loans.map((l: any) => ({
         clientId: client.id,
-        loanType: l.loanType,
+        loanType: l.loanType || "UNKNOWN",
         emi: toSafeNumber(l.emi),
         balance: toSafeNumber(l.balance),
         overdue: toSafeNumber(l.overdue),
-        amountDue: toSafeNumber(l.amountDue || l.overdue),
-        bucket: l.bucket || 1,
-        penaltyEnabled: l.penaltyEnabled || false,
+        amountDue: toSafeNumber(l.amountDue ?? l.overdue),
+        bucket: Number(l.bucket || 1),
+        penaltyEnabled: Boolean(l.penaltyEnabled),
         penaltyAmount: toSafeNumber(l.penaltyAmount),
       }))
     );
@@ -133,8 +145,9 @@ export async function createClientFull(data: any, creatorId: string) {
 }
 
 /* =========================
-   GET CLIENTS 👥
+   GET CLIENTS
 ========================= */
+
 export async function getClientsForUser(userId: string, role: string) {
   if (role === "hidden_admin") {
     return db.select().from(clients).orderBy(desc(clients.createdAt));
@@ -172,15 +185,25 @@ export async function getClientsForUser(userId: string, role: string) {
 }
 
 /* =========================
-   GET CLIENT FULL 🔥🔥🔥
+   GET CLIENT FULL 🔥
 ========================= */
-export async function getClientById(id: string) {
+
+export async function getClientById(
+  id: string,
+  userId?: string,
+  role?: string
+) {
   try {
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, id),
     });
 
     if (!client) return null;
+
+    // 🔥 ACCESS CONTROL
+    if (userId && role && !canAccessClient(client, userId, role)) {
+      throw new Error("Forbidden");
+    }
 
     const [
       phones,
@@ -223,16 +246,16 @@ export async function getClientById(id: string) {
 
     return {
       ...client,
-      phones: phones || [],
-      addresses: addresses || [],
-      loans: loans || [],
-      actions: actions || [],
-      osint: osint || null,
-      calls: calls || [],
-      followups: followupsData || [],
+      phones,
+      addresses,
+      loans,
+      actions,
+      osint,
+      calls,
+      followups: followupsData,
     };
   } catch (error) {
     console.error("getClientById error:", error);
     return null;
   }
-      }
+  }

@@ -3,7 +3,7 @@
 interface OSINT {
   id: string;
   summary: string | null;
-  confidenceScore: string | null;
+  confidenceScore: number | null;
   social: any;
   workplace: any;
   webResults: any;

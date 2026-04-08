@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser(req);
+    const user = await requireUser();
     const callList = await generateDailyCallList(user.id);
 
     return NextResponse.json({

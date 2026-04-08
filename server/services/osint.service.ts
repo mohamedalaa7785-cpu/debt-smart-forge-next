@@ -38,7 +38,9 @@ export interface OSINTResult {
 
 const SERP_KEY = getRequiredEnv("SERPAPI_API_KEY");
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
-const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+const MAPS_KEY =
+  process.env.GOOGLE_MAPS_API_KEY ||
+  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 /* ================= HELPERS ================= */
 

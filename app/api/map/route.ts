@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser(req);
+    const user = await requireUser();
     const [scopedClients, mapClients] = await Promise.all([
       getClientsForUser(user.id, user.role),
       getClientsForMap(),

@@ -45,7 +45,7 @@ function sanitize(body: any) {
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser(req);
+    await requireUser();
 
     let body: any;
 

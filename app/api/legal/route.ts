@@ -4,7 +4,7 @@ import { requireUser } from "@/server/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
-    await requireUser(req);
+    await requireUser();
     const body = await req.json();
     const { action, clientId, clientName, amountDue, bankName, date, checkNumber } = body;
 

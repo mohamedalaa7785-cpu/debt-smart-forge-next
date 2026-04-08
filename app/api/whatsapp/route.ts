@@ -6,7 +6,7 @@ import { canAccessClient, getClientById } from "@/server/services/client.service
 
 export async function POST(req: NextRequest) {
   try {
-    const user = await requireUser(req);
+    const user = await requireUser();
     const body = await req.json();
     const { phone, message, clientId } = body;
 

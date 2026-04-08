@@ -1,63 +1,65 @@
-// file: app/api/clients/route.ts
+// app/api/clients/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
-import { getClientsForUser, createClientFull } from "@/server/services/client.service";
+import {
+  getClientsForUser,
+  createClientFull,
+} from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
 
 /* =========================
-   RATE LIMIT 🔥
+   RATE LIMIT 🔥 (FIXED)
 ========================= */
 const rateMap = new Map<string, { count: number; time: number }>();
+const WINDOW = 60 * 1000;
 
 function rateLimit(key: string, limit = 30) {
   const now = Date.now();
-  const data = rateMap.get(key) || { count: 0, time: now };
+  const data = rateMap.get(key);
 
-  if (now - data.time > 60000) {
-    data.count = 0;
-    data.time = now;
+  if (!data || now - data.time > WINDOW) {
+    rateMap.set(key, { count: 1, time: now });
+    return;
+  }
+
+  if (data.count >= limit) {
+    throw new Error("Too many requests");
   }
 
   data.count++;
-  rateMap.set(key, data);
-
-  if (data.count > limit) {
-    throw new Error("Too many requests");
-  }
 }
 
 /* =========================
-   HELPERS 🔥
+   HELPERS
 ========================= */
 function normalizePhone(phone: string) {
   return phone.replace(/\D/g, "");
 }
 
 function dedupePhones(phones: string[]) {
-  const set = new Set(phones.map(normalizePhone));
-  return Array.from(set);
+  return Array.from(new Set(phones.map(normalizePhone)));
 }
 
 /* =========================
-   CACHE (LIGHT)
+   CACHE (SAFE)
 ========================= */
 const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 30;
 
 /* =========================
-   GET CLIENTS 🔥
+   GET CLIENTS
 ========================= */
 export async function GET(req: NextRequest) {
-  return withAuth(req, async (user) => {
+  return withAuth(async (user) => {
     try {
-      const ip = req.headers.get("x-forwarded-for") || "unknown";
+      const ip = req.headers.get("x-forwarded-for") || user.id;
       rateLimit(ip);
 
       const { page, limit, offset } = getPagination(req);
 
-      const cacheKey = `${user.id}-${user.role}-${page}-${limit}`;
+      const cacheKey = `${user.id}-${page}-${limit}`;
       const cached = cache.get(cacheKey);
 
       if (cached && cached.expiry > Date.now()) {
@@ -91,7 +93,10 @@ export async function GET(req: NextRequest) {
 
       await logAction(user.id, "GET_CLIENTS", { page, limit });
 
-      cache.set(cacheKey, { data, expiry: Date.now() + TTL });
+      cache.set(cacheKey, {
+        data,
+        expiry: Date.now() + TTL,
+      });
 
       return NextResponse.json({
         success: true,
@@ -108,40 +113,43 @@ export async function GET(req: NextRequest) {
 }
 
 /* =========================
-   POST CLIENTS 🔥
+   POST CLIENT
 ========================= */
 export async function POST(req: NextRequest) {
-  return withAuth(req, async (user) => {
+  return withAuth(async (user) => {
     try {
+      const ip = req.headers.get("x-forwarded-for") || user.id;
+      rateLimit(ip, 15); // stricter for writes
+
       const body = await req.json();
 
       let { name, phones, loans } = body;
 
-      if (!name) {
+      if (!name?.trim()) {
         return NextResponse.json(
           { success: false, error: "Name is required" },
           { status: 400 }
         );
       }
 
-      if (!phones || phones.length === 0) {
+      if (!Array.isArray(phones) || phones.length === 0) {
         return NextResponse.json(
           { success: false, error: "At least one phone is required" },
           { status: 400 }
         );
       }
 
-      if (!loans || loans.length === 0) {
+      if (!Array.isArray(loans) || loans.length === 0) {
         return NextResponse.json(
           { success: false, error: "At least one loan is required" },
           { status: 400 }
         );
       }
 
-      // 🔥 normalize + dedupe
+      /* normalize */
       phones = dedupePhones(phones);
 
-      // 🔥 enforce owner (STRICT)
+      /* ownership */
       const ownerId =
         user.role === "hidden_admin" && body.ownerId
           ? body.ownerId
@@ -183,4 +191,4 @@ export async function POST(req: NextRequest) {
       );
     }
   });
-   }
+         }

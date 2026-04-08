@@ -1,7 +1,7 @@
 import axios from "axios";
 import { uniqueArray } from "@/lib/utils";
 import { db } from "@/server/db";
-import { osintResults } from "@/server/db/schema";
+import { osintResults, osintHistory } from "@/server/db/schema";
 import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
@@ -72,7 +72,6 @@ async function safeRequest(url: string, params: any) {
    PROVIDERS
 ========================= */
 
-// 🔍 WEB
 async function searchWeb(query: string) {
   const data = await safeRequest("https://serpapi.com/search.json", {
     q: query,
@@ -82,7 +81,6 @@ async function searchWeb(query: string) {
   return data?.organic_results?.slice(0, 5) || [];
 }
 
-// 🖼 IMAGE
 async function searchImage(imageUrl: string) {
   if (!imageUrl) return [];
 
@@ -95,7 +93,6 @@ async function searchImage(imageUrl: string) {
   return data?.visual_matches?.slice(0, 5) || [];
 }
 
-// 🗺 MAPS
 async function searchMaps(query: string) {
   if (!MAPS_KEY) return [];
 
@@ -110,7 +107,6 @@ async function searchMaps(query: string) {
   return data?.results?.slice(0, 3) || [];
 }
 
-// 🤖 AI
 async function analyzeAI(payload: any) {
   if (!OPENAI_KEY) return "";
 
@@ -123,7 +119,7 @@ async function analyzeAI(payload: any) {
           {
             role: "system",
             content:
-              "Analyze this OSINT data. Extract risk level, identity signals, and summary.",
+              "Analyze OSINT data. Return: risk level (low/medium/high), fraud signals, short summary.",
           },
           {
             role: "user",
@@ -139,7 +135,7 @@ async function analyzeAI(payload: any) {
     );
 
     return res.data?.choices?.[0]?.message?.content || "";
-  } catch (err) {
+  } catch {
     return "";
   }
 }
@@ -207,6 +203,12 @@ function calculateScore(data: any, aiText: string) {
   return Math.min(score, 100);
 }
 
+function detectRiskLevel(score: number) {
+  if (score > 70) return "high";
+  if (score > 40) return "medium";
+  return "low";
+}
+
 /* =========================
    MAIN 🔥
 ========================= */
@@ -215,13 +217,10 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const cacheKey = JSON.stringify(input);
 
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiry > Date.now()) {
-    return cached.data;
-  }
+  if (cached && cached.expiry > Date.now()) return cached.data;
 
   const queries = generateQueries(input);
 
-  /* -------- RUN PROVIDERS PARALLEL -------- */
   const [webRaw, mapsRaw, imageRaw] = await Promise.all([
     Promise.all(queries.map((q) => searchWeb(q))),
     Promise.all(queries.map((q) => searchMaps(q))),
@@ -234,21 +233,20 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const extracted = extractData(webFlat);
 
   const mapsResults = mapsFlat.map((m: any) => m?.name).filter(Boolean);
-
   const imageMatches = imageRaw.map((i: any) => i?.link).filter(Boolean);
 
-  /* -------- AI -------- */
   const aiText = await analyzeAI({
     web: extracted,
     maps: mapsResults,
     images: imageMatches,
   });
 
-  /* -------- SCORE -------- */
   const confidence = calculateScore(
     { ...extracted, maps: mapsResults },
     aiText
   );
+
+  const riskLevel = detectRiskLevel(confidence);
 
   const result: OSINTResult = {
     socialLinks: extracted.social,
@@ -260,9 +258,11 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
     confidence,
   };
 
-  /* -------- SAVE -------- */
+  /* ================= SAVE ================= */
+
   if (input.clientId) {
     try {
+      /* 🔥 MAIN RESULT */
       await db
         .insert(osintResults)
         .values({
@@ -271,8 +271,11 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
           workplace: result.workplace,
           webResults: result.webResults,
           imageResults: result.imageMatches,
+          mapsResults: result.mapsResults,
           summary: result.summary,
-          confidenceScore: result.confidence.toString(),
+          confidenceScore: result.confidence,
+          riskLevel,
+          fraudFlags: [],
         })
         .onConflictDoUpdate({
           target: osintResults.clientId,
@@ -281,12 +284,21 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
             workplace: result.workplace,
             webResults: result.webResults,
             imageResults: result.imageMatches,
+            mapsResults: result.mapsResults,
             summary: result.summary,
-            confidenceScore: result.confidence.toString(),
+            confidenceScore: result.confidence,
+            riskLevel,
           },
         });
+
+      /* 🔥 HISTORY */
+      await db.insert(osintHistory).values({
+        clientId: input.clientId,
+        result,
+        confidence: result.confidence,
+      });
     } catch (err) {
-      console.error("OSINT DB SAVE ERROR:", err);
+      console.error("OSINT SAVE ERROR:", err);
     }
   }
 
@@ -296,4 +308,4 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   });
 
   return result;
-                         }
+     }

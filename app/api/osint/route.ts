@@ -4,20 +4,11 @@ import { db } from "@/server/db";
 import { osintResults } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { requireUser } from "@/server/lib/auth";
-import {
-  getClientById,
-} from "@/server/services/client.service";
+import { getClientById } from "@/server/services/client.service";
 
 /* ================= RATE LIMIT ================= */
 
 const rateMap = new Map<string, { count: number; time: number }>();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of rateMap.entries()) {
-    if (now - v.time > 60000) rateMap.delete(k);
-  }
-}, 60000);
 
 function rateLimit(key: string, limit = 15) {
   const now = Date.now();
@@ -31,7 +22,9 @@ function rateLimit(key: string, limit = 15) {
   data.count++;
   rateMap.set(key, data);
 
-  if (data.count > limit) throw new Error("Too many requests");
+  if (data.count > limit) {
+    throw new Error("Too many requests");
+  }
 }
 
 /* ================= VALIDATION ================= */
@@ -66,7 +59,7 @@ async function getCached(clientId: string, allowStale = false) {
   const age =
     Date.now() - new Date(existing.lastAnalyzedAt || 0).getTime();
 
-  const isFresh = age < 1000 * 60 * 60;
+  const isFresh = age < 1000 * 60 * 60; // 1 hour
 
   if (!isFresh && !allowStale) return null;
 
@@ -94,7 +87,7 @@ export async function POST(req: NextRequest) {
       req.headers.get("x-real-ip") ||
       "unknown";
 
-    rateLimit(`${user.id}:${ip}`);
+    rateLimit(`${user.id}:${ip}:${req.nextUrl.pathname}`);
 
     const body = await req.json();
 
@@ -117,7 +110,7 @@ export async function POST(req: NextRequest) {
         user.role
       );
 
-      if (!client) {
+      if (!client || !client.id) {
         return NextResponse.json(
           { success: false, error: "Forbidden" },
           { status: 403 }
@@ -144,7 +137,7 @@ export async function POST(req: NextRequest) {
       result = await Promise.race([
         runOSINT({
           clientId: clean.clientId || undefined,
-          name: clean.name,
+          name: clean.name || "",
           phone: clean.phone,
           company: clean.company,
           city: clean.city,
@@ -216,4 +209,4 @@ export async function POST(req: NextRequest) {
       { status }
     );
   }
-    }
+      }

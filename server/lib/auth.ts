@@ -21,31 +21,46 @@ export interface AuthUser {
   name?: string | null;
 }
 
+/* ----------------------------- helpers ----------------------------- */
+
 function fail(message: string, status = 401) {
-  return NextResponse.json({ success: false, error: message }, { status });
+  return NextResponse.json(
+    { success: false, error: message },
+    { status }
+  );
+}
+
+function getEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error("Supabase env not configured");
+  }
+
+  return { url, key };
 }
 
 function getSupabaseServerClient() {
   const cookieStore = cookies();
+  const { url, key } = getEnv();
 
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: any) {
-          cookieStore.set({ name, value, ...options });
-        },
-        remove(name: string, options: any) {
-          cookieStore.set({ name, value: "", ...options });
-        },
+  return createServerClient(url, key, {
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value;
       },
-    }
-  );
+      set(name: string, value: string, options: any) {
+        cookieStore.set({ name, value, ...options });
+      },
+      remove(name: string, options: any) {
+        cookieStore.delete(name);
+      },
+    },
+  });
 }
+
+/* ----------------------------- core ----------------------------- */
 
 export async function requireUser(): Promise<AuthUser> {
   const supabase = getSupabaseServerClient();
@@ -55,7 +70,11 @@ export async function requireUser(): Promise<AuthUser> {
     error,
   } = await supabase.auth.getUser();
 
-  if (error || !user) {
+  if (error) {
+    throw new Error("Invalid session");
+  }
+
+  if (!user) {
     throw new Error("Invalid session");
   }
 
@@ -79,6 +98,8 @@ export async function requireUser(): Promise<AuthUser> {
   };
 }
 
+/* ----------------------------- roles ----------------------------- */
+
 export function requireRole(user: AuthUser, roles: AuthRole[]) {
   if (user.role === "hidden_admin") return;
 
@@ -87,6 +108,8 @@ export function requireRole(user: AuthUser, roles: AuthRole[]) {
   }
 }
 
+/* ----------------------------- wrappers ----------------------------- */
+
 export async function withAuth(
   handler: (user: AuthUser) => Promise<NextResponse>
 ) {
@@ -94,7 +117,14 @@ export async function withAuth(
     const user = await requireUser();
     return await handler(user);
   } catch (error: any) {
-    return fail(error?.message || "Unauthorized", 401);
+    const message = error?.message || "Unauthorized";
+
+    const status =
+      message === "User record not synced"
+        ? 500
+        : 401;
+
+    return fail(message, status);
   }
 }
 
@@ -105,6 +135,7 @@ export async function withRole(
   try {
     const user = await requireUser();
     requireRole(user, roles);
+
     return await handler(user);
   } catch (error: any) {
     const message = error?.message || "Forbidden";

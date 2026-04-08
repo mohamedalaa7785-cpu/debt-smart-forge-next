@@ -1,5 +1,3 @@
-// app/api/clients/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import {
@@ -10,7 +8,7 @@ import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
 
 /* =========================
-   RATE LIMIT 🔥 (FIXED)
+   RATE LIMIT
 ========================= */
 const rateMap = new Map<string, { count: number; time: number }>();
 const WINDOW = 60 * 1000;
@@ -43,13 +41,13 @@ function dedupePhones(phones: string[]) {
 }
 
 /* =========================
-   CACHE (SAFE)
+   CACHE
 ========================= */
 const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 30;
 
 /* =========================
-   GET CLIENTS
+   GET CLIENTS 🔥
 ========================= */
 export async function GET(req: NextRequest) {
   return withAuth(async (user) => {
@@ -59,7 +57,11 @@ export async function GET(req: NextRequest) {
 
       const { page, limit, offset } = getPagination(req);
 
-      const cacheKey = `${user.id}-${page}-${limit}`;
+      /* 🔍 SEARCH */
+      const { searchParams } = new URL(req.url);
+      const search = searchParams.get("search")?.toLowerCase() || "";
+
+      const cacheKey = `${user.id}-${page}-${limit}-${search}`;
       const cached = cache.get(cacheKey);
 
       if (cached && cached.expiry > Date.now()) {
@@ -72,13 +74,27 @@ export async function GET(req: NextRequest) {
 
       const scopedClients = await getClientsForUser(user.id, user.role);
 
-      const sortedClients = scopedClients.sort(
+      /* 🔍 FILTER */
+      let filtered = scopedClients;
+
+      if (search) {
+        filtered = scopedClients.filter((c) =>
+          [c.name, c.email, c.company]
+            .join(" ")
+            .toLowerCase()
+            .includes(search)
+        );
+      }
+
+      /* 📊 SORT */
+      const sorted = filtered.sort(
         (a, b) =>
           new Date(b.createdAt as any).getTime() -
           new Date(a.createdAt as any).getTime()
       );
 
-      const data = sortedClients
+      /* 📦 PAGINATION */
+      const data = sorted
         .slice(offset, offset + limit + 1)
         .map((client) => ({
           id: client.id,
@@ -91,7 +107,11 @@ export async function GET(req: NextRequest) {
       const hasMore = data.length > limit;
       if (hasMore) data.pop();
 
-      await logAction(user.id, "GET_CLIENTS", { page, limit });
+      await logAction(user.id, "GET_CLIENTS", {
+        page,
+        limit,
+        search,
+      });
 
       cache.set(cacheKey, {
         data,
@@ -101,7 +121,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         success: true,
         data,
-        meta: { page, limit, count: data.length, hasMore },
+        meta: {
+          page,
+          limit,
+          count: data.length,
+          hasMore,
+          search,
+        },
       });
     } catch (error: any) {
       return NextResponse.json(
@@ -119,7 +145,7 @@ export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
     try {
       const ip = req.headers.get("x-forwarded-for") || user.id;
-      rateLimit(ip, 15); // stricter for writes
+      rateLimit(ip, 15);
 
       const body = await req.json();
 
@@ -191,4 +217,4 @@ export async function POST(req: NextRequest) {
       );
     }
   });
-         }
+        }

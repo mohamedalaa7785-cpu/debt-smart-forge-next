@@ -5,10 +5,10 @@ import { osintResults } from "@/server/db/schema";
 import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
-   CACHE (TTL SAFE)
+   CACHE
 ========================= */
 const cache = new Map<string, { data: any; expiry: number }>();
-const TTL = 1000 * 60 * 10; // 10 min
+const TTL = 1000 * 60 * 10;
 
 /* =========================
    TYPES
@@ -27,86 +27,162 @@ export interface OSINTResult {
   webResults: string[];
   workplace: string[];
   imageMatches: string[];
+  mapsResults: string[];
   summary: string;
   confidence: number;
 }
 
 /* =========================
-   SAFE GET KEY (LAZY)
+   KEYS
 ========================= */
-function getApiKey() {
-  return getRequiredEnv("SERPAPI_API_KEY");
-}
+const SERP_KEY = getRequiredEnv("SERPAPI_API_KEY");
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
 /* =========================
-   GENERATE QUERIES (LIMITED)
+   HELPERS
 ========================= */
+
 function generateQueries(input: OSINTInput): string[] {
   const queries: string[] = [];
+
   if (input.name) {
     queries.push(input.name);
     queries.push(`${input.name} Facebook`);
     queries.push(`${input.name} LinkedIn`);
   }
+
   if (input.phone) queries.push(input.phone);
   if (input.company) queries.push(`${input.name} ${input.company}`);
+
   return uniqueArray(queries).slice(0, 5);
 }
 
-/* =========================
-   SAFE REQUEST (RETRY + TIMEOUT)
-========================= */
 async function safeRequest(url: string, params: any) {
   try {
-    const res = await axios.get(url, { params, timeout: 7000 });
+    const res = await axios.get(url, { params, timeout: 8000 });
     return res.data;
-  } catch (error: any) {
-    console.warn("OSINT request failed:", error?.message);
+  } catch (err: any) {
+    console.warn("OSINT request failed:", err?.message);
     return null;
   }
 }
 
 /* =========================
-   WEB SEARCH
+   PROVIDERS
 ========================= */
+
+// 🔍 WEB
 async function searchWeb(query: string) {
-  const key = getApiKey();
-  const data = await safeRequest("https://serpapi.com/search.json", { q: query, api_key: key });
+  const data = await safeRequest("https://serpapi.com/search.json", {
+    q: query,
+    api_key: SERP_KEY,
+  });
+
   return data?.organic_results?.slice(0, 5) || [];
 }
 
-/* =========================
-   IMAGE SEARCH (CONTROLLED)
-========================= */
+// 🖼 IMAGE
 async function searchImage(imageUrl: string) {
-  const key = getApiKey();
   if (!imageUrl) return [];
-  const data = await safeRequest("https://serpapi.com/search.json", { engine: "google_lens", url: imageUrl, api_key: key });
+
+  const data = await safeRequest("https://serpapi.com/search.json", {
+    engine: "google_lens",
+    url: imageUrl,
+    api_key: SERP_KEY,
+  });
+
   return data?.visual_matches?.slice(0, 5) || [];
 }
 
+// 🗺 MAPS
+async function searchMaps(query: string) {
+  if (!MAPS_KEY) return [];
+
+  const data = await safeRequest(
+    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+    {
+      query,
+      key: MAPS_KEY,
+    }
+  );
+
+  return data?.results?.slice(0, 3) || [];
+}
+
+// 🤖 AI
+async function analyzeAI(payload: any) {
+  if (!OPENAI_KEY) return "";
+
+  try {
+    const res = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Analyze this OSINT data. Extract risk level, identity signals, and summary.",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(payload).slice(0, 3000),
+          },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENAI_KEY}`,
+        },
+      }
+    );
+
+    return res.data?.choices?.[0]?.message?.content || "";
+  } catch (err) {
+    return "";
+  }
+}
+
 /* =========================
-   EXTRACT DATA
+   EXTRACT
 ========================= */
+
 function extractData(results: any[]) {
   const social = new Set<string>();
   const workplace = new Set<string>();
   const links = new Set<string>();
+
   for (const r of results) {
     const link = r?.link;
     if (!link) continue;
+
     links.add(link);
-    const lower = link.toLowerCase();
-    if (lower.includes("facebook") || lower.includes("linkedin") || lower.includes("instagram") || lower.includes("twitter")) {
+
+    const l = link.toLowerCase();
+
+    if (
+      l.includes("facebook") ||
+      l.includes("linkedin") ||
+      l.includes("instagram") ||
+      l.includes("twitter")
+    ) {
       social.add(link);
     }
+
     if (r?.snippet) {
       const text = r.snippet.toLowerCase();
-      if (text.includes("works at") || text.includes("company") || text.includes("employee")) {
+
+      if (
+        text.includes("works at") ||
+        text.includes("company") ||
+        text.includes("employee")
+      ) {
         workplace.add(r.snippet);
       }
     }
   }
+
   return {
     social: Array.from(social).slice(0, 5),
     workplace: Array.from(workplace).slice(0, 5),
@@ -115,56 +191,109 @@ function extractData(results: any[]) {
 }
 
 /* =========================
-   MAIN FUNCTION 🔥
+   SCORING
 ========================= */
+
+function calculateScore(data: any, aiText: string) {
+  let score = 0;
+
+  if (data.social.length) score += 30;
+  if (data.workplace.length) score += 20;
+  if (data.links.length) score += 10;
+  if (data.maps?.length) score += 20;
+
+  if (aiText.toLowerCase().includes("fraud")) score += 30;
+
+  return Math.min(score, 100);
+}
+
+/* =========================
+   MAIN 🔥
+========================= */
+
 export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const cacheKey = JSON.stringify(input);
+
   const cached = cache.get(cacheKey);
-  if (cached && cached.expiry > Date.now()) return cached.data;
-
-  const queries = generateQueries(input);
-  const webResultsRaw = await Promise.all(queries.map((q) => searchWeb(q)));
-  const flatResults = webResultsRaw.flat();
-  const extracted = extractData(flatResults);
-
-  let imageMatches: string[] = [];
-  if (input.imageUrl) {
-    const images = await searchImage(input.imageUrl);
-    imageMatches = images.map((i: any) => i?.link).filter(Boolean);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data;
   }
 
-  const summary = extracted.social.length ? "Social presence detected." : "Low online presence.";
-  const confidence = Math.min(100, extracted.social.length * 25 + extracted.workplace.length * 20);
+  const queries = generateQueries(input);
+
+  /* -------- RUN PROVIDERS PARALLEL -------- */
+  const [webRaw, mapsRaw, imageRaw] = await Promise.all([
+    Promise.all(queries.map((q) => searchWeb(q))),
+    Promise.all(queries.map((q) => searchMaps(q))),
+    input.imageUrl ? searchImage(input.imageUrl) : [],
+  ]);
+
+  const webFlat = webRaw.flat();
+  const mapsFlat = mapsRaw.flat();
+
+  const extracted = extractData(webFlat);
+
+  const mapsResults = mapsFlat.map((m: any) => m?.name).filter(Boolean);
+
+  const imageMatches = imageRaw.map((i: any) => i?.link).filter(Boolean);
+
+  /* -------- AI -------- */
+  const aiText = await analyzeAI({
+    web: extracted,
+    maps: mapsResults,
+    images: imageMatches,
+  });
+
+  /* -------- SCORE -------- */
+  const confidence = calculateScore(
+    { ...extracted, maps: mapsResults },
+    aiText
+  );
 
   const result: OSINTResult = {
     socialLinks: extracted.social,
     webResults: extracted.links,
     workplace: extracted.workplace,
     imageMatches,
-    summary,
+    mapsResults,
+    summary: aiText || "No strong signals detected",
     confidence,
   };
 
-  // Save to DB if clientId provided
+  /* -------- SAVE -------- */
   if (input.clientId) {
     try {
-      await db.insert(osintResults).values({
-        clientId: input.clientId,
-        social: extracted.social,
-        workplace: extracted.workplace,
-        webResults: extracted.links,
-        imageResults: imageMatches,
-        summary,
-        confidenceScore: confidence.toString()
-      }).onConflictDoUpdate({
-        target: osintResults.clientId,
-        set: { social: extracted.social, workplace: extracted.workplace, webResults: extracted.links, imageResults: imageMatches, summary, confidenceScore: confidence.toString() }
-      });
-    } catch (dbError) {
-      console.error("OSINT DB SAVE ERROR:", dbError);
+      await db
+        .insert(osintResults)
+        .values({
+          clientId: input.clientId,
+          social: result.socialLinks,
+          workplace: result.workplace,
+          webResults: result.webResults,
+          imageResults: result.imageMatches,
+          summary: result.summary,
+          confidenceScore: result.confidence.toString(),
+        })
+        .onConflictDoUpdate({
+          target: osintResults.clientId,
+          set: {
+            social: result.socialLinks,
+            workplace: result.workplace,
+            webResults: result.webResults,
+            imageResults: result.imageMatches,
+            summary: result.summary,
+            confidenceScore: result.confidence.toString(),
+          },
+        });
+    } catch (err) {
+      console.error("OSINT DB SAVE ERROR:", err);
     }
   }
 
-  cache.set(cacheKey, { data: result, expiry: Date.now() + TTL });
+  cache.set(cacheKey, {
+    data: result,
+    expiry: Date.now() + TTL,
+  });
+
   return result;
-}
+                         }

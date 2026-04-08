@@ -10,15 +10,9 @@ import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
 
-/* =========================
-   ENV CHECK 🔥
-========================= */
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-/* =========================
-   LOGIN API 🔐
-========================= */
 export async function POST(request: Request) {
   try {
     const { email, password } = await request.json();
@@ -31,15 +25,16 @@ export async function POST(request: Request) {
     }
 
     const cookieStore = cookies();
+    const response = NextResponse.json({}); // 🔥 important
 
     const supabase = createServerClient(supabaseUrl, supabaseKey, {
       cookies: {
         get: (name: string) => cookieStore.get(name)?.value,
         set: (name: string, value: string, options: CookieOptions) => {
-          cookieStore.set({ name, value, ...options });
+          response.cookies.set({ name, value, ...options });
         },
         remove: (name: string, options: CookieOptions) => {
-          cookieStore.set({ name, value: "", ...options });
+          response.cookies.set({ name, value: "", ...options });
         },
       },
     });
@@ -60,7 +55,7 @@ export async function POST(request: Request) {
     }
 
     /* =========================
-       SESSION VALIDATION
+       ENSURE SESSION STORED
     ========================= */
     const { data: sessionCheck } = await supabase.auth.getSession();
 
@@ -72,7 +67,7 @@ export async function POST(request: Request) {
     }
 
     /* =========================
-       SAFE USER SYNC 🔥🔥🔥
+       USER SYNC
     ========================= */
     let dbUser = await db.query.users.findFirst({
       where: eq(users.id, data.user.id),
@@ -87,7 +82,7 @@ export async function POST(request: Request) {
           role: "collector",
           name: data.user.user_metadata?.name || null,
         })
-        .onConflictDoNothing(); // 🔥 الحل هنا
+        .onConflictDoNothing();
 
       dbUser = await db.query.users.findFirst({
         where: eq(users.id, data.user.id),
@@ -104,20 +99,19 @@ export async function POST(request: Request) {
     await logAction(dbUser.id, "LOGIN", { email });
 
     /* =========================
-       RESPONSE
+       RESPONSE (🔥 FIXED)
     ========================= */
-    return NextResponse.json({
+    response.body = JSON.stringify({
       success: true,
-      data: {
-        user: {
-          id: dbUser.id,
-          email: dbUser.email,
-          role: dbUser.role,
-          name: dbUser.name,
-        },
-        session: data.session,
+      user: {
+        id: dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role,
+        name: dbUser.name,
       },
     });
+
+    return response;
   } catch (err: any) {
     console.error("LOGIN ERROR:", err);
 
@@ -129,4 +123,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-       }
+  }

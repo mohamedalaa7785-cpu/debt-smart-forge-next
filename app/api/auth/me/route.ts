@@ -7,7 +7,7 @@ import { requireUser } from "@/server/lib/auth";
 ========================= */
 export async function GET(req: Request) {
   try {
-    const user = await requireUser(req as any);
+    const user = await requireUser();
 
     return NextResponse.json({
       success: true,

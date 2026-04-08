@@ -7,7 +7,7 @@ import { requireUser } from "@/server/lib/auth";
 
 export async function GET(req: NextRequest) {
   try {
-    const user = await requireUser(req);
+    const user = await requireUser();
     const clients = await getClientsForUser(user.id, user.role);
 
     const full = await Promise.all(clients.map((c: any) => getClientById(c.id)));

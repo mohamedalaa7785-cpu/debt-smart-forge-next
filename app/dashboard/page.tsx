@@ -26,49 +26,95 @@ type Client = {
   riskLabel: string;
 };
 
+type DashboardStats = {
+  totalClients: number;
+  totalOverdue: number;
+  avgRisk: number;
+  highRisk: number;
+};
+
 /* =========================
    PAGE
 ========================= */
 
 export default function DashboardPage() {
   const [clients, setClients] = useState<Client[]>([]);
+  const [stats, setStats] = useState<DashboardStats>({
+    totalClients: 0,
+    totalOverdue: 0,
+    avgRisk: 0,
+    highRisk: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/clients")
-      .then((r) => r.json())
-      .then((d) => {
-        const formatted =
-          d.data?.map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            company: c.company,
-            overdue: 0,
-            riskScore: Math.floor(Math.random() * 100), // temp
-            riskLabel: "LOW",
-          })) || [];
+    Promise.all([
+      fetch("/api/clients", { cache: "no-store" }).then((r) => r.json()),
+      fetch("/api/dashboard", { cache: "no-store" }).then((r) => r.json()),
+    ])
+      .then(([clientsRes, dashboardRes]) => {
+        const formatted: Client[] =
+          clientsRes.data?.map((c: any) => {
+            const score = Number(c.riskScore ?? 0);
+
+            return {
+              id: c.id,
+              name: c.name,
+              company: c.company,
+              overdue: Number(c.overdue ?? 0),
+              riskScore: score,
+              riskLabel:
+                score >= 70 ? "HIGH" : score >= 40 ? "MEDIUM" : "LOW",
+            };
+          }) || [];
 
         setClients(formatted);
-        setLoading(false);
-      });
+
+        if (dashboardRes?.success && dashboardRes?.data) {
+          setStats({
+            totalClients: Number(dashboardRes.data.totalClients || 0),
+            totalOverdue: Number(dashboardRes.data.totalOverdue || 0),
+            avgRisk: Number(dashboardRes.data.avgRisk || 0),
+            highRisk: Number(dashboardRes.data.highRisk || 0),
+          });
+        } else {
+          const totalOverdueFallback = formatted.reduce(
+            (acc: number, c: Client) => acc + c.overdue,
+            0
+          );
+          const avgRiskFallback =
+            formatted.reduce(
+              (acc: number, c: Client) => acc + c.riskScore,
+              0
+            ) / (formatted.length || 1);
+          const highRiskFallback = formatted.filter(
+            (c: Client) => c.riskScore >= 70
+          ).length;
+
+          setStats({
+            totalClients: formatted.length,
+            totalOverdue: totalOverdueFallback,
+            avgRisk: avgRiskFallback,
+            highRisk: highRiskFallback,
+          });
+        }
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   /* ================= KPIs ================= */
 
-  const totalClients = clients.length;
-
-  const totalOverdue = clients.reduce(
-    (acc, c) => acc + c.overdue,
-    0
-  );
-
+  const totalClients = stats.totalClients || clients.length;
+  const totalOverdue =
+    stats.totalOverdue ||
+    clients.reduce((acc, c) => acc + c.overdue, 0);
   const avgRisk =
+    stats.avgRisk ||
     clients.reduce((acc, c) => acc + c.riskScore, 0) /
-    (clients.length || 1);
-
-  const highRiskCount = clients.filter(
-    (c) => c.riskScore >= 70
-  ).length;
+      (clients.length || 1);
+  const highRiskCount =
+    stats.highRisk ||
+    clients.filter((c) => c.riskScore >= 70).length;
 
   /* ================= CHART ================= */
 
@@ -167,4 +213,4 @@ export default function DashboardPage() {
       </div>
     </div>
   );
-  }
+}

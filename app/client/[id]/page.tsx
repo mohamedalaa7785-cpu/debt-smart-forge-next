@@ -1,5 +1,3 @@
-import { headers } from "next/headers";
-import { NextRequest } from "next/server";
 import { requireUser } from "@/server/lib/auth";
 import { getClientById, canAccessClient } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
@@ -10,14 +8,12 @@ import RiskBadge from "@/components/RiskBadge";
 import ActionButtons from "@/components/ActionButtons";
 import Timeline from "@/components/Timeline";
 import OSINTPanel from "@/components/OSINTPanel";
+import ClientAutoRefresh from "@/components/ClientAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClientPage({ params }: { params: { id: string } }) {
-  const headerList = headers();
-  const req = new NextRequest(new URL(`/client/${params.id}`, "http://localhost"), { headers: headerList });
-  
-  const user = await requireUser(req);
+  const user = await requireUser();
   const data = await getClientById(params.id);
 
   if (!data) return <div className="p-8 text-center">Client not found</div>;
@@ -65,6 +61,8 @@ export default async function ClientPage({ params }: { params: { id: string } })
 
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 space-y-8">
+      <ClientAutoRefresh intervalSec={20} />
+
       {/* Header Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

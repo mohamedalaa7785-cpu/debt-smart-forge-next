@@ -10,25 +10,6 @@ import { withRole } from "@/server/lib/auth";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================
-   ENV SAFETY 🔥
-========================= */
-if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
-  throw new Error("Missing SUPABASE URL");
-}
-
-if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  throw new Error("Missing SERVICE ROLE KEY");
-}
-
-/* =========================
-   ADMIN CLIENT 🔐
-========================= */
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
-
-/* =========================
    ROLES
 ========================= */
 const ALLOWED_ROLES = ["admin", "supervisor", "team_leader", "collector", "hidden_admin"] as const;
@@ -36,6 +17,17 @@ type AllowedRole = (typeof ALLOWED_ROLES)[number];
 
 function isAllowedRole(role: string): role is AllowedRole {
   return ALLOWED_ROLES.includes(role as AllowedRole);
+}
+
+function getSupabaseAdmin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !serviceRoleKey) {
+    return null;
+  }
+
+  return createClient(url, serviceRoleKey);
 }
 
 /* =========================
@@ -54,7 +46,7 @@ async function hiddenAdminCount() {
    GET USERS
 ========================= */
 export async function GET(req: NextRequest) {
-  return withRole(req, ["hidden_admin"], async () => {
+  return withRole(["hidden_admin"], async () => {
     const allUsers = await db
       .select({
         id: users.id,
@@ -73,7 +65,15 @@ export async function GET(req: NextRequest) {
    CREATE USER 🔥
 ========================= */
 export async function POST(req: NextRequest) {
-  return withRole(req, ["hidden_admin"], async () => {
+  return withRole(["hidden_admin"], async () => {
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { success: false, error: "Supabase admin env is not configured" },
+        { status: 500 }
+      );
+    }
+
     const { email, password, name, role } = await req.json();
 
     if (!email || !password || !role) {
@@ -115,7 +115,15 @@ export async function POST(req: NextRequest) {
    UPDATE USER
 ========================= */
 export async function PATCH(req: NextRequest) {
-  return withRole(req, ["hidden_admin"], async () => {
+  return withRole(["hidden_admin"], async () => {
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { success: false, error: "Supabase admin env is not configured" },
+        { status: 500 }
+      );
+    }
+
     const { userId, role, name, password } = await req.json();
 
     if (!userId) {
@@ -169,7 +177,15 @@ export async function PATCH(req: NextRequest) {
    DELETE USER
 ========================= */
 export async function DELETE(req: NextRequest) {
-  return withRole(req, ["hidden_admin"], async () => {
+  return withRole(["hidden_admin"], async () => {
+    const supabaseAdmin = getSupabaseAdmin();
+    if (!supabaseAdmin) {
+      return NextResponse.json(
+        { success: false, error: "Supabase admin env is not configured" },
+        { status: 500 }
+      );
+    }
+
     const { userId } = await req.json();
 
     if (!userId) {
@@ -203,4 +219,4 @@ export async function DELETE(req: NextRequest) {
       data: { deletedUserId: userId },
     });
   });
-                                }
+}

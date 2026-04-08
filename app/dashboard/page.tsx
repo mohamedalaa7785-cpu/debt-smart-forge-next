@@ -1,87 +1,104 @@
+"use client";
+
 import Link from "next/link";
 import RiskBadge from "@/components/RiskBadge";
 import { formatCurrency } from "@/lib/utils";
 import {
-  getClientsForUser,
-  getClientById,
-} from "@/server/services/client.service";
-import { requireUser } from "@/server/lib/auth";
-import { redirect } from "next/navigation";
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+} from "recharts";
+import { useEffect, useState } from "react";
 
-export const dynamic = "force-dynamic";
+/* =========================
+   TYPES
+========================= */
 
-export default async function DashboardPage() {
-  let user;
+type Client = {
+  id: string;
+  name: string;
+  company?: string;
+  overdue: number;
+  riskScore: number;
+  riskLabel: string;
+};
 
-  try {
-    user = await requireUser();
-  } catch {
-    redirect("/login");
-  }
+/* =========================
+   PAGE
+========================= */
 
-  const baseClients = await getClientsForUser(user.id, user.role);
+export default function DashboardPage() {
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const clients = await Promise.all(
-    baseClients.slice(0, 20).map(async (c) => {
-      const d = await getClientById(c.id);
-      if (!d) return null;
+  useEffect(() => {
+    fetch("/api/clients")
+      .then((r) => r.json())
+      .then((d) => {
+        const formatted =
+          d.data?.map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            company: c.company,
+            overdue: 0,
+            riskScore: Math.floor(Math.random() * 100), // temp
+            riskLabel: "LOW",
+          })) || [];
 
-      const totalDue = d.loans.reduce(
-        (acc, loan) => acc + Number(loan.overdue || 0),
-        0
-      );
-
-      const riskScore = d.loans[0]?.bucket ? d.loans[0].bucket * 20 : 20;
-
-      const riskLabel =
-        riskScore >= 80 ? "HIGH" : riskScore >= 40 ? "MEDIUM" : "LOW";
-
-      return {
-        client: c,
-        summary: {
-          totalAmountDue: totalDue,
-          riskScore,
-          riskLabel,
-        },
-      };
-    })
-  );
-
-  const validClients = clients.filter(Boolean) as any[];
+        setClients(formatted);
+        setLoading(false);
+      });
+  }, []);
 
   /* ================= KPIs ================= */
 
-  const totalClients = validClients.length;
+  const totalClients = clients.length;
 
-  const totalOverdue = validClients.reduce(
-    (acc, c) => acc + c.summary.totalAmountDue,
+  const totalOverdue = clients.reduce(
+    (acc, c) => acc + c.overdue,
     0
   );
 
   const avgRisk =
-    validClients.reduce((acc, c) => acc + c.summary.riskScore, 0) /
-    (totalClients || 1);
+    clients.reduce((acc, c) => acc + c.riskScore, 0) /
+    (clients.length || 1);
 
-  const highRiskCount = validClients.filter(
-    (c) => c.summary.riskLabel === "HIGH"
+  const highRiskCount = clients.filter(
+    (c) => c.riskScore >= 70
   ).length;
 
-  /* ================= UI ================= */
+  /* ================= CHART ================= */
+
+  const chartData = [
+    {
+      name: "Low",
+      value: clients.filter((c) => c.riskScore < 40).length,
+    },
+    {
+      name: "Medium",
+      value: clients.filter(
+        (c) => c.riskScore >= 40 && c.riskScore < 70
+      ).length,
+    },
+    {
+      name: "High",
+      value: clients.filter((c) => c.riskScore >= 70).length,
+    },
+  ];
+
+  if (loading) return <p className="p-6">Loading...</p>;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
       {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">
-          🧠 AI Portfolio Dashboard
-        </h1>
+      <h1 className="text-2xl font-bold">
+        🧠 AI Portfolio Dashboard
+      </h1>
 
-        <span className="rounded-full bg-gray-100 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-gray-500">
-          Role: {user.role}
-        </span>
-      </div>
-
-      {/* 🔥 KPIs */}
+      {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 bg-white rounded-xl border shadow">
           <p className="text-xs text-gray-400">Clients</p>
@@ -89,7 +106,7 @@ export default async function DashboardPage() {
         </div>
 
         <div className="p-4 bg-white rounded-xl border shadow">
-          <p className="text-xs text-gray-400">Total Overdue</p>
+          <p className="text-xs text-gray-400">Overdue</p>
           <p className="text-xl font-bold">
             {formatCurrency(totalOverdue)}
           </p>
@@ -97,7 +114,9 @@ export default async function DashboardPage() {
 
         <div className="p-4 bg-white rounded-xl border shadow">
           <p className="text-xs text-gray-400">Avg Risk</p>
-          <p className="text-xl font-bold">{avgRisk.toFixed(0)}%</p>
+          <p className="text-xl font-bold">
+            {avgRisk.toFixed(0)}%
+          </p>
         </div>
 
         <div className="p-4 bg-white rounded-xl border shadow">
@@ -108,74 +127,44 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* 🔥 ALERT */}
-      {highRiskCount > 0 && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-semibold">
-          ⚠️ You have {highRiskCount} high-risk clients that need attention
-        </div>
-      )}
+      {/* 🔥 CHART */}
+      <div className="p-4 bg-white rounded-xl border shadow">
+        <h2 className="font-bold mb-2">Risk Distribution</h2>
+
+        <LineChart width={400} height={200} data={chartData}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="name" />
+          <YAxis />
+          <Tooltip />
+          <Line type="monotone" dataKey="value" />
+        </LineChart>
+      </div>
 
       {/* TABLE */}
-      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-        <table className="w-full border-collapse text-left">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="px-6 py-4 text-xs font-bold text-gray-400">
-                Client
-              </th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-400">
-                Risk
-              </th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-400">
-                Overdue
-              </th>
-              <th className="px-6 py-4 text-xs font-bold text-gray-400">
-                Action
-              </th>
-            </tr>
-          </thead>
+      <div className="bg-white border rounded-xl">
+        {clients.map((c) => (
+          <Link
+            key={c.id}
+            href={`/dashboard/clients/${c.id}`}
+            className="block p-4 border-b hover:bg-gray-50"
+          >
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="font-bold">{c.name}</p>
+                <p className="text-xs text-gray-400">
+                  {c.company}
+                </p>
+              </div>
 
-          <tbody className="divide-y divide-gray-50">
-            {validClients.map((c) => (
-              <tr key={c.client.id} className="hover:bg-gray-50 transition">
-                <td className="px-6 py-4">
-                  <p className="font-bold">{c.client.name}</p>
-                  <p className="text-xs text-gray-400">
-                    {c.client.company || "No Company"}
-                  </p>
-                </td>
-
-                <td className="px-6 py-4">
-                  <RiskBadge
-                    label={c.summary.riskLabel}
-                    score={c.summary.riskScore}
-                    size="sm"
-                  />
-                </td>
-
-                <td className="px-6 py-4 font-bold">
-                  {formatCurrency(c.summary.totalAmountDue)}
-                </td>
-
-                <td className="px-6 py-4">
-                  <Link
-                    href={`/dashboard/clients/${c.client.id}`}
-                    className="text-xs font-bold text-blue-600 hover:underline"
-                  >
-                    View →
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {validClients.length === 0 && (
-          <div className="p-12 text-center text-gray-400">
-            No clients found
-          </div>
-        )}
+              <RiskBadge
+                score={c.riskScore}
+                label={c.riskLabel}
+                size="sm"
+              />
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );
-          }
+  }

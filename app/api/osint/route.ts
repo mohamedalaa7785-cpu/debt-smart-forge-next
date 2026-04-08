@@ -5,6 +5,7 @@ import { osintResults } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { requireUser } from "@/server/lib/auth";
 import { getClientById } from "@/server/services/client.service";
+import { logger } from "@/server/lib/logger";
 
 /* ================= RATE LIMIT ================= */
 
@@ -59,7 +60,7 @@ async function getCached(clientId: string, allowStale = false) {
   const age =
     Date.now() - new Date(existing.lastAnalyzedAt || 0).getTime();
 
-  const isFresh = age < 1000 * 60 * 60; // 1 hour
+  const isFresh = age < 1000 * 60 * 60;
 
   if (!isFresh && !allowStale) return null;
 
@@ -93,6 +94,7 @@ export async function POST(req: NextRequest) {
 
     const error = validate(body);
     if (error) {
+      logger.warn("OSINT_VALIDATION_FAILED", { body });
       return NextResponse.json(
         { success: false, error },
         { status: 400 }
@@ -100,6 +102,11 @@ export async function POST(req: NextRequest) {
     }
 
     const clean = sanitize(body);
+
+    logger.info("OSINT_REQUEST", {
+      userId: user.id,
+      input: clean,
+    });
 
     /* ================= ACCESS ================= */
 
@@ -111,16 +118,25 @@ export async function POST(req: NextRequest) {
       );
 
       if (!client || !client.id) {
+        logger.warn("OSINT_FORBIDDEN", {
+          userId: user.id,
+          clientId: clean.clientId,
+        });
+
         return NextResponse.json(
           { success: false, error: "Forbidden" },
           { status: 403 }
         );
       }
 
-      /* 🔥 CACHE (fresh) */
+      /* 🔥 CACHE */
       const cached = await getCached(clean.clientId);
 
       if (cached) {
+        logger.info("OSINT_CACHE_HIT", {
+          clientId: clean.clientId,
+        });
+
         return NextResponse.json({
           success: true,
           data: cached,
@@ -148,14 +164,21 @@ export async function POST(req: NextRequest) {
         ),
       ]);
     } catch (err) {
-      console.error("OSINT ENGINE ERROR:", err);
+      logger.error("OSINT_ENGINE_ERROR", {
+        error: err,
+        input: clean,
+      });
     }
 
-    /* 🔥 FALLBACK TO STALE CACHE */
+    /* 🔥 FALLBACK */
     if (!result && clean.clientId) {
       const stale = await getCached(clean.clientId, true);
 
       if (stale) {
+        logger.warn("OSINT_STALE_FALLBACK", {
+          clientId: clean.clientId,
+        });
+
         return NextResponse.json({
           success: true,
           data: stale,
@@ -165,13 +188,21 @@ export async function POST(req: NextRequest) {
     }
 
     if (!result) {
+      logger.error("OSINT_FAILED", {
+        input: clean,
+      });
+
       return NextResponse.json(
         { success: false, error: "OSINT unavailable" },
         { status: 503 }
       );
     }
 
-    /* ================= RESPONSE ================= */
+    /* ================= SUCCESS ================= */
+
+    logger.info("OSINT_SUCCESS", {
+      clientId: clean.clientId,
+    });
 
     return NextResponse.json({
       success: true,
@@ -186,7 +217,9 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("OSINT ERROR:", error);
+    logger.error("OSINT_FATAL_ERROR", {
+      error,
+    });
 
     if (error.message === "Too many requests") {
       return NextResponse.json(
@@ -209,4 +242,4 @@ export async function POST(req: NextRequest) {
       { status }
     );
   }
-      }
+              }

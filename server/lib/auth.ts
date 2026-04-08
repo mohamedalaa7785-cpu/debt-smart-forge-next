@@ -1,5 +1,3 @@
-// server/lib/auth.ts
-
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
@@ -19,9 +17,18 @@ export interface AuthUser {
   email: string;
   role: AuthRole;
   name?: string | null;
+  isSuperUser?: boolean;
 }
 
-/* ----------------------------- helpers ----------------------------- */
+/* =========================
+   CACHE ⚡
+========================= */
+const userCache = new Map<string, { data: AuthUser; expiry: number }>();
+const TTL = 1000 * 30;
+
+/* =========================
+   HELPERS
+========================= */
 
 function fail(message: string, status = 401) {
   return NextResponse.json(
@@ -47,20 +54,17 @@ function getSupabaseServerClient() {
 
   return createServerClient(url, key, {
     cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value;
-      },
-      set(name: string, value: string, options: any) {
-        cookieStore.set({ name, value, ...options });
-      },
-      remove(name: string, options: any) {
-        cookieStore.delete(name);
-      },
+      get: (name: string) => cookieStore.get(name)?.value,
+      set: (name: string, value: string, options: any) =>
+        cookieStore.set({ name, value, ...options }),
+      remove: (name: string) => cookieStore.delete(name),
     },
   });
 }
 
-/* ----------------------------- core ----------------------------- */
+/* =========================
+   CORE 🔥
+========================= */
 
 export async function requireUser(): Promise<AuthUser> {
   const supabase = getSupabaseServerClient();
@@ -70,16 +74,18 @@ export async function requireUser(): Promise<AuthUser> {
     error,
   } = await supabase.auth.getUser();
 
-  if (error) {
-    throw new Error("Invalid session");
-  }
-
-  if (!user) {
+  if (error || !user) {
     throw new Error("Invalid session");
   }
 
   if (!user.email) {
     throw new Error("User email missing");
+  }
+
+  /* ⚡ CACHE */
+  const cached = userCache.get(user.id);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data;
   }
 
   const dbUser = await db.query.users.findFirst({
@@ -90,15 +96,32 @@ export async function requireUser(): Promise<AuthUser> {
     throw new Error("User record not synced");
   }
 
-  return {
+  /* 🔥 HIDDEN ADMIN LOGIC */
+  let role: AuthRole = dbUser.role as AuthRole;
+
+  if (dbUser.isSuperUser) {
+    role = "hidden_admin";
+  }
+
+  const authUser: AuthUser = {
     id: dbUser.id,
     email: dbUser.email,
-    role: dbUser.role as AuthRole,
+    role,
     name: dbUser.name,
+    isSuperUser: dbUser.isSuperUser,
   };
+
+  userCache.set(user.id, {
+    data: authUser,
+    expiry: Date.now() + TTL,
+  });
+
+  return authUser;
 }
 
-/* ----------------------------- roles ----------------------------- */
+/* =========================
+   ROLE SYSTEM 🔐
+========================= */
 
 export function requireRole(user: AuthUser, roles: AuthRole[]) {
   if (user.role === "hidden_admin") return;
@@ -108,7 +131,25 @@ export function requireRole(user: AuthUser, roles: AuthRole[]) {
   }
 }
 
-/* ----------------------------- wrappers ----------------------------- */
+/* =========================
+   ADVANCED CHECKS 🔥
+========================= */
+
+export function isAdmin(user: AuthUser) {
+  return user.role === "admin" || user.role === "hidden_admin";
+}
+
+export function isPrivileged(user: AuthUser) {
+  return (
+    user.role === "hidden_admin" ||
+    user.role === "admin" ||
+    user.role === "supervisor"
+  );
+}
+
+/* =========================
+   WRAPPERS
+========================= */
 
 export async function withAuth(
   handler: (user: AuthUser) => Promise<NextResponse>

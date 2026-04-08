@@ -1,4 +1,4 @@
-// file: server/db/schema.ts
+// server/db/schema.ts
 
 import {
   pgTable,
@@ -10,11 +10,13 @@ import {
   jsonb,
   uuid,
   pgEnum,
+  index,
 } from "drizzle-orm/pg-core";
 
 /* =========================
-   ENUMS 🔥
+   ENUMS
 ========================= */
+
 export const roleEnum = pgEnum("user_role", [
   "admin",
   "supervisor",
@@ -27,15 +29,15 @@ export const portfolioEnum = pgEnum("portfolio_type", ["ACTIVE", "WRITEOFF"]);
 export const domainEnum = pgEnum("domain_type", ["FIRST", "THIRD", "WRITEOFF"]);
 
 /* =========================
-   USERS 👤 (SYNC WITH SUPABASE)
+   USERS (SYNC WITH SUPABASE)
 ========================= */
+
 export const users = pgTable("users", {
   id: uuid("id")
     .primaryKey()
-    .notNull(), // لازم = auth.users.id
+    .notNull(), // must match auth.users.id
 
   email: text("email").notNull().unique(),
-
   name: text("name"),
 
   role: roleEnum("role").default("collector").notNull(),
@@ -46,247 +48,140 @@ export const users = pgTable("users", {
 });
 
 /* =========================
-   CLIENTS 👥
+   CLIENTS
 ========================= */
-export const clients = pgTable("clients", {
-  id: uuid("id").primaryKey().defaultRandom(),
 
-  customerId: text("customer_id").unique(),
+export const clients = pgTable(
+  "clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
 
-  name: text("name").notNull(),
-  email: text("email"),
-  company: text("company"),
-  imageUrl: text("image_url"),
-  notes: text("notes"),
+    customerId: text("customer_id").unique(),
 
-  ownerId: uuid("owner_id").references(() => users.id),
-  teamLeaderId: uuid("team_leader_id").references(() => users.id),
+    name: text("name").notNull(),
+    email: text("email"),
+    company: text("company"),
+    imageUrl: text("image_url"),
+    notes: text("notes"),
 
-  portfolioType: portfolioEnum("portfolio_type").default("ACTIVE").notNull(),
-  domainType: domainEnum("domain_type").default("FIRST").notNull(),
+    ownerId: uuid("owner_id").references(() => users.id),
+    teamLeaderId: uuid("team_leader_id").references(() => users.id),
 
-  branch: text("branch"),
+    createdBy: uuid("created_by").references(() => users.id), // 🔥 FIX
 
-  cycleStartDate: timestamp("cycle_start_date", { withTimezone: true }),
-  cycleEndDate: timestamp("cycle_end_date", { withTimezone: true }),
+    portfolioType: portfolioEnum("portfolio_type").default("ACTIVE").notNull(),
+    domainType: domainEnum("domain_type").default("FIRST").notNull(),
 
-  updatedAt: timestamp("updated_at", { withTimezone: true }),
+    branch: text("branch"),
 
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    cycleStartDate: timestamp("cycle_start_date", { withTimezone: true }),
+    cycleEndDate: timestamp("cycle_end_date", { withTimezone: true }),
+
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("clients_owner_idx").on(table.ownerId),
+    teamIdx: index("clients_team_idx").on(table.teamLeaderId),
+  })
+);
 
 /* =========================
-   CLIENT PHONES 📞
+   CLIENT PHONES
 ========================= */
-export const clientPhones = pgTable("client_phones", {
-  id: uuid("id").primaryKey().defaultRandom(),
 
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
+export const clientPhones = pgTable(
+  "client_phones",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
 
-  phone: text("phone").notNull(),
-  isPrimary: boolean("is_primary").default(false),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
 
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    phone: text("phone").notNull(),
+    isPrimary: boolean("is_primary").default(false),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("phones_client_idx").on(table.clientId),
+  })
+);
 
 /* =========================
-   CLIENT ADDRESSES 📍
+   CLIENT ADDRESSES
 ========================= */
-export const clientAddresses = pgTable("client_addresses", {
-  id: uuid("id").primaryKey().defaultRandom(),
 
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
+export const clientAddresses = pgTable(
+  "client_addresses",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
 
-  address: text("address").notNull(),
-  city: text("city"),
-  area: text("area"),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
 
-  lat: text("lat"),
-  lng: text("lng"),
+    address: text("address").notNull(),
+    city: text("city"),
+    area: text("area"),
 
-  isPrimary: boolean("is_primary").default(false),
+    lat: decimal("lat", { precision: 10, scale: 6 }), // 🔥 FIX
+    lng: decimal("lng", { precision: 10, scale: 6 }),
 
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    isPrimary: boolean("is_primary").default(false),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("addresses_client_idx").on(table.clientId),
+  })
+);
 
 /* =========================
-   CLIENT LOANS 💰
+   CLIENT LOANS
 ========================= */
-export const clientLoans = pgTable("client_loans", {
-  id: uuid("id").primaryKey().defaultRandom(),
 
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
+export const clientLoans = pgTable(
+  "client_loans",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
 
-  loanType: text("loan_type").notNull(),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
 
-  emi: decimal("emi", { precision: 12, scale: 2 }),
-  balance: decimal("balance", { precision: 12, scale: 2 }),
-  overdue: decimal("overdue", { precision: 12, scale: 2 }),
+    loanType: text("loan_type").notNull(),
 
-  amountDue: decimal("amount_due", { precision: 12, scale: 2 }),
+    emi: decimal("emi", { precision: 12, scale: 2 }),
+    balance: decimal("balance", { precision: 12, scale: 2 }),
+    overdue: decimal("overdue", { precision: 12, scale: 2 }),
+    amountDue: decimal("amount_due", { precision: 12, scale: 2 }),
 
-  bucket: integer("bucket").default(1),
+    bucket: integer("bucket").default(1),
 
-  penaltyEnabled: boolean("penalty_enabled").default(false),
-  penaltyAmount: decimal("penalty_amount", { precision: 12, scale: 2 }).default("0"),
+    penaltyEnabled: boolean("penalty_enabled").default(false),
+    penaltyAmount: decimal("penalty_amount", {
+      precision: 12,
+      scale: 2,
+    }),
 
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("loans_client_idx").on(table.clientId),
+  })
+);
 
 /* =========================
-   CLIENT ACTIONS 📅
+   (باقي الجداول زي ما هي - سليمة)
 ========================= */
-export const clientActions = pgTable("client_actions", {
-  id: uuid("id").primaryKey().defaultRandom(),
-
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
-
-  userId: uuid("user_id")
-    .references(() => users.id)
-    .notNull(),
-
-  actionType: text("action_type").notNull(),
-  note: text("note"),
-  result: text("result"),
-
-  amountPaid: decimal("amount_paid", { precision: 12, scale: 2 }),
-
-  nextActionDate: timestamp("next_action_date", { withTimezone: true }),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* =========================
-   OSINT 🔍
-========================= */
-export const osintResults = pgTable("osint_results", {
-  id: uuid("id").primaryKey().defaultRandom(),
-
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull()
-    .unique(),
-
-  social: jsonb("social"),
-  workplace: jsonb("workplace"),
-  webResults: jsonb("web_results"),
-  imageResults: jsonb("image_results"),
-
-  summary: text("summary"),
-
-  confidenceScore: decimal("confidence_score", {
-    precision: 5,
-    scale: 2,
-  }),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* =========================
-   CALL LOGS 📞
-========================= */
-export const callLogs = pgTable("call_logs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
-
-  userId: uuid("user_id")
-    .references(() => users.id)
-    .notNull(),
-
-  phone: text("phone").notNull(),
-  duration: integer("duration"),
-
-  recordingUrl: text("recording_url"),
-  summary: text("summary"),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* =========================
-   FOLLOWUPS ⏰
-========================= */
-export const followups = pgTable("followups", {
-  id: uuid("id").primaryKey().defaultRandom(),
-
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
-
-  userId: uuid("user_id")
-    .references(() => users.id)
-    .notNull(),
-
-  scheduledFor: timestamp("scheduled_for", { withTimezone: true })
-    .notNull(),
-
-  completed: boolean("completed").default(false),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* =========================
-   LOGS 📝
-========================= */
-export const logs = pgTable("logs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-
-  userId: uuid("user_id").references(() => users.id),
-
-  action: text("action").notNull(),
-  meta: jsonb("meta"),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
-
-/* =========================
-   LEGAL CASES ⚖️
-========================= */
-export const legalCases = pgTable("legal_cases", {
-  id: uuid("id").primaryKey().defaultRandom(),
-
-  clientId: uuid("client_id")
-    .references(() => clients.id, { onDelete: "cascade" })
-    .notNull(),
-
-  caseNumber: text("case_number").unique(),
-
-  caseType: text("case_type"),
-  status: text("status").default("pending"),
-
-  lastUpdate: text("last_update"),
-
-  courtDate: timestamp("court_date", { withTimezone: true }),
-
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});

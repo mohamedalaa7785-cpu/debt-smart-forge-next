@@ -1,4 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
+// server/lib/auth.ts
+
+import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { db } from "@/server/db";
@@ -57,6 +59,10 @@ export async function requireUser(): Promise<AuthUser> {
     throw new Error("Invalid session");
   }
 
+  if (!user.email) {
+    throw new Error("User email missing");
+  }
+
   const dbUser = await db.query.users.findFirst({
     where: eq(users.id, user.id),
   });
@@ -82,7 +88,6 @@ export function requireRole(user: AuthUser, roles: AuthRole[]) {
 }
 
 export async function withAuth(
-  req: NextRequest,
   handler: (user: AuthUser) => Promise<NextResponse>
 ) {
   try {
@@ -94,7 +99,6 @@ export async function withAuth(
 }
 
 export async function withRole(
-  req: NextRequest,
   roles: AuthRole[],
   handler: (user: AuthUser) => Promise<NextResponse>
 ) {
@@ -103,6 +107,15 @@ export async function withRole(
     requireRole(user, roles);
     return await handler(user);
   } catch (error: any) {
-    return fail(error?.message || "Forbidden", 403);
+    const message = error?.message || "Forbidden";
+
+    const status =
+      message === "Forbidden"
+        ? 403
+        : message === "User record not synced"
+        ? 500
+        : 401;
+
+    return fail(message, status);
   }
 }

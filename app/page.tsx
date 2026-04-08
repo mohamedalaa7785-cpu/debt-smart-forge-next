@@ -1,30 +1,24 @@
+// app/page.tsx
+
 import Link from "next/link";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { requireUser } from "@/server/lib/auth";
 
 export default async function HomePage() {
-  const cookieStore = cookies();
+  /* ----------------------------- AUTH CHECK ----------------------------- */
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value;
-        },
-      },
+  try {
+    const user = await requireUser();
+
+    // 🔥 logged in → dashboard
+    if (user) {
+      redirect("/dashboard");
     }
-  );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (user) {
-    redirect("/dashboard");
+  } catch {
+    // 🔥 not logged in → show landing
   }
+
+  /* ----------------------------- UI ----------------------------- */
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">

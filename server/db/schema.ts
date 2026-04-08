@@ -64,7 +64,6 @@ export const clients = pgTable(
 
     ownerId: uuid("owner_id").references(() => users.id),
     teamLeaderId: uuid("team_leader_id").references(() => users.id),
-
     createdBy: uuid("created_by").references(() => users.id),
 
     portfolioType: portfolioEnum("portfolio_type").default("ACTIVE").notNull(),
@@ -181,7 +180,7 @@ export const clientLoans = pgTable(
 );
 
 /* =========================
-   OSINT RESULTS 🔥
+   OSINT RESULTS
 ========================= */
 
 export const osintResults = pgTable(
@@ -221,7 +220,33 @@ export const osintResults = pgTable(
 );
 
 /* =========================
-   FRAUD ANALYSIS 🔥
+   OSINT HISTORY 🔥
+========================= */
+
+export const osintHistory = pgTable(
+  "osint_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+
+    result: jsonb("result").default({}),
+
+    confidence: integer("confidence").default(0),
+
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+    }).defaultNow(),
+  },
+  (table) => ({
+    clientIdx: index("osint_history_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
+   FRAUD ANALYSIS
 ========================= */
 
 export const fraudAnalysis = pgTable(

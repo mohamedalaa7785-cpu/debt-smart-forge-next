@@ -24,7 +24,6 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // 🔥 استخدم session مش user
   const {
     data: { session },
   } = await supabase.auth.getSession();
@@ -36,9 +35,18 @@ export async function middleware(request: NextRequest) {
   // =========================
   const isPublicRoute =
     pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
     pathname.startsWith("/api/auth/login") ||
     pathname.startsWith("/api/auth/register") ||
-    pathname.startsWith("/api/auth/me");
+    pathname.startsWith("/api/auth/me") ||
+    pathname.startsWith("/api/auth/logout");
+
+  // =========================
+  // 🔌 IGNORE API (EXCEPT AUTH)
+  // =========================
+  if (pathname.startsWith("/api") && !pathname.startsWith("/api/auth")) {
+    return response;
+  }
 
   // =========================
   // 🔒 PROTECTED ROUTES
@@ -50,24 +58,30 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/add-client");
 
   // =========================
-  // 🚫 BLOCK ACCESS
+  // 🚫 NOT LOGGED IN
   // =========================
   if (!session && isProtectedRoute) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
   // =========================
-  // 🔁 REDIRECT IF LOGGED IN
+  // 🔁 LOGGED IN USERS
   // =========================
-  if (session && pathname.startsWith("/login")) {
-    return NextResponse.redirect(new URL("/", request.url));
+  if (session) {
+    // redirect root → dashboard
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    // block login/signup
+    if (pathname.startsWith("/login") || pathname.startsWith("/signup")) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
   }
 
   return response;
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

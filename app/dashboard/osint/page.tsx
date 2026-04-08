@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   LineChart,
   Line,
@@ -8,6 +8,7 @@ import {
   YAxis,
   Tooltip,
   CartesianGrid,
+  ResponsiveContainer,
 } from "recharts";
 
 type Result = {
@@ -51,6 +52,17 @@ export default function OSINTPage() {
     }
   }
 
+  /* 🔥 memoized chart */
+  const chartData = useMemo(() => {
+    if (!data) return [];
+
+    return [
+      { name: "Social", value: data.socialLinks.length },
+      { name: "Work", value: data.workplace.length },
+      { name: "Web", value: data.webResults.length },
+    ];
+  }, [data]);
+
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">OSINT Intelligence</h1>
@@ -64,6 +76,7 @@ export default function OSINTPage() {
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
         />
+
         <button
           onClick={handleSearch}
           disabled={loading}
@@ -74,7 +87,12 @@ export default function OSINTPage() {
       </div>
 
       {/* STATES */}
-      {loading && <p>Loading...</p>}
+      {loading && (
+        <div className="p-4 border rounded animate-pulse">
+          Searching OSINT data...
+        </div>
+      )}
+
       {error && <p className="text-red-500">{error}</p>}
 
       {/* RESULT */}
@@ -86,28 +104,22 @@ export default function OSINTPage() {
             <p className="text-xl">{data.confidence}%</p>
           </div>
 
-          {/* 🔥 CHART */}
-          {(() => {
-            const chartData = [
-              { name: "Social", value: data.socialLinks.length },
-              { name: "Work", value: data.workplace.length },
-              { name: "Web", value: data.webResults.length },
-            ];
+          {/* 🔥 RESPONSIVE CHART */}
+          <div className="p-4 border rounded">
+            <h2 className="font-bold mb-2">Analysis Chart</h2>
 
-            return (
-              <div className="p-4 border rounded">
-                <h2 className="font-bold mb-2">Analysis Chart</h2>
-
-                <LineChart width={400} height={200} data={chartData}>
+            <div className="w-full h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
                   <YAxis />
                   <Tooltip />
                   <Line type="monotone" dataKey="value" />
                 </LineChart>
-              </div>
-            );
-          })()}
+              </ResponsiveContainer>
+            </div>
+          </div>
 
           {/* SUMMARY */}
           <div className="p-4 border rounded">
@@ -118,13 +130,9 @@ export default function OSINTPage() {
           {/* SOCIAL */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Social Links</h2>
+            {data.socialLinks.length === 0 && <p>No data</p>}
             {data.socialLinks.map((l, i) => (
-              <a
-                key={i}
-                href={l}
-                target="_blank"
-                className="block text-blue-500"
-              >
+              <a key={i} href={l} target="_blank" className="block text-blue-500">
                 {l}
               </a>
             ))}
@@ -133,6 +141,7 @@ export default function OSINTPage() {
           {/* WORK */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Workplaces</h2>
+            {data.workplace.length === 0 && <p>No data</p>}
             {data.workplace.map((w, i) => (
               <p key={i}>{w}</p>
             ))}
@@ -142,12 +151,7 @@ export default function OSINTPage() {
           <div className="p-4 border rounded">
             <h2 className="font-bold">Web Results</h2>
             {data.webResults.map((l, i) => (
-              <a
-                key={i}
-                href={l}
-                target="_blank"
-                className="block text-blue-500"
-              >
+              <a key={i} href={l} target="_blank" className="block text-blue-500">
                 {l}
               </a>
             ))}
@@ -164,7 +168,7 @@ export default function OSINTPage() {
           {/* IMAGES */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Image Matches</h2>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {data.imageMatches.map((img, i) => (
                 <img key={i} src={img} className="rounded" />
               ))}

@@ -2,9 +2,7 @@ import axios from "axios";
 import { db } from "@/server/db";
 import { fraudAnalysis } from "@/server/db/schema";
 
-/* =========================
-   TYPES
-========================= */
+/* ================= TYPES ================= */
 
 export interface FraudInput {
   clientId: string;
@@ -15,85 +13,65 @@ export interface FraudInput {
 
 export interface FraudResult {
   score: number;
-  level: "low" | "medium" | "high";
+  level: "low" | "medium" | "high" | "critical";
   signals: string[];
   summary: string;
 }
 
-/* =========================
-   RULE ENGINE 🔥
-========================= */
+/* ================= SIGNAL ENGINE ================= */
 
 function detectSignals(input: FraudInput) {
   const signals: string[] = [];
 
-  /* 🔥 PHONE CHECK */
-  if (!input.phones || input.phones.length === 0) {
-    signals.push("No phone data");
-  }
+  /* PHONE */
+  if (!input.phones?.length) signals.push("NO_PHONE");
+  if ((input.phones?.length || 0) > 3) signals.push("MULTIPLE_PHONES");
 
-  if (input.phones && input.phones.length > 3) {
-    signals.push("Multiple phone numbers");
-  }
-
-  /* 🔥 LOAN CHECK */
+  /* LOANS */
   const totalOverdue =
-    input.loans?.reduce(
-      (acc, l) => acc + Number(l.overdue || 0),
-      0
-    ) || 0;
+    input.loans?.reduce((a, l) => a + Number(l.overdue || 0), 0) || 0;
 
-  if (totalOverdue > 50000) {
-    signals.push("High overdue amount");
-  }
+  if (totalOverdue > 50000) signals.push("HIGH_OVERDUE");
+  if (input.loans?.some((l) => l.bucket >= 4))
+    signals.push("SEVERE_DELINQUENCY");
 
-  if (input.loans?.some((l) => l.bucket >= 4)) {
-    signals.push("Severe delinquency");
-  }
-
-  /* 🔥 OSINT */
-  if (input.osint?.confidence > 70) {
-    signals.push("High OSINT risk");
-  }
-
-  if (!input.osint?.socialLinks?.length) {
-    signals.push("No social presence");
-  }
+  /* OSINT */
+  if (input.osint?.confidence > 70) signals.push("HIGH_OSINT_RISK");
+  if (!input.osint?.socialLinks?.length) signals.push("NO_SOCIAL");
 
   return signals;
 }
 
-/* =========================
-   SCORING
-========================= */
+/* ================= WEIGHTED SCORING 🔥 ================= */
+
+const weights: Record<string, number> = {
+  NO_PHONE: 15,
+  MULTIPLE_PHONES: 20,
+  HIGH_OVERDUE: 30,
+  SEVERE_DELINQUENCY: 30,
+  HIGH_OSINT_RISK: 25,
+  NO_SOCIAL: 15,
+};
 
 function calculateScore(signals: string[]) {
-  let score = 0;
-
-  for (const s of signals) {
-    if (s.includes("High overdue")) score += 30;
-    else if (s.includes("Severe")) score += 30;
-    else if (s.includes("High OSINT")) score += 25;
-    else if (s.includes("Multiple phone")) score += 15;
-    else score += 10;
-  }
-
-  return Math.min(score, 100);
+  return Math.min(
+    signals.reduce((acc, s) => acc + (weights[s] || 10), 0),
+    100
+  );
 }
 
-function getLevel(score: number): "low" | "medium" | "high" {
-  if (score > 70) return "high";
-  if (score > 40) return "medium";
+function getLevel(score: number) {
+  if (score >= 85) return "critical";
+  if (score >= 70) return "high";
+  if (score >= 40) return "medium";
   return "low";
 }
 
-/* =========================
-   AI ANALYSIS 🤖
-========================= */
+/* ================= AI (STRUCTURED) ================= */
 
 async function aiSummary(input: FraudInput, signals: string[]) {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) return "No AI analysis";
+  if (!key) return null;
 
   try {
     const res = await axios.post(
@@ -104,7 +82,7 @@ async function aiSummary(input: FraudInput, signals: string[]) {
           {
             role: "system",
             content:
-              "You are a fraud detection system. Analyze risk and give short summary.",
+              "Return JSON: { riskLevel, summary } (short, strict JSON)",
           },
           {
             role: "user",
@@ -113,21 +91,19 @@ async function aiSummary(input: FraudInput, signals: string[]) {
         ],
       },
       {
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
+        headers: { Authorization: `Bearer ${key}` },
       }
     );
 
-    return res.data?.choices?.[0]?.message?.content || "";
+    return JSON.parse(
+      res.data?.choices?.[0]?.message?.content || "{}"
+    );
   } catch {
-    return "AI analysis failed";
+    return null;
   }
 }
 
-/* =========================
-   MAIN 🔥
-========================= */
+/* ================= MAIN ================= */
 
 export async function analyzeFraud(
   input: FraudInput
@@ -135,26 +111,42 @@ export async function analyzeFraud(
   const signals = detectSignals(input);
 
   const score = calculateScore(signals);
-  const level = getLevel(score);
+  let level = getLevel(score);
 
-  const summary = await aiSummary(input, signals);
+  const ai = await aiSummary(input, signals);
+
+  if (ai?.riskLevel) {
+    level = ai.riskLevel;
+  }
 
   const result: FraudResult = {
     score,
     level,
     signals,
-    summary,
+    summary: ai?.summary || "Rule-based fraud analysis",
   };
 
-  /* 🔥 SAVE */
+  /* ================= SAVE (UPSERT) ================= */
+
   try {
-    await db.insert(fraudAnalysis).values({
-      clientId: input.clientId,
-      score,
-      level,
-      signals,
-      aiSummary: summary,
-    });
+    await db
+      .insert(fraudAnalysis)
+      .values({
+        clientId: input.clientId,
+        score,
+        level,
+        signals,
+        aiSummary: result.summary,
+      })
+      .onConflictDoUpdate({
+        target: fraudAnalysis.clientId,
+        set: {
+          score,
+          level,
+          signals,
+          aiSummary: result.summary,
+        },
+      });
   } catch (err) {
     console.error("FRAUD SAVE ERROR:", err);
   }

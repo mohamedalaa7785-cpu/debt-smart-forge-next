@@ -1,8 +1,6 @@
 import axios from "axios";
 
-/* =========================
-   TYPES
-========================= */
+/* ================= TYPES ================= */
 
 export interface RecommendationInput {
   osint?: any;
@@ -12,34 +10,42 @@ export interface RecommendationInput {
 
 export interface RecommendationResult {
   action: "CALL" | "VISIT" | "WAIT" | "SKIP";
-  priority: "low" | "medium" | "high";
+  priority: "low" | "medium" | "high" | "urgent";
   reason: string;
 }
 
-/* =========================
-   RULE ENGINE 🔥
-========================= */
+/* ================= HELPERS ================= */
+
+function getOverdue(loans: any[] = []) {
+  return loans.reduce((sum, l) => sum + Number(l.overdue || 0), 0);
+}
+
+/* ================= RULE ENGINE 🔥 ================= */
 
 function ruleEngine(input: RecommendationInput): RecommendationResult {
   const fraudScore = input.fraud?.score || 0;
   const osintScore = input.osint?.confidence || 0;
+  const overdue = getOverdue(input.loans);
 
-  const overdue =
-    input.loans?.reduce(
-      (sum, l) => sum + Number(l.overdue || 0),
-      0
-    ) || 0;
+  /* 🔥 CRITICAL */
+  if (fraudScore >= 85) {
+    return {
+      action: "VISIT",
+      priority: "urgent",
+      reason: "Critical fraud risk",
+    };
+  }
 
   /* 🔥 HIGH RISK */
   if (fraudScore > 70 || osintScore > 80) {
     return {
       action: "VISIT",
       priority: "high",
-      reason: "High risk detected (fraud or OSINT)",
+      reason: "High risk detected",
     };
   }
 
-  /* 🔥 MONEY FOCUS */
+  /* 🔥 HIGH MONEY */
   if (overdue > 50000) {
     return {
       action: "CALL",
@@ -53,11 +59,11 @@ function ruleEngine(input: RecommendationInput): RecommendationResult {
     return {
       action: "CALL",
       priority: "medium",
-      reason: "Moderate risk detected",
+      reason: "Moderate risk",
     };
   }
 
-  /* 🔥 LOW */
+  /* 🔥 LOW VALUE */
   if (overdue < 1000) {
     return {
       action: "WAIT",
@@ -69,13 +75,31 @@ function ruleEngine(input: RecommendationInput): RecommendationResult {
   return {
     action: "CALL",
     priority: "medium",
-    reason: "Default collection strategy",
+    reason: "Default strategy",
   };
 }
 
-/* =========================
-   AI LAYER 🤖
-========================= */
+/* ================= PRIORITY BOOST 🔥 ================= */
+
+function adjustPriority(base: RecommendationResult, input: RecommendationInput) {
+  const overdue = getOverdue(input.loans);
+  const fraudScore = input.fraud?.score || 0;
+
+  let priority = base.priority;
+
+  if (overdue > 100000 || fraudScore > 85) {
+    priority = "urgent";
+  } else if (overdue > 50000) {
+    priority = "high";
+  }
+
+  return {
+    ...base,
+    priority,
+  };
+}
+
+/* ================= AI (STRUCTURED) ================= */
 
 async function aiDecision(input: RecommendationInput) {
   const key = process.env.OPENAI_API_KEY;
@@ -90,7 +114,7 @@ async function aiDecision(input: RecommendationInput) {
           {
             role: "system",
             content:
-              "You are a debt collection AI. Decide best action: CALL, VISIT, WAIT, SKIP.",
+              "Return JSON only: { action, reason } (CALL | VISIT | WAIT | SKIP)",
           },
           {
             role: "user",
@@ -99,35 +123,39 @@ async function aiDecision(input: RecommendationInput) {
         ],
       },
       {
-        headers: {
-          Authorization: `Bearer ${key}`,
-        },
+        headers: { Authorization: `Bearer ${key}` },
       }
     );
 
-    return res.data?.choices?.[0]?.message?.content;
+    return JSON.parse(
+      res.data?.choices?.[0]?.message?.content || "{}"
+    );
   } catch {
     return null;
   }
 }
 
-/* =========================
-   MAIN 🔥
-========================= */
+/* ================= MAIN ================= */
 
 export async function getRecommendation(
   input: RecommendationInput
 ): Promise<RecommendationResult> {
-  const base = ruleEngine(input);
+  /* 🔥 RULE BASE */
+  let result = ruleEngine(input);
 
+  /* 🔥 PRIORITY ADJUST */
+  result = adjustPriority(result, input);
+
+  /* 🔥 AI LAYER */
   const ai = await aiDecision(input);
 
-  if (ai && typeof ai === "string") {
-    if (ai.includes("VISIT")) base.action = "VISIT";
-    else if (ai.includes("CALL")) base.action = "CALL";
-    else if (ai.includes("WAIT")) base.action = "WAIT";
-    else if (ai.includes("SKIP")) base.action = "SKIP";
+  if (ai?.action) {
+    result.action = ai.action;
   }
 
-  return base;
-}
+  if (ai?.reason) {
+    result.reason = ai.reason;
+  }
+
+  return result;
+     }

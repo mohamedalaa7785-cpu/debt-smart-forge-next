@@ -1,4 +1,4 @@
-// file: app/api/auth/login/route.ts
+// app/api/auth/login/route.ts
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +10,16 @@ import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+function getEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error("Supabase env not configured");
+  }
+
+  return { url, key };
+}
 
 export async function POST(request: Request) {
   try {
@@ -25,16 +33,20 @@ export async function POST(request: Request) {
     }
 
     const cookieStore = cookies();
-    const response = NextResponse.json({}); // 🔥 important
+    const response = NextResponse.json({ success: true }); // placeholder
 
-    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+    const { url, key } = getEnv();
+
+    const supabase = createServerClient(url, key, {
       cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: CookieOptions) => {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: CookieOptions) {
           response.cookies.set({ name, value, ...options });
         },
-        remove: (name: string, options: CookieOptions) => {
-          response.cookies.set({ name, value: "", ...options });
+        remove(name: string) {
+          response.cookies.delete(name);
         },
       },
     });
@@ -51,18 +63,6 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { success: false, error: error?.message || "Invalid credentials" },
         { status: 401 }
-      );
-    }
-
-    /* =========================
-       ENSURE SESSION STORED
-    ========================= */
-    const { data: sessionCheck } = await supabase.auth.getSession();
-
-    if (!sessionCheck.session) {
-      return NextResponse.json(
-        { success: false, error: "Session not persisted" },
-        { status: 500 }
       );
     }
 
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
     }
 
     if (!dbUser) {
-      throw new Error("User sync failed");
+      throw new Error("User record not synced");
     }
 
     /* =========================
@@ -99,9 +99,9 @@ export async function POST(request: Request) {
     await logAction(dbUser.id, "LOGIN", { email });
 
     /* =========================
-       RESPONSE (🔥 FIXED)
+       FINAL RESPONSE
     ========================= */
-    response.body = JSON.stringify({
+    return NextResponse.json({
       success: true,
       user: {
         id: dbUser.id,
@@ -110,17 +110,15 @@ export async function POST(request: Request) {
         name: dbUser.name,
       },
     });
-
-    return response;
   } catch (err: any) {
     console.error("LOGIN ERROR:", err);
 
     return NextResponse.json(
       {
         success: false,
-        error: err.message || "Internal server error",
+        error: err?.message || "Internal server error",
       },
       { status: 500 }
     );
   }
-  }
+}

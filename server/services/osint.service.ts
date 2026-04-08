@@ -4,15 +4,20 @@ import { db } from "@/server/db";
 import { osintResults, osintHistory } from "@/server/db/schema";
 import { getRequiredEnv } from "@/lib/env";
 
-/* =========================
-   CACHE
-========================= */
+/* ================= CACHE ================= */
+
 const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 60 * 10;
 
-/* =========================
-   TYPES
-========================= */
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of cache.entries()) {
+    if (v.expiry < now) cache.delete(k);
+  }
+}, 60000);
+
+/* ================= TYPES ================= */
+
 export interface OSINTInput {
   clientId?: string;
   name: string;
@@ -30,18 +35,17 @@ export interface OSINTResult {
   mapsResults: string[];
   summary: string;
   confidence: number;
+  fraudFlags: string[];
+  riskLevel: string;
 }
 
-/* =========================
-   KEYS
-========================= */
+/* ================= KEYS ================= */
+
 const SERP_KEY = getRequiredEnv("SERPAPI_API_KEY");
 const OPENAI_KEY = process.env.OPENAI_API_KEY;
 const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
 
-/* =========================
-   HELPERS
-========================= */
+/* ================= HELPERS ================= */
 
 function generateQueries(input: OSINTInput): string[] {
   const queries: string[] = [];
@@ -58,19 +62,20 @@ function generateQueries(input: OSINTInput): string[] {
   return uniqueArray(queries).slice(0, 5);
 }
 
-async function safeRequest(url: string, params: any) {
+/* 🔥 RETRY */
+async function safeRequest(url: string, params: any, retries = 2) {
   try {
     const res = await axios.get(url, { params, timeout: 8000 });
     return res.data;
-  } catch (err: any) {
-    console.warn("OSINT request failed:", err?.message);
+  } catch (err) {
+    if (retries > 0) {
+      return safeRequest(url, params, retries - 1);
+    }
     return null;
   }
 }
 
-/* =========================
-   PROVIDERS
-========================= */
+/* ================= PROVIDERS ================= */
 
 async function searchWeb(query: string) {
   const data = await safeRequest("https://serpapi.com/search.json", {
@@ -98,17 +103,16 @@ async function searchMaps(query: string) {
 
   const data = await safeRequest(
     "https://maps.googleapis.com/maps/api/place/textsearch/json",
-    {
-      query,
-      key: MAPS_KEY,
-    }
+    { query, key: MAPS_KEY }
   );
 
   return data?.results?.slice(0, 3) || [];
 }
 
+/* ================= AI ================= */
+
 async function analyzeAI(payload: any) {
-  if (!OPENAI_KEY) return "";
+  if (!OPENAI_KEY) return null;
 
   try {
     const res = await axios.post(
@@ -119,7 +123,7 @@ async function analyzeAI(payload: any) {
           {
             role: "system",
             content:
-              "Analyze OSINT data. Return: risk level (low/medium/high), fraud signals, short summary.",
+              "Return JSON only: { riskLevel, fraudFlags[], summary }",
           },
           {
             role: "user",
@@ -128,21 +132,19 @@ async function analyzeAI(payload: any) {
         ],
       },
       {
-        headers: {
-          Authorization: `Bearer ${OPENAI_KEY}`,
-        },
+        headers: { Authorization: `Bearer ${OPENAI_KEY}` },
       }
     );
 
-    return res.data?.choices?.[0]?.message?.content || "";
+    return JSON.parse(
+      res.data?.choices?.[0]?.message?.content || "{}"
+    );
   } catch {
-    return "";
+    return null;
   }
 }
 
-/* =========================
-   EXTRACT
-========================= */
+/* ================= EXTRACT ================= */
 
 function extractData(results: any[]) {
   const social = new Set<string>();
@@ -160,37 +162,38 @@ function extractData(results: any[]) {
     if (
       l.includes("facebook") ||
       l.includes("linkedin") ||
-      l.includes("instagram") ||
-      l.includes("twitter")
+      l.includes("instagram")
     ) {
       social.add(link);
     }
 
-    if (r?.snippet) {
-      const text = r.snippet.toLowerCase();
-
-      if (
-        text.includes("works at") ||
-        text.includes("company") ||
-        text.includes("employee")
-      ) {
-        workplace.add(r.snippet);
-      }
+    if (r?.snippet?.toLowerCase().includes("works")) {
+      workplace.add(r.snippet);
     }
   }
 
   return {
-    social: Array.from(social).slice(0, 5),
-    workplace: Array.from(workplace).slice(0, 5),
-    links: Array.from(links).slice(0, 10),
+    social: Array.from(social),
+    workplace: Array.from(workplace),
+    links: Array.from(links),
   };
 }
 
-/* =========================
-   SCORING
-========================= */
+/* ================= FRAUD DETECTION ================= */
 
-function calculateScore(data: any, aiText: string) {
+function detectFraudSignals(data: any) {
+  const flags: string[] = [];
+
+  if (!data.social.length) flags.push("NO_SOCIAL_PRESENCE");
+  if (!data.workplace.length) flags.push("NO_WORK_HISTORY");
+  if (data.links.length < 3) flags.push("LOW_WEB_FOOTPRINT");
+
+  return flags;
+}
+
+/* ================= SCORE ================= */
+
+function calculateScore(data: any, flags: string[]) {
   let score = 0;
 
   if (data.social.length) score += 30;
@@ -198,20 +201,12 @@ function calculateScore(data: any, aiText: string) {
   if (data.links.length) score += 10;
   if (data.maps?.length) score += 20;
 
-  if (aiText.toLowerCase().includes("fraud")) score += 30;
+  score += flags.length * 10;
 
   return Math.min(score, 100);
 }
 
-function detectRiskLevel(score: number) {
-  if (score > 70) return "high";
-  if (score > 40) return "medium";
-  return "low";
-}
-
-/* =========================
-   MAIN 🔥
-========================= */
+/* ================= MAIN ================= */
 
 export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const cacheKey = JSON.stringify(input);
@@ -222,8 +217,8 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const queries = generateQueries(input);
 
   const [webRaw, mapsRaw, imageRaw] = await Promise.all([
-    Promise.all(queries.map((q) => searchWeb(q))),
-    Promise.all(queries.map((q) => searchMaps(q))),
+    Promise.all(queries.map(searchWeb)),
+    Promise.all(queries.map(searchMaps)),
     input.imageUrl ? searchImage(input.imageUrl) : [],
   ]);
 
@@ -235,7 +230,9 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const mapsResults = mapsFlat.map((m: any) => m?.name).filter(Boolean);
   const imageMatches = imageRaw.map((i: any) => i?.link).filter(Boolean);
 
-  const aiText = await analyzeAI({
+  const fraudFlags = detectFraudSignals(extracted);
+
+  const ai = await analyzeAI({
     web: extracted,
     maps: mapsResults,
     images: imageMatches,
@@ -243,10 +240,8 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
 
   const confidence = calculateScore(
     { ...extracted, maps: mapsResults },
-    aiText
+    fraudFlags
   );
-
-  const riskLevel = detectRiskLevel(confidence);
 
   const result: OSINTResult = {
     socialLinks: extracted.social,
@@ -254,19 +249,32 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
     workplace: extracted.workplace,
     imageMatches,
     mapsResults,
-    summary: aiText || "No strong signals detected",
+    summary: ai?.summary || "No strong signals",
     confidence,
+    fraudFlags,
+    riskLevel: ai?.riskLevel || "low",
   };
 
   /* ================= SAVE ================= */
 
   if (input.clientId) {
-    try {
-      /* 🔥 MAIN RESULT */
-      await db
-        .insert(osintResults)
-        .values({
-          clientId: input.clientId,
+    await db
+      .insert(osintResults)
+      .values({
+        clientId: input.clientId,
+        social: result.socialLinks,
+        workplace: result.workplace,
+        webResults: result.webResults,
+        imageResults: result.imageMatches,
+        mapsResults: result.mapsResults,
+        summary: result.summary,
+        confidenceScore: result.confidence,
+        riskLevel: result.riskLevel,
+        fraudFlags: result.fraudFlags,
+      })
+      .onConflictDoUpdate({
+        target: osintResults.clientId,
+        set: {
           social: result.socialLinks,
           workplace: result.workplace,
           webResults: result.webResults,
@@ -274,32 +282,16 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
           mapsResults: result.mapsResults,
           summary: result.summary,
           confidenceScore: result.confidence,
-          riskLevel,
-          fraudFlags: [],
-        })
-        .onConflictDoUpdate({
-          target: osintResults.clientId,
-          set: {
-            social: result.socialLinks,
-            workplace: result.workplace,
-            webResults: result.webResults,
-            imageResults: result.imageMatches,
-            mapsResults: result.mapsResults,
-            summary: result.summary,
-            confidenceScore: result.confidence,
-            riskLevel,
-          },
-        });
-
-      /* 🔥 HISTORY */
-      await db.insert(osintHistory).values({
-        clientId: input.clientId,
-        result,
-        confidence: result.confidence,
+          riskLevel: result.riskLevel,
+          fraudFlags: result.fraudFlags,
+        },
       });
-    } catch (err) {
-      console.error("OSINT SAVE ERROR:", err);
-    }
+
+    await db.insert(osintHistory).values({
+      clientId: input.clientId,
+      result,
+      confidence: result.confidence,
+    });
   }
 
   cache.set(cacheKey, {

@@ -1,5 +1,3 @@
-// app/api/auth/login/route.ts
-
 export const dynamic = "force-dynamic";
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
@@ -9,6 +7,8 @@ import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
+
+/* ---------------- ENV ---------------- */
 
 function getEnv() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -21,9 +21,31 @@ function getEnv() {
   return { url, key };
 }
 
+/* ---------------- ROLE FALLBACK ---------------- */
+
+function resolveRole(email: string) {
+  const e = email.toLowerCase();
+
+  if (e.includes("adel")) return "admin";
+  if (e.includes("loai")) return "supervisor";
+  if (e.includes("mostafa") || e.includes("heba"))
+    return "team_leader";
+
+  return "collector";
+}
+
+function isSuperUser(email: string) {
+  return email.toLowerCase().includes("mohamed");
+}
+
+/* ---------------- MAIN ---------------- */
+
 export async function POST(request: Request) {
   try {
-    const { email, password } = await request.json();
+    const body = await request.json();
+
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password ?? "";
 
     if (!email || !password) {
       return NextResponse.json(
@@ -33,27 +55,20 @@ export async function POST(request: Request) {
     }
 
     const cookieStore = cookies();
-    const response = NextResponse.json({ success: true }); // placeholder
-
     const { url, key } = getEnv();
+
+    const response = NextResponse.next();
 
     const supabase = createServerClient(url, key, {
       cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          response.cookies.set({ name, value, ...options });
-        },
-        remove(name: string) {
-          response.cookies.delete(name);
-        },
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: (name: string, value: string, options: CookieOptions) =>
+          response.cookies.set({ name, value, ...options }),
+        remove: (name: string) => response.cookies.delete(name),
       },
     });
 
-    /* =========================
-       LOGIN
-    ========================= */
+    /* ---------------- LOGIN ---------------- */
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -66,9 +81,7 @@ export async function POST(request: Request) {
       );
     }
 
-    /* =========================
-       USER SYNC
-    ========================= */
+    /* ---------------- DB SYNC ---------------- */
     let dbUser = await db.query.users.findFirst({
       where: eq(users.id, data.user.id),
     });
@@ -79,8 +92,9 @@ export async function POST(request: Request) {
         .values({
           id: data.user.id,
           email: data.user.email!,
-          role: "collector",
+          role: resolveRole(email),
           name: data.user.user_metadata?.name || null,
+          is_super_user: isSuperUser(email),
         })
         .onConflictDoNothing();
 
@@ -93,14 +107,10 @@ export async function POST(request: Request) {
       throw new Error("User record not synced");
     }
 
-    /* =========================
-       LOG
-    ========================= */
+    /* ---------------- LOG ---------------- */
     await logAction(dbUser.id, "LOGIN", { email });
 
-    /* =========================
-       FINAL RESPONSE
-    ========================= */
+    /* ---------------- RESPONSE ---------------- */
     return NextResponse.json({
       success: true,
       user: {
@@ -108,6 +118,7 @@ export async function POST(request: Request) {
         email: dbUser.email,
         role: dbUser.role,
         name: dbUser.name,
+        is_super_user: dbUser.is_super_user,
       },
     });
   } catch (err: any) {

@@ -1,5 +1,3 @@
-// server/services/client.service.ts
-
 import { db } from "@/server/db";
 import {
   clients,
@@ -11,7 +9,7 @@ import {
   callLogs,
   followups,
 } from "@/server/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 
 /* =========================
    HELPERS
@@ -36,31 +34,57 @@ function dedupeAddresses(addresses: any[]) {
 
 function toSafeNumber(val: any) {
   const num = Number(val);
-  if (isNaN(num)) return 0;
-  return num;
+  return isNaN(num) ? 0 : num;
 }
 
 /* =========================
-   ACCESS CONTROL 🔐
+   ACCESS CONTROL 🔐 (IMPROVED)
 ========================= */
 
 export function canAccessClient(
-  client: {
-    ownerId: string | null;
-    teamLeaderId: string | null;
-    portfolioType: string | null;
-  } | null,
+  client: any,
   userId: string,
   role: string
 ) {
   if (!client) return false;
 
   if (role === "hidden_admin") return true;
-  if (role === "admin") return client.portfolioType === "ACTIVE";
-  if (role === "supervisor") return client.portfolioType === "WRITEOFF";
-  if (role === "team_leader") return client.teamLeaderId === userId;
+
+  if (role === "admin") {
+    return client.portfolioType === "ACTIVE";
+  }
+
+  if (role === "supervisor") {
+    return client.portfolioType === "WRITEOFF";
+  }
+
+  if (role === "team_leader") {
+    return (
+      client.teamLeaderId === userId ||
+      client.ownerId === userId
+    );
+  }
 
   return client.ownerId === userId;
+}
+
+/* =========================
+   BULK HELPERS 🔥
+========================= */
+
+export async function bulkDeleteClients(ids: string[]) {
+  if (!ids.length) return;
+
+  await db.delete(clients).where(inArray(clients.id, ids));
+}
+
+export async function assignClients(ids: string[], userId: string) {
+  if (!ids.length) return;
+
+  await db
+    .update(clients)
+    .set({ ownerId: userId })
+    .where(inArray(clients.id, ids));
 }
 
 /* =========================
@@ -78,7 +102,9 @@ export async function createClientFull(data: any, creatorId: string) {
     const ownerId = data.ownerId || creatorId;
 
     const phones = dedupePhones(data.phones);
-    const addresses = data.addresses ? dedupeAddresses(data.addresses) : [];
+    const addresses = data.addresses
+      ? dedupeAddresses(data.addresses)
+      : [];
 
     const [client] = await tx
       .insert(clients)
@@ -93,9 +119,9 @@ export async function createClientFull(data: any, creatorId: string) {
         portfolioType: data.portfolioType || "ACTIVE",
         domainType: data.domainType || "FIRST",
         branch: data.branch || null,
-        createdBy: creatorId, // 🔥 مهم
+        createdBy: creatorId,
         cycleStartDate:
-          data.cycleStartDate || new Date().toISOString().split("T")[0],
+          data.cycleStartDate || new Date().toISOString(),
         cycleEndDate: data.cycleEndDate || null,
       })
       .returning();
@@ -200,7 +226,6 @@ export async function getClientById(
 
     if (!client) return null;
 
-    // 🔥 ACCESS CONTROL
     if (userId && role && !canAccessClient(client, userId, role)) {
       throw new Error("Forbidden");
     }
@@ -258,4 +283,4 @@ export async function getClientById(
     console.error("getClientById error:", error);
     return null;
   }
-  }
+        }

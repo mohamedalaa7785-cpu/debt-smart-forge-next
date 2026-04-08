@@ -1,7 +1,7 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-/* ---------------- HELPERS ---------------- */
+/* ================= HELPERS ================= */
 
 function createSupabase(request: NextRequest, response: NextResponse) {
   return createServerClient(
@@ -31,15 +31,12 @@ function isProtected(pathname: string) {
     pathname === "/" ||
     pathname.startsWith("/dashboard") ||
     pathname.startsWith("/client") ||
-    pathname.startsWith("/add-client")
+    pathname.startsWith("/add-client") ||
+    pathname.startsWith("/admin")
   );
 }
 
-function isAdminRoute(pathname: string) {
-  return pathname.startsWith("/admin");
-}
-
-/* ---------------- MAIN ---------------- */
+/* ================= MAIN ================= */
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
@@ -47,72 +44,37 @@ export async function middleware(request: NextRequest) {
 
   const supabase = createSupabase(request, response);
 
+  /* 🔥 SECURE USER FETCH */
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  /* ---------------- PUBLIC ---------------- */
+  /* ================= PUBLIC ================= */
   if (isPublic(pathname)) {
-    if (
-      session &&
-      (pathname.startsWith("/login") || pathname.startsWith("/signup"))
-    ) {
+    if (user && (pathname === "/login" || pathname === "/signup")) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
     return response;
   }
 
-  /* ---------------- NOT AUTH ---------------- */
-  if (!session && isProtected(pathname)) {
+  /* ================= NOT AUTH ================= */
+  if (!user && isProtected(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  /* ---------------- ROLE SYSTEM ---------------- */
-  if (session) {
-    const user = session.user;
+  /* ================= ROLE CHECK ================= */
+  if (user) {
+    /* ❗ NEVER TRUST metadata */
+    const role = "collector"; // default fallback
 
-    // 👑 hidden super user
-    const isSuperUser =
-      user.email?.toLowerCase().includes("mohamed") ||
-      user.user_metadata?.is_super_user;
-
-    const role =
-      user.user_metadata?.role || "collector";
-
-    /* -------- SUPER USER (full bypass) -------- */
-    if (isSuperUser) {
-      return response;
-    }
-
-    /* -------- ADMIN ROUTES -------- */
-    if (isAdminRoute(pathname)) {
-      if (role !== "admin") {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
-      }
-    }
-
-    /* -------- ROLE HIERARCHY -------- */
-    const roleHierarchy = {
-      admin: 4,
-      supervisor: 3,
-      team_leader: 2,
-      collector: 1,
-    };
-
-    const userLevel = roleHierarchy[role as keyof typeof roleHierarchy] || 1;
-
-    // مثال: صفحة supervisors
-    if (pathname.startsWith("/supervisor") && userLevel < 3) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
-
-    // مثال: صفحة team leaders
-    if (pathname.startsWith("/team") && userLevel < 2) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
-    }
-
-    /* -------- ROOT REDIRECT -------- */
+    /* 🔥 ROOT */
     if (pathname === "/") {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    /* 🔥 ADMIN PROTECTION */
+    if (pathname.startsWith("/admin")) {
+      // admin check لازم يكون من DB (مش هنا)
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
@@ -120,7 +82,7 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
-/* ---------------- CONFIG ---------------- */
+/* ================= CONFIG ================= */
 
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],

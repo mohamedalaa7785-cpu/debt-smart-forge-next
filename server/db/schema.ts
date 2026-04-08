@@ -1,3 +1,5 @@
+// server/db/schema.ts
+
 import {
   pgTable,
   text,
@@ -30,20 +32,26 @@ export const domainEnum = pgEnum("domain_type", ["FIRST", "THIRD", "WRITEOFF"]);
    USERS
 ========================= */
 
-export const users = pgTable("users", {
-  id: uuid("id").primaryKey().notNull(),
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().notNull(),
 
-  email: text("email").notNull().unique(),
-  name: text("name"),
+    email: text("email").notNull(),
+    name: text("name"),
 
-  role: roleEnum("role").default("collector").notNull(),
+    role: roleEnum("role").default("collector").notNull(),
 
-  isSuperUser: boolean("is_super_user").default(false),
+    isSuperUser: boolean("is_super_user").default(false),
 
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    emailIdx: index("users_email_idx").on(table.email),
+  })
+);
 
 /* =========================
    CLIENTS
@@ -180,7 +188,7 @@ export const clientLoans = pgTable(
 );
 
 /* =========================
-   OSINT RESULTS
+   OSINT RESULTS 🔥
 ========================= */
 
 export const osintResults = pgTable(
@@ -193,20 +201,24 @@ export const osintResults = pgTable(
       .notNull()
       .unique(),
 
-    social: jsonb("social").default([]),
-    workplace: jsonb("workplace").default([]),
-    webResults: jsonb("web_results").default([]),
-    imageResults: jsonb("image_results").default([]),
-    mapsResults: jsonb("maps_results").default([]),
+    social: jsonb("social").$type<string[]>().default([]),
+    workplace: jsonb("workplace").$type<string[]>().default([]),
+    webResults: jsonb("web_results").$type<string[]>().default([]),
+    imageResults: jsonb("image_results").$type<string[]>().default([]),
+    mapsResults: jsonb("maps_results").$type<string[]>().default([]),
 
     summary: text("summary"),
 
     confidenceScore: integer("confidence_score").default(0),
 
     riskLevel: text("risk_level").default("low"),
-    fraudFlags: jsonb("fraud_flags").default([]),
+    fraudFlags: jsonb("fraud_flags").$type<string[]>().default([]),
 
     lastAnalyzedAt: timestamp("last_analyzed_at", {
+      withTimezone: true,
+    }).defaultNow(),
+
+    updatedAt: timestamp("updated_at", {
       withTimezone: true,
     }).defaultNow(),
 
@@ -216,6 +228,7 @@ export const osintResults = pgTable(
   },
   (table) => ({
     clientIdx: index("osint_client_idx").on(table.clientId),
+    confidenceIdx: index("osint_confidence_idx").on(table.confidenceScore),
   })
 );
 
@@ -232,7 +245,7 @@ export const osintHistory = pgTable(
       .references(() => clients.id, { onDelete: "cascade" })
       .notNull(),
 
-    result: jsonb("result").default({}),
+    result: jsonb("result").$type<any>().default({}),
 
     confidence: integer("confidence").default(0),
 
@@ -246,7 +259,7 @@ export const osintHistory = pgTable(
 );
 
 /* =========================
-   FRAUD ANALYSIS
+   FRAUD ANALYSIS 🔥
 ========================= */
 
 export const fraudAnalysis = pgTable(
@@ -262,7 +275,7 @@ export const fraudAnalysis = pgTable(
 
     level: text("level").default("low"),
 
-    signals: jsonb("signals").default([]),
+    signals: jsonb("signals").$type<string[]>().default([]),
 
     aiSummary: text("ai_summary"),
 
@@ -272,5 +285,6 @@ export const fraudAnalysis = pgTable(
   },
   (table) => ({
     clientIdx: index("fraud_client_idx").on(table.clientId),
+    scoreIdx: index("fraud_score_idx").on(table.score),
   })
 );

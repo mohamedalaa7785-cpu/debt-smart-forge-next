@@ -1,6 +1,7 @@
 import { db } from "@/server/db";
 import { clientPhones, clients, osintResults } from "@/server/db/schema";
 import { eq, like } from "drizzle-orm";
+import axios from "axios";
 
 export interface PhoneIntelligenceResult {
   phone: string;
@@ -16,6 +17,36 @@ export interface PhoneIntelligenceResult {
   riskFlag: boolean;
   socialProfiles: string[];
   nameDetection?: string;
+  externalSource?: {
+    provider: string;
+    name?: string;
+    confidence?: number;
+    raw?: any;
+  };
+}
+
+async function lookupExternalPhoneProvider(normalized: string) {
+  const providerUrl = process.env.TRUECALLER_LOOKUP_URL;
+  const providerKey = process.env.TRUECALLER_API_KEY;
+
+  if (!providerUrl || !providerKey) return undefined;
+
+  try {
+    const res = await axios.get(providerUrl, {
+      params: { phone: normalized },
+      headers: { Authorization: `Bearer ${providerKey}` },
+      timeout: 8000,
+    });
+
+    return {
+      provider: "truecaller-compatible",
+      name: res.data?.name || undefined,
+      confidence: Number(res.data?.confidence || 0),
+      raw: res.data || null,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligenceResult> {
@@ -43,6 +74,8 @@ export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligence
     : null;
 
   // 4. Return combined intelligence
+  const externalSource = await lookupExternalPhoneProvider(normalized);
+
   return {
     phone,
     normalized,
@@ -52,6 +85,7 @@ export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligence
     telegramAvailable: false,
     riskFlag: linkedClient ? false : true, // Flag if not in DB
     socialProfiles: Array.isArray(osintRecord?.social) ? (osintRecord.social as string[]) : [],
-    nameDetection: linkedClient?.name || "Unknown Caller"
+    nameDetection: externalSource?.name || linkedClient?.name || "Unknown Caller",
+    externalSource,
   };
 }

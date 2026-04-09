@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
+import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 
 /* ---------------- TYPES ---------------- */
 
@@ -65,10 +66,12 @@ function createSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: CookieOptions) =>
-          cookieStore.set({ name, value, ...options }),
-        remove: (name: string) => cookieStore.delete(name),
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookieValues) => {
+          cookieValues.forEach(({ name, value, options }) => {
+            cookieStore.set({ name, value, ...options });
+          });
+        },
       },
     }
   );
@@ -114,6 +117,7 @@ export async function POST(req: Request) {
 
     /* ---------------- ROLE ---------------- */
     const { role, isSuperUser } = resolveRole(email!);
+    await ensureUsersTableColumns();
 
     /* ---------------- DB SYNC ---------------- */
     const { error: upsertError } = await supabase.from("users").upsert(
@@ -169,4 +173,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-    }
+}

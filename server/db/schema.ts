@@ -69,6 +69,7 @@ export const clients = pgTable(
     company: text("company"),
     imageUrl: text("image_url"),
     notes: text("notes"),
+    referral: text("referral"),
 
     ownerId: uuid("owner_id").references(() => users.id),
     teamLeaderId: uuid("team_leader_id").references(() => users.id),

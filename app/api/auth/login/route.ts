@@ -7,6 +7,7 @@ import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
+import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 
 /* ---------------- ENV ---------------- */
 
@@ -80,6 +81,8 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
+
+    await ensureUsersTableColumns();
 
     /* ---------------- DB SYNC ---------------- */
     let dbUser = await db.query.users.findFirst({

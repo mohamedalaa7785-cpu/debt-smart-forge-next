@@ -22,6 +22,7 @@ CREATE TABLE users (
   email TEXT UNIQUE,
   password TEXT,
   role TEXT,
+  is_super_user BOOLEAN DEFAULT false,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -42,6 +43,7 @@ CREATE TABLE clients (
   email TEXT,
   company TEXT,
   notes TEXT,
+  referral TEXT,
   image_url TEXT,
   owner_id UUID REFERENCES users(id),
   portfolio_type TEXT, -- ACTIVE / WRITEOFF

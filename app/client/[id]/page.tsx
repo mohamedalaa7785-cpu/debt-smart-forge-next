@@ -87,6 +87,13 @@ export default async function ClientPage({ params }: { params: { id: string } })
             script={script}
           />
         </div>
+
+        {data.referral && (
+          <div className="mt-4 p-4 rounded-xl border border-amber-200 bg-amber-50">
+            <p className="text-xs font-bold text-amber-700 uppercase tracking-widest">Referral</p>
+            <p className="text-sm text-amber-900 whitespace-pre-wrap mt-1">{data.referral}</p>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

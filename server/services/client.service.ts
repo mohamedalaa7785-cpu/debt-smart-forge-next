@@ -114,6 +114,7 @@ export async function createClientFull(data: any, creatorId: string) {
         email: data.email || null,
         company: data.company || null,
         notes: data.notes || null,
+        referral: data.referral || null,
         ownerId,
         teamLeaderId: data.teamLeaderId || null,
         portfolioType: data.portfolioType || "ACTIVE",

@@ -22,6 +22,7 @@ export default function AddClientPage() {
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
   const [notes, setNotes] = useState("");
+  const [referral, setReferral] = useState("");
 
   const [portfolioType, setPortfolioType] = useState("ACTIVE");
   const [domainType, setDomainType] = useState("FIRST");
@@ -180,6 +181,7 @@ export default function AddClientPage() {
           company: company || null,
           branch: branch || null,
           notes: notes || null,
+          referral: referral || null,
           portfolioType,
           domainType,
           cycleStartDate,
@@ -273,6 +275,7 @@ export default function AddClientPage() {
         <input className="w-full border rounded-xl p-3" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <input className="w-full border rounded-xl p-3" placeholder="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
         <input className="w-full border rounded-xl p-3 md:col-span-2" placeholder="Company / Employer" value={company} onChange={(e) => setCompany(e.target.value)} />
+        <textarea className="w-full border rounded-xl p-3 md:col-span-2 min-h-20" placeholder="Referral (history / previous attempts / supporting details)" value={referral} onChange={(e) => setReferral(e.target.value)} />
         <textarea className="w-full border rounded-xl p-3 md:col-span-2 min-h-24" placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
 

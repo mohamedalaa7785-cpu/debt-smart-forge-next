@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { ensureUsersTableColumns, isMissingUsersColumnError } from "@/server/lib/users-schema";
 
 /* ================= TYPES ================= */
 
@@ -54,16 +55,11 @@ function getEnv() {
   return { url, key };
 }
 
-/* 🔥 singleton client */
-let supabaseClient: ReturnType<typeof createServerClient> | null = null;
-
 function getSupabaseServerClient() {
-  if (supabaseClient) return supabaseClient;
-
   const cookieStore = cookies();
   const { url, key } = getEnv();
 
-  supabaseClient = createServerClient(url, key, {
+  return createServerClient(url, key, {
     cookies: {
       getAll: () => cookieStore.getAll(),
       setAll: (cookieValues) => {
@@ -73,8 +69,6 @@ function getSupabaseServerClient() {
       },
     },
   });
-
-  return supabaseClient;
 }
 
 /* ================= CORE ================= */
@@ -101,9 +95,19 @@ export async function requireUser(): Promise<AuthUser> {
     return cached.data;
   }
 
-  const dbUser = await db.query.users.findFirst({
-    where: eq(users.id, user.id),
-  });
+  let dbUser: typeof users.$inferSelect | undefined;
+
+  try {
+    dbUser = await db.query.users.findFirst({
+      where: eq(users.id, user.id),
+    });
+  } catch (error) {
+    if (!isMissingUsersColumnError(error)) throw error;
+    await ensureUsersTableColumns();
+    dbUser = await db.query.users.findFirst({
+      where: eq(users.id, user.id),
+    });
+  }
 
   if (!dbUser) {
     throw new Error("User record not synced");

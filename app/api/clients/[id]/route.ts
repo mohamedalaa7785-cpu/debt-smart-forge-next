@@ -80,6 +80,7 @@ export async function PATCH(
           email: body.email ?? existing.email,
           company: body.company ?? existing.company,
           notes: body.notes ?? existing.notes,
+          referral: body.referral ?? existing.referral,
           branch: body.branch ?? existing.branch,
           updatedAt: new Date(),
         })

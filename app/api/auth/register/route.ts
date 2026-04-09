@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 
 /* ---------------- TYPES ---------------- */
 
@@ -116,6 +117,7 @@ export async function POST(req: Request) {
 
     /* ---------------- ROLE ---------------- */
     const { role, isSuperUser } = resolveRole(email!);
+    await ensureUsersTableColumns();
 
     /* ---------------- DB SYNC ---------------- */
     const { error: upsertError } = await supabase.from("users").upsert(

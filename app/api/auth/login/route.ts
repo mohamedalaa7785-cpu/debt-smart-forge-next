@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
@@ -57,14 +57,14 @@ export async function POST(request: Request) {
     const cookieStore = cookies();
     const { url, key } = getEnv();
 
-    const response = NextResponse.next();
-
     const supabase = createServerClient(url, key, {
       cookies: {
-        get: (name: string) => cookieStore.get(name)?.value,
-        set: (name: string, value: string, options: CookieOptions) =>
-          response.cookies.set({ name, value, ...options }),
-        remove: (name: string) => response.cookies.delete(name),
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookieValues) => {
+          cookieValues.forEach(({ name, value, options }) => {
+            cookieStore.set({ name, value, ...options });
+          });
+        },
       },
     });
 
@@ -94,7 +94,7 @@ export async function POST(request: Request) {
           email: data.user.email!,
           role: resolveRole(email),
           name: data.user.user_metadata?.name || null,
-          is_super_user: isSuperUser(email),
+          isSuperUser: isSuperUser(email),
         })
         .onConflictDoNothing();
 
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         email: dbUser.email,
         role: dbUser.role,
         name: dbUser.name,
-        is_super_user: dbUser.is_super_user,
+        is_super_user: dbUser.isSuperUser,
       },
     });
   } catch (err: any) {

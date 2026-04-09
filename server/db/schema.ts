@@ -164,6 +164,15 @@ export const clientLoans = pgTable(
       .notNull(),
 
     loanType: text("loan_type").notNull(),
+    loanNumber: text("loan_number"),
+    cycle: integer("cycle"),
+    organization: text("organization"),
+    willLegal: boolean("will_legal").default(false),
+    referralDate: timestamp("referral_date", { withTimezone: true }),
+    collectorPercentage: decimal("collector_percentage", {
+      precision: 6,
+      scale: 2,
+    }),
 
     emi: decimal("emi", { precision: 12, scale: 2 }),
     balance: decimal("balance", { precision: 12, scale: 2 }),
@@ -184,6 +193,94 @@ export const clientLoans = pgTable(
   },
   (table) => ({
     clientIdx: index("loans_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
+   CLIENT ACTIONS
+========================= */
+
+export const clientActions = pgTable(
+  "client_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+
+    userId: uuid("user_id").references(() => users.id),
+
+    actionType: text("action_type").default("NOTE").notNull(),
+    note: text("note"),
+    result: text("result"),
+    amountPaid: decimal("amount_paid", { precision: 12, scale: 2 }),
+    nextActionDate: timestamp("next_action_date", { withTimezone: true }),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("actions_client_idx").on(table.clientId),
+    userIdx: index("actions_user_idx").on(table.userId),
+  })
+);
+
+/* =========================
+   CALL LOGS
+========================= */
+
+export const callLogs = pgTable(
+  "call_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+
+    userId: uuid("user_id").references(() => users.id),
+
+    status: text("status"),
+    durationSec: integer("duration_sec"),
+    note: text("note"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("call_logs_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
+   FOLLOWUPS
+========================= */
+
+export const followups = pgTable(
+  "followups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+
+    userId: uuid("user_id").references(() => users.id),
+
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    note: text("note"),
+    done: boolean("done").default(false),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("followups_client_idx").on(table.clientId),
+    scheduledIdx: index("followups_scheduled_idx").on(table.scheduledFor),
   })
 );
 
@@ -286,5 +383,57 @@ export const fraudAnalysis = pgTable(
   (table) => ({
     clientIdx: index("fraud_client_idx").on(table.clientId),
     scoreIdx: index("fraud_score_idx").on(table.score),
+  })
+);
+
+/* =========================
+   LEGAL CASES
+========================= */
+
+export const legalCases = pgTable(
+  "legal_cases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+
+    caseNumber: text("case_number"),
+    caseType: text("case_type"),
+    status: text("status"),
+    lastUpdate: text("last_update"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    clientIdx: index("legal_cases_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
+   AUDIT LOGS
+========================= */
+
+export const logs = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+
+    userId: uuid("user_id").references(() => users.id),
+    clientId: uuid("client_id").references(() => clients.id),
+
+    action: text("action").notNull(),
+    meta: jsonb("meta").$type<Record<string, unknown>>().default({}),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => ({
+    userIdx: index("audit_logs_user_idx").on(table.userId),
+    clientIdx: index("audit_logs_client_idx").on(table.clientId),
   })
 );

@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { osintHistory } from "@/server/db/schema";
@@ -7,7 +9,7 @@ import { requireUser } from "@/server/lib/auth";
 export async function GET(req: NextRequest) {
   try {
     /* 🔐 AUTH */
-    const user = await requireUser(req);
+    await requireUser();
 
     /* 📥 PARAMS */
     const { searchParams } = new URL(req.url);

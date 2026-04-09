@@ -14,7 +14,7 @@ export async function GET(
   req: NextRequest,
   context: { params: { id: string } }
 ) {
-  return withAuth(req, async (user) => {
+  return withAuth(async (user) => {
     try {
       const clientId = context.params?.id;
 
@@ -149,4 +149,4 @@ export async function GET(
       );
     }
   });
-          }
+}

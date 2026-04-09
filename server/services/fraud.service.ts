@@ -60,11 +60,20 @@ function calculateScore(signals: string[]) {
   );
 }
 
-function getLevel(score: number) {
+function getLevel(score: number): FraudResult["level"] {
   if (score >= 85) return "critical";
   if (score >= 70) return "high";
   if (score >= 40) return "medium";
   return "low";
+}
+
+function isFraudLevel(value: unknown): value is FraudResult["level"] {
+  return (
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "critical"
+  );
 }
 
 /* ================= AI (STRUCTURED) ================= */
@@ -115,7 +124,7 @@ export async function analyzeFraud(
 
   const ai = await aiSummary(input, signals);
 
-  if (ai?.riskLevel) {
+  if (isFraudLevel(ai?.riskLevel)) {
     level = ai.riskLevel;
   }
 

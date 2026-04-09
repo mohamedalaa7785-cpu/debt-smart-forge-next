@@ -17,7 +17,7 @@ function normalizeActionType(type: string) {
 }
 
 export async function POST(req: NextRequest) {
-  return withAuth(req, async (user) => {
+  return withAuth(async (user) => {
     try {
       const body = await req.json();
       

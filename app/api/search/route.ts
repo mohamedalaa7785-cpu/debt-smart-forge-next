@@ -12,7 +12,7 @@ const cache = new Map<string, { data: any; expiry: number }>();
 const TTL = 1000 * 60 * 3;
 
 export async function GET(req: NextRequest) {
-  return withAuth(req, async (user) => {
+  return withAuth(async (user) => {
     try {
       const { searchParams } = new URL(req.url);
       const rawQuery = searchParams.get("q");

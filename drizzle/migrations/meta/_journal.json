@@ -15,6 +15,20 @@
       "when": 1775534041966,
       "tag": "0001_add_client_actions_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1775693400626,
+      "tag": "0002_add_bank_import_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1775694604203,
+      "tag": "0003_fix_users_columns_for_auth",
+      "breakpoints": true
     }
   ]
 }

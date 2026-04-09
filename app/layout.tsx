@@ -4,6 +4,7 @@ import Link from "next/link";
 import LogoutButton from "@/components/LogoutButton";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { SpeedInsights } from '@vercel/speed-insights/next';
 
 export const metadata: Metadata = {
   title: "Debt Smart OS",
@@ -85,6 +86,7 @@ export default async function RootLayout({
             © {new Date().getFullYear()} Debt Smart Intelligence Systems
           </footer>
         </div>
+        <SpeedInsights />
       </body>
     </html>
   );

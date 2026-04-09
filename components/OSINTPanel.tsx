@@ -8,6 +8,7 @@ interface OSINT {
   workplace: any;
   webResults: any;
   imageResults: any;
+  mapsResults?: any;
 }
 
 export default function OSINTPanel({ osint }: { osint: OSINT | null }) {
@@ -95,6 +96,20 @@ export default function OSINTPanel({ osint }: { osint: OSINT | null }) {
               {osint.imageResults.map((img: string, idx: number) => (
                 <div key={idx} className="flex-shrink-0 w-20 h-20 bg-gray-100 rounded-xl overflow-hidden border border-gray-200 shadow-sm">
                   <img src={img} alt="Match" className="w-full h-full object-cover" />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* LOCATION SIGNALS */}
+        {osint.mapsResults && Array.isArray(osint.mapsResults) && osint.mapsResults.length > 0 && (
+          <div>
+            <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Location Signals</h3>
+            <div className="space-y-2">
+              {osint.mapsResults.slice(0, 6).map((place: string, idx: number) => (
+                <div key={idx} className="p-3 bg-indigo-50/60 border border-indigo-100/60 rounded-xl text-xs text-indigo-800 font-medium">
+                  {place}
                 </div>
               ))}
             </div>

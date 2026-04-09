@@ -24,7 +24,7 @@ export default async function ClientPage({ params }: { params: { id: string } })
   const loans = data.loans || [];
   const osint = data.osint || null;
 
-  const totalDue = loans.reduce((sum, l) => sum + Number(l.overdue || 0), 0);
+  const totalDue = loans.reduce((sum, l) => sum + Number(l.amountDue || l.overdue || 0), 0);
   
   const riskInput = {
     bucket: loans[0]?.bucket ?? undefined,
@@ -69,6 +69,7 @@ export default async function ClientPage({ params }: { params: { id: string } })
           <div className="space-y-1">
             <h1 className="text-3xl font-bold text-gray-900">{data.name}</h1>
             <p className="text-gray-500 font-medium">{data.company || "Individual Portfolio"}</p>
+            {data.branch && <p className="text-xs text-gray-400 font-semibold">Branch: {data.branch}</p>}
           </div>
           <div className="flex items-center gap-4">
             <div className="text-right">
@@ -147,13 +148,23 @@ export default async function ClientPage({ params }: { params: { id: string } })
               {loans.map((l: any) => (
                 <div key={l.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100">
                   <div className="flex justify-between text-xs font-bold text-gray-400 uppercase mb-2">
-                    <span>{l.loanType}</span>
-                    <span>Bucket {l.bucket}</span>
+                    <span>{l.loanType} {l.loanNumber ? `#${l.loanNumber}` : ""}</span>
+                    <span>Bucket {l.bucket} {l.cycle ? `| CYL ${l.cycle}` : ""}</span>
                   </div>
-                  <div className="flex justify-between items-end">
+                  <div className="grid grid-cols-2 gap-2 text-xs text-gray-600 mb-2">
+                    <p>Org: <span className="font-semibold text-gray-800">{l.organization || "-"}</span></p>
+                    <p>Will legal: <span className="font-semibold text-gray-800">{l.willLegal ? "Yes" : "No"}</span></p>
+                    <p>Referral: <span className="font-semibold text-gray-800">{l.referralDate ? new Date(l.referralDate).toLocaleDateString() : "-"}</span></p>
+                    <p>Collector %: <span className="font-semibold text-gray-800">{l.collectorPercentage ?? "-"}</span></p>
+                  </div>
+                  <div className="flex justify-between items-end gap-2">
                     <div>
                       <p className="text-xs text-gray-500">EMI</p>
                       <p className="font-bold">{formatCurrency(l.emi)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500">Amount Due</p>
+                      <p className="font-bold text-amber-700">{formatCurrency(l.amountDue || 0)}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-xs text-gray-500">Overdue</p>

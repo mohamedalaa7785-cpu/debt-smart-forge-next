@@ -164,6 +164,15 @@ export const clientLoans = pgTable(
       .notNull(),
 
     loanType: text("loan_type").notNull(),
+    loanNumber: text("loan_number"),
+    cycle: integer("cycle"),
+    organization: text("organization"),
+    willLegal: boolean("will_legal").default(false),
+    referralDate: timestamp("referral_date", { withTimezone: true }),
+    collectorPercentage: decimal("collector_percentage", {
+      precision: 6,
+      scale: 2,
+    }),
 
     emi: decimal("emi", { precision: 12, scale: 2 }),
     balance: decimal("balance", { precision: 12, scale: 2 }),

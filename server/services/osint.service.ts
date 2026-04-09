@@ -3,7 +3,8 @@
 import axios from "axios";
 import { uniqueArray } from "@/lib/utils";
 import { db } from "@/server/db";
-import { osintResults, osintHistory } from "@/server/db/schema";
+import { osintResults, osintHistory, clientAddresses } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 import { getRequiredEnv } from "@/lib/env";
 
 /* ================= CACHE ================= */
@@ -28,6 +29,12 @@ export interface OSINTResult {
   workplace: string[];
   imageMatches: string[];
   mapsResults: string[];
+  mapPlaces?: Array<{
+    name: string;
+    address: string;
+    lat?: number;
+    lng?: number;
+  }>;
   summary: string;
   confidence: number;
   fraudFlags: string[];
@@ -58,17 +65,39 @@ function safeJSONParse(text: string) {
 
 function generateQueries(input: OSINTInput): string[] {
   const queries: string[] = [];
+  const name = input.name?.trim();
+  const company = input.company?.trim();
+  const city = input.city?.trim();
 
-  if (input.name) {
-    queries.push(input.name);
-    queries.push(`${input.name} Facebook`);
-    queries.push(`${input.name} LinkedIn`);
+  if (name) {
+    queries.push(name);
+    queries.push(`${name} LinkedIn`);
+    queries.push(`${name} Facebook`);
+    queries.push(`${name} CV`);
+    queries.push(`${name} profile`);
   }
 
-  if (input.phone) queries.push(input.phone);
-  if (input.company) queries.push(`${input.name} ${input.company}`);
+  if (name && company) {
+    queries.push(`${name} ${company}`);
+    queries.push(`${name} ${company} LinkedIn`);
+    queries.push(`${name} works at ${company}`);
+  }
 
-  return uniqueArray(queries).slice(0, 5);
+  if (name && city) {
+    queries.push(`${name} ${city}`);
+    queries.push(`${name} ${city} LinkedIn`);
+  }
+
+  if (input.phone) {
+    queries.push(input.phone);
+    if (name) queries.push(`${name} ${input.phone}`);
+  }
+
+  if (company && city) {
+    queries.push(`${company} ${city}`);
+  }
+
+  return uniqueArray(queries).slice(0, 10);
 }
 
 async function safeRequest(url: string, params: any, retries = 2) {
@@ -89,6 +118,66 @@ async function runLimited(arr: any[], fn: any, limit = 2) {
     results.push(...res);
   }
   return results;
+}
+
+async function syncClientAddressesFromMaps(
+  clientId: string,
+  places: Array<{ address: string; lat?: number; lng?: number }>
+) {
+  if (!places.length) return;
+
+  const existing = await db
+    .select({ address: clientAddresses.address })
+    .from(clientAddresses)
+    .where(eq(clientAddresses.clientId, clientId));
+
+  const existingSet = new Set(
+    existing.map((e) => e.address.trim().toLowerCase())
+  );
+
+  const toInsert = places
+    .filter((p) => p.address?.trim())
+    .filter((p) => !existingSet.has(p.address.trim().toLowerCase()))
+    .slice(0, 5)
+    .map((p, idx) => ({
+      clientId,
+      address: p.address.trim(),
+      city: null,
+      area: null,
+      lat: p.lat != null ? String(p.lat) : null,
+      lng: p.lng != null ? String(p.lng) : null,
+      isPrimary: idx === 0 && existing.length === 0,
+    }));
+
+  if (toInsert.length) {
+    await db.insert(clientAddresses).values(toInsert);
+  }
+}
+
+function scoreResult(result: any, input: OSINTInput) {
+  const title = String(result?.title || "").toLowerCase();
+  const snippet = String(result?.snippet || "").toLowerCase();
+  const link = String(result?.link || "").toLowerCase();
+  const text = `${title} ${snippet} ${link}`;
+
+  let score = 0;
+
+  const nameParts = String(input.name || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  for (const part of nameParts) {
+    if (text.includes(part)) score += 3;
+  }
+
+  if (input.company && text.includes(input.company.toLowerCase())) score += 4;
+  if (input.city && text.includes(input.city.toLowerCase())) score += 2;
+  if (input.phone && text.includes(input.phone.replace(/\D/g, ""))) score += 4;
+
+  if (link.includes("linkedin.com")) score += 3;
+  if (link.includes("facebook.com")) score += 2;
+
+  return score;
 }
 
 /* ================= PROVIDERS ================= */
@@ -162,18 +251,49 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   const mapsRaw = await runLimited(queries, searchMaps);
 
   const webFlat = webRaw.flatMap((r: any) => r?.organic_results || []);
+  const knowledgeGraph = webRaw
+    .map((r: any) => r?.knowledge_graph)
+    .filter(Boolean);
   const mapsFlat = mapsRaw.flatMap((r: any) => r?.results || []);
 
-  const social = webFlat
+  const rankedWeb = webFlat
+    .map((item: any) => ({ ...item, __score: scoreResult(item, input) }))
+    .filter((item: any) => item.__score >= 2)
+    .sort((a: any, b: any) => b.__score - a.__score)
+    .slice(0, 30);
+
+  const social = rankedWeb
     .map((r: any) => r.link)
     .filter((l: string) => l?.includes("facebook") || l?.includes("linkedin"));
 
-  const links = webFlat.map((r: any) => r.link).filter(Boolean);
-  const workplace = webFlat
-    .map((r: any) => r.snippet)
-    .filter((s: string) => s?.toLowerCase().includes("works"));
+  const links = rankedWeb.map((r: any) => r.link).filter(Boolean);
 
-  const mapsResults = mapsFlat.map((m: any) => m.name).filter(Boolean);
+  const workplaceFromOrganic = rankedWeb
+    .map((r: any) => `${r.title || ""} ${r.snippet || ""}`.trim())
+    .filter((s: string) =>
+      /works?|employee|manager|director|engineer|owner|founder/i.test(s)
+    );
+
+  const workplaceFromKg = knowledgeGraph
+    .map((k: any) => [k?.title, k?.type, k?.description].filter(Boolean).join(" - "))
+    .filter(Boolean);
+
+  const workplace = uniqueArray([...workplaceFromOrganic, ...workplaceFromKg]).slice(0, 12);
+
+  const mapPlaces = mapsFlat
+    .map((m: any) => ({
+      name: m?.name || "",
+      address: m?.formatted_address || "",
+      lat: m?.geometry?.location?.lat,
+      lng: m?.geometry?.location?.lng,
+    }))
+    .filter((m: any) => m.name || m.address);
+
+  const mapsResults = uniqueArray(
+    mapPlaces.map((m: any) =>
+      [m.name, m.address].filter(Boolean).join(" - ")
+    )
+  ).slice(0, 20);
 
   const imageMatches = input.imageUrl
     ? (await searchImage(input.imageUrl)).map((i: any) => i.link)
@@ -192,6 +312,7 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
     workplace,
     imageMatches,
     mapsResults,
+    mapPlaces,
     summary: ai?.summary || "No strong signals",
     confidence,
     fraudFlags,
@@ -200,6 +321,17 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
 
   if (input.clientId) {
     try {
+      await syncClientAddressesFromMaps(
+        input.clientId,
+        mapPlaces
+          .map((m: any) => ({
+            address: m.address,
+            lat: m.lat,
+            lng: m.lng,
+          }))
+          .filter((m: any) => m.address)
+      );
+
       await db
         .insert(osintResults)
         .values({

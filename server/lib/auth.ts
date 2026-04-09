@@ -65,10 +65,12 @@ function getSupabaseServerClient() {
 
   supabaseClient = createServerClient(url, key, {
     cookies: {
-      get: (name: string) => cookieStore.get(name)?.value,
-      set: (name: string, value: string, options: any) =>
-        cookieStore.set({ name, value, ...options }),
-      remove: (name: string) => cookieStore.delete(name),
+      getAll: () => cookieStore.getAll(),
+      setAll: (cookieValues) => {
+        cookieValues.forEach(({ name, value, options }) => {
+          cookieStore.set({ name, value, ...options });
+        });
+      },
     },
   });
 
@@ -116,7 +118,7 @@ export async function requireUser(): Promise<AuthUser> {
     email: dbUser.email,
     role,
     name: dbUser.name,
-    isSuperUser: dbUser.isSuperUser,
+    isSuperUser: dbUser.isSuperUser ?? false,
   };
 
   userCache.set(user.id, {
@@ -153,9 +155,9 @@ export function isPrivileged(user: AuthUser) {
 
 /* ================= WRAPPERS ================= */
 
-export async function withAuth(
-  handler: (user: AuthUser) => Promise<NextResponse>
-) {
+type AuthHandler = (user: AuthUser) => Promise<NextResponse>;
+
+export async function withAuth(handler: AuthHandler): Promise<NextResponse> {
   try {
     const user = await requireUser();
     return await handler(user);
@@ -172,7 +174,7 @@ export async function withAuth(
 export async function withRole(
   roles: AuthRole[],
   handler: (user: AuthUser) => Promise<NextResponse>
-) {
+) : Promise<NextResponse> {
   try {
     const user = await requireUser();
     requireRole(user, roles);
@@ -190,4 +192,4 @@ export async function withRole(
 
     return fail(message, status);
   }
-    }
+}

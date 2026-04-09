@@ -6,7 +6,7 @@ import { analyzeClient } from "@/server/services/ai.service";
 export const dynamic = "force-dynamic";
 
 export async function GET(req: NextRequest) {
-  return withAuth(req, async (user) => {
+  return withAuth(async (user) => {
     try {
       const baseClients = await getClientsForUser(user.id, user.role);
       

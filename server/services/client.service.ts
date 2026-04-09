@@ -156,6 +156,17 @@ export async function createClientFull(data: any, creatorId: string) {
       data.loans.map((l: any) => ({
         clientId: client.id,
         loanType: l.loanType || "UNKNOWN",
+        loanNumber: l.loanNumber || null,
+        cycle: Number(l.cycle || 0) || null,
+        organization: l.organization || null,
+        willLegal: Boolean(l.willLegal),
+        referralDate: l.referralDate ? new Date(l.referralDate) : null,
+        collectorPercentage:
+          l.collectorPercentage !== undefined &&
+          l.collectorPercentage !== null &&
+          l.collectorPercentage !== ""
+            ? toSafeNumber(l.collectorPercentage)
+            : null,
         emi: toSafeNumber(l.emi),
         balance: toSafeNumber(l.balance),
         overdue: toSafeNumber(l.overdue),
@@ -283,4 +294,4 @@ export async function getClientById(
     console.error("getClientById error:", error);
     return null;
   }
-        }
+}

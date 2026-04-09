@@ -75,7 +75,13 @@ CREATE TABLE client_addresses (
 CREATE TABLE client_loans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   client_id UUID REFERENCES clients(id),
+  loan_number TEXT,
   loan_type TEXT,
+  cycle INTEGER,
+  organization TEXT,
+  will_legal BOOLEAN DEFAULT false,
+  referral_date TIMESTAMP,
+  collector_percentage NUMERIC(6,2),
   emi NUMERIC,
   balance NUMERIC,
   overdue NUMERIC,

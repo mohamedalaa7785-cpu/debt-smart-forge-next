@@ -3,16 +3,20 @@ import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 
 /* =========================
    GET USER FROM SUPABASE 🔐
 ========================= */
 export async function getUserFromToken(token?: string) {
   try {
+    if (!hasSupabaseEnv()) return null;
+
     const cookieStore = cookies();
+    const { url, anonKey } = getSupabaseEnv();
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      url,
+      anonKey,
       {
         cookies: {
           get(name: string) {
@@ -59,10 +63,13 @@ export async function login(email: string, password: string) {
 }
 
 export async function logout() {
+  if (!hasSupabaseEnv()) return;
+
   const cookieStore = cookies();
+  const { url, anonKey } = getSupabaseEnv();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         get(name: string) {

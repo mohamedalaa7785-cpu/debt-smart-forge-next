@@ -76,9 +76,17 @@ export async function POST(request: Request) {
     });
 
     if (error || !data.session || !data.user) {
+      const message = (error?.message || "Invalid credentials").toLowerCase();
+      const isUnconfirmed = message.includes("email not confirmed");
+
       return NextResponse.json(
-        { success: false, error: error?.message || "Invalid credentials" },
-        { status: 401 }
+        {
+          success: false,
+          error: isUnconfirmed
+            ? "Email is not confirmed yet. Please verify your email or ask admin to auto-confirm users."
+            : error?.message || "Invalid login credentials",
+        },
+        { status: isUnconfirmed ? 403 : 401 }
       );
     }
 

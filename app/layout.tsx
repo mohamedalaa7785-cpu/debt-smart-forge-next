@@ -4,7 +4,8 @@ import Link from "next/link";
 import LogoutButton from "@/components/LogoutButton";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { SpeedInsights } from '@vercel/speed-insights/next';
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 
 export const metadata: Metadata = {
   title: "Debt Smart OS",
@@ -17,19 +18,24 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const cookieStore = cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
+  let user: { id: string } | null = null;
+
+  if (hasSupabaseEnv()) {
+    const { url, anonKey } = getSupabaseEnv();
+    const supabase = createServerClient(url, anonKey, {
       cookies: {
         get(name: string) {
           return cookieStore.get(name)?.value;
         },
       },
-    }
-  );
+    });
 
-  const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+
+    user = authUser;
+  }
 
   return (
     <html lang="en">

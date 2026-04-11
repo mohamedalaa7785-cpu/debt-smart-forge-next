@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 import { getSupabaseEnv } from "@/lib/supabase-env";
 
@@ -80,6 +81,18 @@ function createSupabase() {
   );
 }
 
+
+function getSupabaseAdminClient() {
+  const { url } = getSupabaseEnv();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
+  if (!serviceRoleKey) return null;
+
+  return createClient(url, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 /* ---------------- MAIN ---------------- */
 
 export async function POST(req: Request) {
@@ -99,24 +112,48 @@ export async function POST(req: Request) {
     }
 
     const supabase = createSupabase();
+    const adminClient = getSupabaseAdminClient();
+
+    let userId = "";
+    let hasSession = false;
 
     /* ---------------- SIGNUP ---------------- */
-    const { data, error } = await supabase.auth.signUp({
-      email: email!,
-      password,
-      options: {
-        data: { name },
-      },
-    });
+    if (adminClient) {
+      const { data: adminData, error: adminError } = await adminClient.auth.admin.createUser({
+        email: email!,
+        password,
+        email_confirm: true,
+        user_metadata: { name },
+      });
 
-    if (error || !data.user) {
-      return NextResponse.json(
-        { success: false, error: error?.message || "Signup failed" },
-        { status: 400 }
-      );
+      if (adminError || !adminData.user) {
+        return NextResponse.json(
+          { success: false, error: adminError?.message || "Signup failed" },
+          { status: 400 }
+        );
+      }
+
+      userId = adminData.user.id;
+      hasSession = true;
+    } else {
+      const { data, error } = await supabase.auth.signUp({
+        email: email!,
+        password,
+        options: {
+          data: { name },
+        },
+      });
+
+      if (error || !data.user) {
+        return NextResponse.json(
+          { success: false, error: error?.message || "Signup failed" },
+          { status: 400 }
+        );
+      }
+
+      userId = data.user.id;
+      hasSession = Boolean(data.session);
     }
-
-    const userId = data.user.id;
 
     /* ---------------- ROLE ---------------- */
     const { role, isSuperUser } = resolveRole(email!);
@@ -132,6 +169,8 @@ export async function POST(req: Request) {
     // In many Supabase setups email confirmation is required, so signUp returns no session.
     // In that case RLS can block writing to public.users at registration time.
     // We keep signup successful and allow first login to sync DB record.
+    codex/fix-sign-in-and-sign-up-errors-sz3qa3
+    if (hasSession) {
     if (data.session) {
       await ensureUsersTableColumns();
 
@@ -163,7 +202,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       user: userRow,
-      emailConfirmationRequired: !data.session,
+      emailConfirmationRequired: !hasSession,
     });
   } catch (err: any) {
     return NextResponse.json(

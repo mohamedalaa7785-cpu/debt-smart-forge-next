@@ -29,10 +29,14 @@ function getDisplayName(name?: string, email?: string): string {
 
 function validate(body: RegisterBody) {
   const errors: string[] = [];
+  const email = body.email?.trim().toLowerCase() || "";
+  const password = body.password || "";
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-  if (!body.email) errors.push("Email is required");
-  if (!body.password) errors.push("Password is required");
-  if (body.password && body.password.length < 6)
+  if (!email) errors.push("Email is required");
+  if (email && !emailRegex.test(email)) errors.push("Invalid email format");
+  if (!password) errors.push("Password is required");
+  if (password && password.length < 6)
     errors.push("Password must be at least 6 characters");
 
   return errors;
@@ -62,25 +66,19 @@ function resolveRole(email: string): {
 
 function createSupabase() {
   const cookieStore = cookies();
-
   const { url, anonKey } = getSupabaseEnv();
 
-  return createServerClient(
-    url,
-    anonKey,
-    {
-      cookies: {
-        getAll: () => cookieStore.getAll(),
-        setAll: (cookieValues) => {
-          cookieValues.forEach(({ name, value, options }) => {
-            cookieStore.set({ name, value, ...options });
-          });
-        },
+  return createServerClient(url, anonKey, {
+    cookies: {
+      getAll: () => cookieStore.getAll(),
+      setAll: (cookieValues) => {
+        cookieValues.forEach(({ name, value, options }) => {
+          cookieStore.set({ name, value, ...options });
+        });
       },
-    }
-  );
+    },
+  });
 }
-
 
 function getSupabaseAdminClient() {
   const { url } = getSupabaseEnv();
@@ -119,17 +117,29 @@ export async function POST(req: Request) {
 
     /* ---------------- SIGNUP ---------------- */
     if (adminClient) {
-      const { data: adminData, error: adminError } = await adminClient.auth.admin.createUser({
-        email: email!,
-        password,
-        email_confirm: true,
-        user_metadata: { name },
-      });
+      const { data: adminData, error: adminError } =
+        await adminClient.auth.admin.createUser({
+          email: email!,
+          password,
+          email_confirm: true,
+          user_metadata: { name },
+        });
 
       if (adminError || !adminData.user) {
+        const message = adminError?.message?.toLowerCase() || "signup failed";
+        const isDuplicate =
+          message.includes("already registered") ||
+          message.includes("already been registered") ||
+          message.includes("duplicate");
+
         return NextResponse.json(
-          { success: false, error: adminError?.message || "Signup failed" },
-          { status: 400 }
+          {
+            success: false,
+            error: isDuplicate
+              ? "Email already registered"
+              : adminError?.message || "Signup failed",
+          },
+          { status: isDuplicate ? 409 : 400 }
         );
       }
 
@@ -145,9 +155,19 @@ export async function POST(req: Request) {
       });
 
       if (error || !data.user) {
+        const message = error?.message?.toLowerCase() || "signup failed";
+        const isDuplicate =
+          message.includes("already registered") ||
+          message.includes("already been registered");
+
         return NextResponse.json(
-          { success: false, error: error?.message || "Signup failed" },
-          { status: 400 }
+          {
+            success: false,
+            error: isDuplicate
+              ? "Email already registered"
+              : error?.message || "Signup failed",
+          },
+          { status: isDuplicate ? 409 : 400 }
         );
       }
 
@@ -158,7 +178,13 @@ export async function POST(req: Request) {
     /* ---------------- ROLE ---------------- */
     const { role, isSuperUser } = resolveRole(email!);
 
-    let userRow = {
+    let userRow: {
+      id: string;
+      email: string;
+      name: string;
+      role: Role;
+      is_super_user: boolean;
+    } = {
       id: userId,
       email: email!,
       name,
@@ -169,9 +195,7 @@ export async function POST(req: Request) {
     // In many Supabase setups email confirmation is required, so signUp returns no session.
     // In that case RLS can block writing to public.users at registration time.
     // We keep signup successful and allow first login to sync DB record.
-    codex/fix-sign-in-and-sign-up-errors-sz3qa3
     if (hasSession) {
-    if (data.session) {
       await ensureUsersTableColumns();
 
       const { error: upsertError } = await supabase.from("users").upsert(
@@ -193,7 +217,13 @@ export async function POST(req: Request) {
           .single();
 
         if (fetchedUserRow) {
-          userRow = fetchedUserRow;
+          userRow = {
+            id: fetchedUserRow.id,
+            email: fetchedUserRow.email,
+            name: fetchedUserRow.name ?? name,
+            role: (fetchedUserRow.role as Role) || role,
+            is_super_user: Boolean(fetchedUserRow.is_super_user),
+          };
         }
       }
     }

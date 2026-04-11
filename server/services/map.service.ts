@@ -1,14 +1,13 @@
 import axios from "axios";
 import { parseNumber } from "@/lib/utils";
 import { db } from "@/server/db";
-import { clientAddresses, clients, clientLoans } from "@/server/db/schema";
-import { eq, sql } from "drizzle-orm";
-import { getRequiredEnv } from "@/lib/env";
+import { clientAddresses, clientPhones, clients, clientLoans } from "@/server/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 
 /* =========================
    CONFIG
 ========================= */
-const API_KEY = getRequiredEnv("GOOGLE_MAPS_API_KEY");
+const API_KEY = process.env.GOOGLE_MAPS_API_KEY?.trim() || null;
 
 /* =========================
    TYPES
@@ -23,9 +22,10 @@ export interface MapClient {
   name: string;
   lat: number;
   lng: number;
-  risk: string;
+  risk: "LOW" | "MEDIUM" | "HIGH";
   priority: number;
   totalDue: number;
+  bucket: number;
   phone?: string;
   address?: string;
 }
@@ -39,6 +39,8 @@ const cache = new Map<string, Coordinates>();
    SAFE REQUEST
 ========================= */
 async function safeRequest(params: any) {
+  if (!API_KEY) return null;
+
   try {
     const res = await axios.get(
       "https://maps.googleapis.com/maps/api/geocode/json",
@@ -114,24 +116,51 @@ export async function getClientsForMap(): Promise<MapClient[]> {
       lat: clientAddresses.lat,
       lng: clientAddresses.lng,
       address: clientAddresses.address,
+      phone: clientPhones.phone,
       totalDue: sql<number>`SUM(${clientLoans.amountDue})`,
+      maxBucket: sql<number>`COALESCE(MAX(${clientLoans.bucket}), 1)`,
+      overdueTotal: sql<number>`COALESCE(SUM(${clientLoans.overdue}), 0)`,
     })
     .from(clients)
     .innerJoin(clientAddresses, eq(clients.id, clientAddresses.clientId))
     .innerJoin(clientLoans, eq(clients.id, clientLoans.clientId))
-    .groupBy(clients.id, clientAddresses.id)
+    .leftJoin(
+      clientPhones,
+      and(eq(clients.id, clientPhones.clientId), eq(clientPhones.isPrimary, true))
+    )
+    .groupBy(clients.id, clientAddresses.id, clientPhones.id)
     .where(eq(clientAddresses.isPrimary, true));
 
-    return results.map(r => ({
-      id: r.id,
-      name: r.name || "Unknown",
-      lat: parseFloat(r.lat || "0"),
-      lng: parseFloat(r.lng || "0"),
-      risk: "HIGH", // Simplified
-      priority: 80, // Simplified
-      totalDue: r.totalDue || 0,
-      address: r.address || "N/A"
-    }));
+    return results.map((r) => {
+      const totalDue = parseNumber(r.totalDue);
+      const overdueTotal = parseNumber(r.overdueTotal);
+      const bucket = Math.max(1, parseNumber(r.maxBucket));
+
+      let risk: MapClient["risk"] = "LOW";
+      if (bucket >= 3 || overdueTotal >= 25000) risk = "HIGH";
+      else if (bucket === 2 || overdueTotal >= 5000) risk = "MEDIUM";
+
+      const priority = Math.min(
+        100,
+        Math.max(
+          10,
+          Math.round(bucket * 18 + Math.min(overdueTotal / 1500, 35) + Math.min(totalDue / 5000, 30))
+        )
+      );
+
+      return {
+        id: r.id,
+        name: r.name || "Unknown",
+        lat: parseNumber(r.lat),
+        lng: parseNumber(r.lng),
+        risk,
+        priority,
+        totalDue,
+        bucket,
+        phone: r.phone || undefined,
+        address: r.address || "N/A",
+      };
+    });
   } catch (error) {
     console.error("getClientsForMap error:", error);
     return [];

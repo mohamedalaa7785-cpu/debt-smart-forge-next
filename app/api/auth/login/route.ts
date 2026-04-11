@@ -39,6 +39,13 @@ function isSuperUser(email: string) {
   return email.toLowerCase().includes("mohamed");
 }
 
+function maskEmail(email: string) {
+  const [name = "", domain = ""] = email.split("@");
+  if (!domain) return "***";
+  if (name.length <= 2) return `**@${domain}`;
+  return `${name.slice(0, 2)}***@${domain}`;
+}
+
 /* ---------------- MAIN ---------------- */
 
 export async function POST(request: Request) {
@@ -119,7 +126,7 @@ export async function POST(request: Request) {
     }
 
     /* ---------------- LOG ---------------- */
-    await logAction(dbUser.id, "LOGIN", { email });
+    await logAction(dbUser.id, "LOGIN", { email: maskEmail(email) });
 
     /* ---------------- RESPONSE ---------------- */
     return NextResponse.json({

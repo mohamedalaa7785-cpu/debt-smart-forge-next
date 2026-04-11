@@ -32,7 +32,11 @@ export default function SignUpPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.error || "Signup failed");
+        const errorMessage = Array.isArray(data?.error)
+          ? data.error.join(", ")
+          : data?.error || "Signup failed";
+
+        setError(errorMessage);
         setLoading(false);
         return;
       }
@@ -114,4 +118,4 @@ export default function SignUpPage() {
       </div>
     </main>
   );
-                 }
+}

@@ -117,45 +117,43 @@ export async function POST(req: Request) {
 
     /* ---------------- ROLE ---------------- */
     const { role, isSuperUser } = resolveRole(email!);
-    await ensureUsersTableColumns();
 
-    /* ---------------- DB SYNC ---------------- */
-    const { error: upsertError } = await supabase.from("users").upsert(
-      {
-        id: userId,
-        email,
-        name,
-        role,
-        is_super_user: isSuperUser,
-      },
-      { onConflict: "id" }
-    );
+    let userRow = {
+      id: userId,
+      email: email!,
+      name,
+      role,
+      is_super_user: isSuperUser,
+    };
 
-    if (upsertError) {
-      return NextResponse.json(
+    // In many Supabase setups email confirmation is required, so signUp returns no session.
+    // In that case RLS can block writing to public.users at registration time.
+    // We keep signup successful and allow first login to sync DB record.
+    if (data.session) {
+      await ensureUsersTableColumns();
+
+      const { error: upsertError } = await supabase.from("users").upsert(
         {
-          success: false,
-          error: "User created but DB sync failed",
+          id: userId,
+          email,
+          name,
+          role,
+          is_super_user: isSuperUser,
         },
-        { status: 500 }
+        { onConflict: "id" }
       );
-    }
 
-    /* ---------------- FETCH USER ---------------- */
-    const { data: userRow, error: userRowError } = await supabase
-      .from("users")
-      .select("id, email, name, role, is_super_user")
-      .eq("id", userId)
-      .single();
+      if (!upsertError) {
+        const { data: fetchedUserRow } = await supabase
+          .from("users")
+          .select("id, email, name, role, is_super_user")
+          .eq("id", userId)
+          .single();
 
-    if (userRowError || !userRow) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "User created but fetch failed",
-        },
-        { status: 500 }
-      );
+        if (fetchedUserRow) {
+          userRow = fetchedUserRow;
+        }
+      }
     }
 
     /* ---------------- RESPONSE ---------------- */

@@ -1,12 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 
 /* ================= HELPERS ================= */
 
 function createSupabase(request: NextRequest, response: NextResponse) {
+  const { url, anonKey } = getSupabaseEnv();
+
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         getAll: () => request.cookies.getAll(),
@@ -43,6 +46,10 @@ function isProtected(pathname: string) {
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   const pathname = request.nextUrl.pathname;
+
+  if (!hasSupabaseEnv()) {
+    return response;
+  }
 
   const supabase = createSupabase(request, response);
 

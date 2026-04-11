@@ -169,7 +169,9 @@ export async function POST(req: Request) {
     // In many Supabase setups email confirmation is required, so signUp returns no session.
     // In that case RLS can block writing to public.users at registration time.
     // We keep signup successful and allow first login to sync DB record.
+    codex/fix-sign-in-and-sign-up-errors-sz3qa3
     if (hasSession) {
+    if (data.session) {
       await ensureUsersTableColumns();
 
       const { error: upsertError } = await supabase.from("users").upsert(

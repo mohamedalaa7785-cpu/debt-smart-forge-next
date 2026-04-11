@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
+import { getSupabaseEnv } from "@/lib/supabase-env";
 
 /* ---------------- TYPES ---------------- */
 
@@ -61,9 +62,11 @@ function resolveRole(email: string): {
 function createSupabase() {
   const cookieStore = cookies();
 
+  const { url, anonKey } = getSupabaseEnv();
+
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookies: {
         getAll: () => cookieStore.getAll(),

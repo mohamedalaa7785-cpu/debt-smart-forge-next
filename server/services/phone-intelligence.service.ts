@@ -49,16 +49,58 @@ async function lookupExternalPhoneProvider(normalized: string) {
   }
 }
 
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, "");
+}
+
 export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligenceResult> {
   // 1. Normalize number (remove non-digits, handle country code)
-  const normalized = phone.replace(/\D/g, "");
-  
+  const normalized = normalizePhone(phone);
+  if (normalized.length < 7) {
+    return {
+      phone,
+      normalized,
+      whatsappAvailable: false,
+      telegramAvailable: false,
+      riskFlag: true,
+      socialProfiles: [],
+      nameDetection: "Invalid phone format",
+    };
+  }
+
+  const suffix10 = normalized.slice(-10);
+
   // 2. Search DB for linked client
-  const phoneRecord = await db.select().from(clientPhones).where(like(clientPhones.phone, `%${normalized}%`)).limit(1).then(res => res[0]);
-  
+  const phoneRecord = await db
+    .select()
+    .from(clientPhones)
+    .where(
+      like(clientPhones.phone, `%${normalized}%`)
+    )
+    .limit(1)
+    .then((res) => res[0]);
+
+  const fallbackPhoneRecord =
+    !phoneRecord && suffix10.length === 10
+      ? await db
+          .select()
+          .from(clientPhones)
+          .where(like(clientPhones.phone, `%${suffix10}%`))
+          .limit(1)
+          .then((res) => res[0])
+      : null;
+
+  const selectedPhoneRecord = phoneRecord || fallbackPhoneRecord;
+
   let linkedClient = undefined;
-  if (phoneRecord?.clientId) {
-    const client = await db.select().from(clients).where(eq(clients.id, phoneRecord.clientId)).limit(1).then(res => res[0]);
+  if (selectedPhoneRecord?.clientId) {
+    const client = await db
+      .select()
+      .from(clients)
+      .where(eq(clients.id, selectedPhoneRecord.clientId))
+      .limit(1)
+      .then((res) => res[0]);
+
     if (client) {
       linkedClient = {
         id: client.id,
@@ -69,8 +111,13 @@ export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligence
   }
 
   // 3. Search OSINT (Mocked for now, in real app would call SerpAPI/Truecaller API)
-  const osintRecord = phoneRecord?.clientId
-    ? await db.select().from(osintResults).where(eq(osintResults.clientId, phoneRecord.clientId)).limit(1).then(res => res[0])
+  const osintRecord = selectedPhoneRecord?.clientId
+    ? await db
+        .select()
+        .from(osintResults)
+        .where(eq(osintResults.clientId, selectedPhoneRecord.clientId))
+        .limit(1)
+        .then((res) => res[0])
     : null;
 
   // 4. Return combined intelligence
@@ -81,7 +128,7 @@ export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligence
     normalized,
     linkedClient,
     osint: osintRecord,
-    whatsappAvailable: true, // Assume true for now
+    whatsappAvailable: Boolean(externalSource || linkedClient), // more realistic signal
     telegramAvailable: false,
     riskFlag: linkedClient ? false : true, // Flag if not in DB
     socialProfiles: Array.isArray(osintRecord?.social) ? (osintRecord.social as string[]) : [],

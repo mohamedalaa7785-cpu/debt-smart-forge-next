@@ -1,31 +1,15 @@
-import { NextResponse } from "next/server";
-import { register } from "@/server/services/auth.service";
-import { logAction } from "@/server/services/log.service";
+export const dynamic = "force-dynamic";
 
-/* =========================
-   REGISTER
-========================= */
-export async function POST(req: Request) {
-  try {
-    const body = await req.json();
-
-    if (!body.email || !body.password) {
-      return NextResponse.json(
-        { success: false, error: "Email and password required" },
-=======
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
+import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
+import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
-import { getSupabaseEnv } from "@/lib/supabase-env";
-
-/* ---------------- TYPES ---------------- */
-
-type Role =
-  | "admin"
-  | "supervisor"
-  | "team_leader"
-  | "collector";
+import { isSuperUserEmail, resolveRoleByEmail } from "@/server/lib/role";
 
 type RegisterBody = {
   name?: string;
@@ -33,52 +17,31 @@ type RegisterBody = {
   password?: string;
 };
 
-/* ---------------- HELPERS ---------------- */
-
-function getDisplayName(name?: string, email?: string): string {
-  const clean = name?.trim();
-  if (clean) return clean;
-  return email?.split("@")[0] || "User";
-}
-
-function validate(body: RegisterBody) {
+function validateInput(body: RegisterBody): string[] {
   const errors: string[] = [];
-  const email = body.email?.trim().toLowerCase() || "";
-  const password = body.password || "";
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const email = body.email?.trim().toLowerCase() ?? "";
+  const password = body.password ?? "";
 
   if (!email) errors.push("Email is required");
-  if (email && !emailRegex.test(email)) errors.push("Invalid email format");
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    errors.push("Invalid email format");
+  }
+
   if (!password) errors.push("Password is required");
-  if (password && password.length < 6)
-    errors.push("Password must be at least 6 characters");
+  if (password && password.length < 8) {
+    errors.push("Password must be at least 8 characters");
+  }
 
   return errors;
 }
 
-/**
- * 🔥 Role Resolver (Hidden System)
- */
-function resolveRole(email: string): {
-  role: Role;
-  isSuperUser: boolean;
-} {
-  const e = email.toLowerCase();
-
-  if (e.includes("adel")) return { role: "admin", isSuperUser: false };
-  if (e.includes("loai")) return { role: "supervisor", isSuperUser: false };
-  if (e.includes("mostafa") || e.includes("heba"))
-    return { role: "team_leader", isSuperUser: false };
-
-  // 👑 hidden full control (محمد)
-  if (e.includes("mohamed")) {
-    return { role: "collector", isSuperUser: true };
-  }
-
-  return { role: "collector", isSuperUser: false };
+function getDisplayName(name?: string, email?: string): string {
+  const trimmed = name?.trim();
+  if (trimmed) return trimmed;
+  return email?.split("@")[0] ?? "User";
 }
 
-function createSupabase() {
+function createSupabaseServerClient() {
   const cookieStore = cookies();
   const { url, anonKey } = getSupabaseEnv();
 
@@ -94,95 +57,110 @@ function createSupabase() {
   });
 }
 
-function getSupabaseAdminClient() {
-  const { url } = getSupabaseEnv();
+function createServiceRoleClient() {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-
   if (!serviceRoleKey) return null;
 
+  const { url } = getSupabaseEnv();
   return createClient(url, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 }
 
-/* ---------------- MAIN ---------------- */
+async function syncUserRecord(params: {
+  id: string;
+  email: string;
+  name: string;
+  role: ReturnType<typeof resolveRoleByEmail>;
+  isSuperUser: boolean;
+}) {
+  await ensureUsersTableColumns();
+
+  await db
+    .insert(users)
+    .values({
+      id: params.id,
+      email: params.email,
+      name: params.name,
+      role: params.role,
+      isSuperUser: params.isSuperUser,
+    })
+    .onConflictDoUpdate({
+      target: users.id,
+      set: {
+        email: params.email,
+        name: params.name,
+        role: params.role,
+        isSuperUser: params.isSuperUser,
+      },
+    });
+
+  return db.query.users.findFirst({ where: eq(users.id, params.id) });
+}
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as RegisterBody;
+    if (!hasSupabaseEnv()) {
+      return NextResponse.json(
+        { success: false, error: "Supabase environment is not configured" },
+        { status: 500 }
+      );
+    }
 
-    const email = body.email?.trim().toLowerCase();
+    const body = (await req.json()) as RegisterBody;
+    const email = body.email?.trim().toLowerCase() ?? "";
     const password = body.password ?? "";
     const name = getDisplayName(body.name, email);
 
-    const validationErrors = validate({ email, password, name });
-    if (validationErrors.length > 0) {
-      return NextResponse.json(
-        { success: false, error: validationErrors },
-
-        { status: 400 }
-      );
+    const errors = validateInput({ email, password });
+    if (errors.length > 0) {
+      return NextResponse.json({ success: false, error: errors }, { status: 400 });
     }
-codex/organize-comprehensive-project-report
-    const user = await register(
-      body.email,
-      body.password,
-      body.role === "admin" ? "admin" : "agent"
-    );
 
-    await logAction(user.id, "REGISTER", {
-      email: user.email,
-      role: user.role,
-    });
+    const role = resolveRoleByEmail(email);
+    const isSuperUser = isSuperUserEmail(email);
 
-    return NextResponse.json({
-      success: true,
-      data: user,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message || "Registration failed" },
-      { status: 400 }
-=======
-    const supabase = createSupabase();
-    const adminClient = getSupabaseAdminClient();
+    const supabase = createSupabaseServerClient();
+    const adminClient = createServiceRoleClient();
 
-    let userId = "";
+    let userId: string | null = null;
     let hasSession = false;
 
-    /* ---------------- SIGNUP ---------------- */
     if (adminClient) {
-      const { data: adminData, error: adminError } =
-        await adminClient.auth.admin.createUser({
-          email: email!,
-          password,
-          email_confirm: true,
-          user_metadata: { name },
-        });
+      const { data, error } = await adminClient.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name },
+        app_metadata: { role, is_super_user: isSuperUser },
+      });
 
-      if (adminError || !adminData.user) {
-        const message = adminError?.message?.toLowerCase() || "signup failed";
+      if (error || !data.user) {
+        const message = error?.message?.toLowerCase() ?? "signup failed";
         const isDuplicate =
-          message.includes("already registered") ||
-          message.includes("already been registered") ||
-          message.includes("duplicate");
+          message.includes("already") || message.includes("duplicate");
 
         return NextResponse.json(
           {
             success: false,
             error: isDuplicate
               ? "Email already registered"
-              : adminError?.message || "Signup failed",
+              : error?.message ?? "Signup failed",
           },
           { status: isDuplicate ? 409 : 400 }
         );
       }
 
-      userId = adminData.user.id;
-      hasSession = true;
+      userId = data.user.id;
+
+      const { data: signInData, error: signInError } =
+        await supabase.auth.signInWithPassword({ email, password });
+      if (!signInError && signInData.session) {
+        hasSession = true;
+      }
     } else {
       const { data, error } = await supabase.auth.signUp({
-        email: email!,
+        email,
         password,
         options: {
           data: { name },
@@ -190,17 +168,15 @@ codex/organize-comprehensive-project-report
       });
 
       if (error || !data.user) {
-        const message = error?.message?.toLowerCase() || "signup failed";
-        const isDuplicate =
-          message.includes("already registered") ||
-          message.includes("already been registered");
+        const message = error?.message?.toLowerCase() ?? "signup failed";
+        const isDuplicate = message.includes("already");
 
         return NextResponse.json(
           {
             success: false,
             error: isDuplicate
               ? "Email already registered"
-              : error?.message || "Signup failed",
+              : error?.message ?? "Signup failed",
           },
           { status: isDuplicate ? 409 : 400 }
         );
@@ -210,72 +186,33 @@ codex/organize-comprehensive-project-report
       hasSession = Boolean(data.session);
     }
 
-    /* ---------------- ROLE ---------------- */
-    const { role, isSuperUser } = resolveRole(email!);
-
-    let userRow: {
-      id: string;
-      email: string;
-      name: string;
-      role: Role;
-      is_super_user: boolean;
-    } = {
-      id: userId,
-      email: email!,
-      name,
-      role,
-      is_super_user: isSuperUser,
-    };
-
-    // In many Supabase setups email confirmation is required, so signUp returns no session.
-    // In that case RLS can block writing to public.users at registration time.
-    // We keep signup successful and allow first login to sync DB record.
-    if (hasSession) {
-      await ensureUsersTableColumns();
-
-      const { error: upsertError } = await supabase.from("users").upsert(
-        {
-          id: userId,
-          email,
-          name,
-          role,
-          is_super_user: isSuperUser,
-        },
-        { onConflict: "id" }
-      );
-
-      if (!upsertError) {
-        const { data: fetchedUserRow } = await supabase
-          .from("users")
-          .select("id, email, name, role, is_super_user")
-          .eq("id", userId)
-          .single();
-
-        if (fetchedUserRow) {
-          userRow = {
-            id: fetchedUserRow.id,
-            email: fetchedUserRow.email,
-            name: fetchedUserRow.name ?? name,
-            role: (fetchedUserRow.role as Role) || role,
-            is_super_user: Boolean(fetchedUserRow.is_super_user),
-          };
-        }
-      }
+    if (!userId) {
+      throw new Error("Unable to create user");
     }
 
-    /* ---------------- RESPONSE ---------------- */
+    const syncedUser = await syncUserRecord({
+      id: userId,
+      email,
+      name,
+      role,
+      isSuperUser,
+    });
+
     return NextResponse.json({
       success: true,
-      user: userRow,
+      user: syncedUser
+        ? {
+            id: syncedUser.id,
+            email: syncedUser.email,
+            name: syncedUser.name,
+            role: syncedUser.role,
+            is_super_user: Boolean(syncedUser.isSuperUser),
+          }
+        : { id: userId, email, name, role, is_super_user: isSuperUser },
       emailConfirmationRequired: !hasSession,
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: err?.message || "Internal server error",
-      },
-      { status: 500 
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Internal server error";
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

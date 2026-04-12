@@ -8,6 +8,7 @@ import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
+import { isSuperUserEmail, resolveRoleByEmail } from "@/server/lib/role";
 
 /* ---------------- ENV ---------------- */
 
@@ -20,23 +21,6 @@ function getEnv() {
   }
 
   return { url, key };
-}
-
-/* ---------------- ROLE FALLBACK ---------------- */
-
-function resolveRole(email: string) {
-  const e = email.toLowerCase();
-
-  if (e.includes("adel")) return "admin";
-  if (e.includes("loai")) return "supervisor";
-  if (e.includes("mostafa") || e.includes("heba"))
-    return "team_leader";
-
-  return "collector";
-}
-
-function isSuperUser(email: string) {
-  return email.toLowerCase().includes("mohamed");
 }
 
 function maskEmail(email: string) {
@@ -110,9 +94,9 @@ export async function POST(request: Request) {
         .values({
           id: data.user.id,
           email: data.user.email!,
-          role: resolveRole(email),
+          role: resolveRoleByEmail(email),
           name: data.user.user_metadata?.name || null,
-          isSuperUser: isSuperUser(email),
+          isSuperUser: isSuperUserEmail(email),
         })
         .onConflictDoNothing();
 

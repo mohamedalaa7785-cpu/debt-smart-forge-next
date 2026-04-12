@@ -1,117 +1,59 @@
-export const dynamic = "force-dynamic";
-import { NextResponse } from "next/server";
-import { db } from "@/server/db";
-import {
-  clients,
-  clientLoans,
-  clientActions,
-  clientPhones,
-} from "@/server/db/schema";
-
-import { eq, desc } from "drizzle-orm";
+import { NextRequest, NextResponse } from "next/server";
+import { withAuth } from "@/server/lib/auth";
+import { getClientsForUser, getClientById } from "@/server/services/client.service";
 import { analyzeClient } from "@/server/services/ai.service";
 
-/* =========================
-   AI CALL MODE 🔥
-========================= */
-export async function GET() {
-  try {
-    const allClients = await db
-      .select()
-      .from(clients)
-      .orderBy(desc(clients.createdAt))
-      .limit(50);
+export const dynamic = "force-dynamic";
 
-    const result: any[] = [];
+export async function GET(req: NextRequest) {
+  return withAuth(async (user) => {
+    try {
+      const baseClients = await getClientsForUser(user.id, user.role);
+      
+      // Limit to top 20 for performance in call mode
+      const result: any[] = [];
+      const limitedClients = baseClients.slice(0, 20);
 
-    for (const client of allClients) {
-      const [loans, actions, phones] = await Promise.all([
-        db
-          .select()
-          .from(clientLoans)
-          .where(eq(clientLoans.clientId, client.id)),
+      for (const client of limitedClients) {
+        const fullData = await getClientById(client.id);
+        if (!fullData) continue;
 
-        db
-          .select()
-          .from(clientActions)
-          .where(eq(clientActions.clientId, client.id))
-          .orderBy(desc(clientActions.createdAt)),
+        const totalDue = fullData.loans.reduce((sum, l) => sum + Number(l.overdue || 0), 0);
+        const lastAction = fullData.actions[0]?.createdAt;
+        const lastActionDays = lastAction 
+          ? Math.floor((Date.now() - new Date(lastAction).getTime()) / (1000 * 60 * 60 * 24)) 
+          : 999;
 
-        db
-          .select()
-          .from(clientPhones)
-          .where(eq(clientPhones.clientId, client.id)),
-      ]);
+        const ai = await analyzeClient({
+          clientName: client.name || "Unknown",
+          totalAmountDue: totalDue,
+          lastActionDays,
+          phonesCount: fullData.phones.length,
+        });
 
-      const totalDue = loans.reduce((sum: number, l: any) => sum + Number(l.balance || 0), 0);
+        // Priority calculation: High due + high probability + long time since last action
+        const priority = (totalDue / 1000) * 10 + (ai.paymentProbability) * 0.5 + (lastActionDays * 2);
 
-      const lastActionDays = actions.length && actions[0].createdAt
-        ? Math.floor(
-            (Date.now() -
-              new Date(actions[0].createdAt).getTime()) /
-              (1000 * 60 * 60 * 24)
-          )
-        : 999;
+        result.push({
+          id: client.id,
+          name: client.name,
+          phone: fullData.phones[0]?.phone || "",
+          totalDue,
+          lastActionDays,
+          ai,
+          priority,
+        });
+      }
 
-      /* =========================
-         AI SIGNALS
-      ========================= */
-      const actionScore = actions.reduce((acc: number, a: any) => {
-        if (a.actionType === "CALL") return acc + 5;
-        if (a.actionType === "WHATSAPP") return acc + 3;
-        if (a.actionType === "PROMISE") return acc + 10;
-        if (a.actionType === "BROKEN_PROMISE") return acc - 10;
-        return acc;
-      }, 0);
+      result.sort((a, b) => b.priority - a.priority);
 
-      /* =========================
-         AI ANALYSIS 🔥
-      ========================= */
-      const ai = await analyzeClient({
-        clientName: client.name,
-        totalAmountDue: totalDue,
-        riskScore: actionScore,
-        lastActionDays,
-        phonesCount: phones.length,
+      return NextResponse.json({
+        success: true,
+        data: result,
       });
-
-      /* =========================
-         FINAL PRIORITY 🔥
-      ========================= */
-      const priority =
-        totalDue * 0.6 +
-        actionScore * 5 +
-        (ai?.paymentProbability || 0) * 2 -
-        lastActionDays * 3;
-
-      result.push({
-        id: client.id,
-        name: client.name,
-        phone: phones[0]?.phone || "",
-
-        totalDue,
-        lastActionDays,
-
-        ai,
-        priority,
-      });
+    } catch (error: any) {
+      console.error("CALL MODE API ERROR:", error);
+      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
-
-    /* =========================
-       SORT 🔥
-    ========================= */
-    result.sort((a, b) => b.priority - a.priority);
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-    });
-  } catch (error) {
-    console.error("CALL MODE AI ERROR:", error);
-
-    return NextResponse.json(
-      { success: false, error: "Failed" },
-      { status: 500 }
-    );
-  }
+  });
 }

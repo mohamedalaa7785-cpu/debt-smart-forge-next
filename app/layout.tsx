@@ -1,102 +1,99 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
+import LogoutButton from "@/components/LogoutButton";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 
-/* =========================
-   META (SEO + SYSTEM IDENTITY)
-========================= */
 export const metadata: Metadata = {
   title: "Debt Smart OS",
   description: "AI-powered Debt Collection Intelligence System",
 };
 
-/* =========================
-   ROOT LAYOUT
-========================= */
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const cookieStore = cookies();
+  let user: { id: string } | null = null;
+
+  if (hasSupabaseEnv()) {
+    const { url, anonKey } = getSupabaseEnv();
+    const supabase = createServerClient(url, anonKey, {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+      },
+    });
+
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+
+    user = authUser;
+  }
+
   return (
     <html lang="en">
-      <body className="bg-bg text-gray-900 antialiased">
-
-        {/* =========================
-            APP CONTAINER
-        ========================= */}
+      <body className="bg-gray-50 text-gray-900 antialiased font-sans">
         <div className="min-h-screen flex flex-col">
-
-          {/* =========================
-              HEADER (NAVBAR)
-          ========================= */}
-          <header className="sticky top-0 z-50 bg-white border-b shadow-sm">
-            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-
-              {/* LOGO */}
-              <Link href="/" className="font-bold text-lg">
-                Debt Smart OS
+          <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm">
+            <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+              <Link href="/" className="font-black text-xl tracking-tighter text-blue-600">
+                DEBT SMART OS
               </Link>
 
-              {/* NAV */}
-              <div className="flex items-center gap-3 text-sm">
-
-                <Link
-                  href="/"
-                  className="px-3 py-1 rounded-lg hover:bg-gray-100"
-                >
-                  Dashboard
-                </Link>
-
-                <Link
-                  href="/add-client"
-                  className="px-3 py-1 rounded-lg bg-black text-white"
-                >
-                  + Add
-                </Link>
+              <div className="flex items-center gap-2 md:gap-4 text-xs font-black uppercase tracking-widest">
+                {user ? (
+                  <>
+                    <Link href="/" className="px-3 py-1 rounded-lg hover:bg-blue-50 text-gray-600 transition">
+                      Dashboard
+                    </Link>
+                    <Link href="/call-mode" className="px-3 py-1 rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-100 transition">
+                      Call Mode
+                    </Link>
+                    <LogoutButton />
+                  </>
+                ) : (
+                  <Link href="/login" className="px-4 py-2 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-100 transition">
+                    Login
+                  </Link>
+                )}
               </div>
             </div>
           </header>
 
-          {/* =========================
-              MAIN CONTENT
-          ========================= */}
           <main className="flex-1">
-            <div className="max-w-5xl mx-auto px-4 py-4">
+            <div className="max-w-5xl mx-auto py-4">
               {children}
             </div>
           </main>
 
-          {/* =========================
-              MOBILE ACTION BAR 🔥
-          ========================= */}
-          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t p-2 flex justify-around md:hidden">
-
-            <Link
-              href="/"
-              className="text-xs text-center flex flex-col"
-            >
-              📊
-              <span>Dashboard</span>
+          <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-t border-gray-100 p-3 flex justify-around md:hidden">
+            <Link href="/" className="text-[10px] font-black uppercase tracking-widest text-center flex flex-col items-center gap-1 text-gray-400 hover:text-blue-600 transition">
+              <span className="text-lg">📊</span>
+              <span>Home</span>
             </Link>
-
-            <Link
-              href="/add-client"
-              className="text-xs text-center flex flex-col"
-            >
-              ➕
+            <Link href="/call-mode" className="text-[10px] font-black uppercase tracking-widest text-center flex flex-col items-center gap-1 text-gray-400 hover:text-blue-600 transition">
+              <span className="text-lg">🔥</span>
+              <span>Call Mode</span>
+            </Link>
+            <Link href="/add-client" className="text-[10px] font-black uppercase tracking-widest text-center flex flex-col items-center gap-1 text-gray-400 hover:text-blue-600 transition">
+              <span className="text-lg">➕</span>
               <span>Add</span>
             </Link>
           </div>
 
-          {/* =========================
-              FOOTER
-          ========================= */}
-          <footer className="text-center text-xs text-gray-400 py-3">
-            © {new Date().getFullYear()} Debt Smart OS
+          <footer className="text-center text-[10px] font-black uppercase tracking-widest text-gray-300 py-8">
+            © {new Date().getFullYear()} Debt Smart Intelligence Systems
           </footer>
         </div>
+        <SpeedInsights />
       </body>
     </html>
   );
-                }
+}

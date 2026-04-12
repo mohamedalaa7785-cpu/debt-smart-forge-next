@@ -1,266 +1,220 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/server/db";
-import { clients, clientPhones, clientAddresses, clientLoans, osintResults } from "@/server/db/schema";
-import { desc } from "drizzle-orm";
-
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
+import {
+  getClientsForUser,
+  createClientFull,
+} from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
 
 /* =========================
-   RATE LIMIT 🔥
+   RATE LIMIT
 ========================= */
 const rateMap = new Map<string, { count: number; time: number }>();
+const WINDOW = 60 * 1000;
 
 function rateLimit(key: string, limit = 30) {
   const now = Date.now();
-  const data = rateMap.get(key) || { count: 0, time: now };
+  const data = rateMap.get(key);
 
-  if (now - data.time > 60000) {
-    data.count = 0;
-    data.time = now;
+  if (!data || now - data.time > WINDOW) {
+    rateMap.set(key, { count: 1, time: now });
+    return;
+  }
+
+  if (data.count >= limit) {
+    throw new Error("Too many requests");
   }
 
   data.count++;
-
-  rateMap.set(key, data);
-
-  if (data.count > limit) {
-    throw new Error("Too many requests");
-  }
 }
-
-/* =========================
-   CACHE (LIGHT)
-========================= */
-const cache = new Map<
-  string,
-  { data: any; expiry: number }
->();
-
-const TTL = 1000 * 30; // 30 sec
 
 /* =========================
    HELPERS
 ========================= */
-function success(data: any, meta?: any) {
-  return NextResponse.json({
-    success: true,
-    data,
-    ...(meta ? { meta } : {}),
-  });
+function normalizePhone(phone: string) {
+  return phone.replace(/\D/g, "");
 }
 
-function fail(error: string, status = 400) {
-  return NextResponse.json(
-    {
-      success: false,
-      error,
-    },
-    { status }
-  );
+function dedupePhones(phones: string[]) {
+  return Array.from(new Set(phones.map(normalizePhone)));
 }
+
+/* =========================
+   CACHE
+========================= */
+const cache = new Map<string, { data: any; expiry: number }>();
+const TTL = 1000 * 30;
 
 /* =========================
    GET CLIENTS 🔥
 ========================= */
 export async function GET(req: NextRequest) {
-  try {
-    /* =========================
-       RATE LIMIT
-    ========================= */
-    const ip =
-      req.headers.get("x-forwarded-for") || "unknown";
+  return withAuth(async (user) => {
+    try {
+      const ip = req.headers.get("x-forwarded-for") || user.id;
+      rateLimit(ip);
 
-    rateLimit(ip);
+      const { page, limit, offset } = getPagination(req);
 
-    /* =========================
-       AUTH
-    ========================= */
-    const user = await requireUser(req);
+      /* 🔍 SEARCH */
+      const { searchParams } = new URL(req.url);
+      const search = searchParams.get("search")?.toLowerCase() || "";
 
-    /* =========================
-       PAGINATION
-    ========================= */
-    const { page, limit, offset } = getPagination(req);
+      const cacheKey = `${user.id}-${page}-${limit}-${search}`;
+      const cached = cache.get(cacheKey);
 
-    const cacheKey = `${page}-${limit}`;
+      if (cached && cached.expiry > Date.now()) {
+        return NextResponse.json({
+          success: true,
+          data: cached.data,
+          meta: { page, limit, cached: true },
+        });
+      }
 
-    /* =========================
-       CACHE HIT
-    ========================= */
-    const cached = cache.get(cacheKey);
+      const scopedClients = await getClientsForUser(user.id, user.role);
 
-    if (cached && cached.expiry > Date.now()) {
-      return success(cached.data, {
+      /* 🔍 FILTER */
+      let filtered = scopedClients;
+
+      if (search) {
+        filtered = scopedClients.filter((c) =>
+          [c.name, c.email, c.company]
+            .join(" ")
+            .toLowerCase()
+            .includes(search)
+        );
+      }
+
+      /* 📊 SORT */
+      const sorted = filtered.sort(
+        (a, b) =>
+          new Date(b.createdAt as any).getTime() -
+          new Date(a.createdAt as any).getTime()
+      );
+
+      /* 📦 PAGINATION */
+      const data = sorted
+        .slice(offset, offset + limit + 1)
+        .map((client) => ({
+          id: client.id,
+          name: client.name,
+          email: client.email,
+          company: client.company,
+          createdAt: client.createdAt,
+        }));
+
+      const hasMore = data.length > limit;
+      if (hasMore) data.pop();
+
+      await logAction(user.id, "GET_CLIENTS", {
         page,
         limit,
-        cached: true,
+        search,
       });
+
+      cache.set(cacheKey, {
+        data,
+        expiry: Date.now() + TTL,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data,
+        meta: {
+          page,
+          limit,
+          count: data.length,
+          hasMore,
+          search,
+        },
+      });
+    } catch (error: any) {
+      return NextResponse.json(
+        { success: false, error: error.message || "Internal Server Error" },
+        { status: error.message === "Too many requests" ? 429 : 500 }
+      );
     }
-
-    /* =========================
-       FETCH DATA
-    ========================= */
-    let data: any[] = [];
-
-    try {
-      data = await db
-        .select({
-          id: clients.id,
-          name: clients.name,
-          email: clients.email,
-          company: clients.company,
-          createdAt: clients.createdAt,
-        })
-        .from(clients)
-        .orderBy(desc(clients.createdAt))
-        .limit(limit + 1) // 🔥 مهم
-        .offset(offset);
-    } catch (err) {
-      console.error("DB ERROR:", err);
-      return fail("Database error", 500);
-    }
-
-    /* =========================
-       HAS MORE FIX 🔥
-    ========================= */
-    const hasMore = data.length > limit;
-
-    if (hasMore) {
-      data.pop(); // remove extra item
-    }
-
-    /* =========================
-       LOGGING
-    ========================= */
-    await logAction(user.id, "GET_CLIENTS", {
-      page,
-      limit,
-    });
-
-    /* =========================
-       CACHE SAVE
-    ========================= */
-    cache.set(cacheKey, {
-      data,
-      expiry: Date.now() + TTL,
-    });
-
-    /* =========================
-       RESPONSE
-    ========================= */
-    return success(data, {
-      page,
-      limit,
-      count: data.length,
-      hasMore,
-    });
-  } catch (error: any) {
-    console.error("GET CLIENTS ERROR:", error);
-
-    return fail(
-      error?.message || "Unauthorized",
-      error?.message === "Too many requests" ? 429 : 401
-    );
-  }
+  });
 }
 
 /* =========================
-   POST CLIENTS (CREATE) 🔥
+   POST CLIENT
 ========================= */
 export async function POST(req: NextRequest) {
-  try {
-    const user = await requireUser(req);
-    const body = await req.json();
+  return withAuth(async (user) => {
+    try {
+      const ip = req.headers.get("x-forwarded-for") || user.id;
+      rateLimit(ip, 15);
 
-    const { name, email, company, phones, addresses, loans, imageUrl, osintData } = body;
+      const body = await req.json();
 
-    if (!name) {
-      return fail("Name is required");
-    }
+      let { name, phones, loans } = body;
 
-    if (!phones || phones.length === 0) {
-      return fail("At least one phone is required");
-    }
+      if (!name?.trim()) {
+        return NextResponse.json(
+          { success: false, error: "Name is required" },
+          { status: 400 }
+        );
+      }
 
-    if (!loans || loans.length === 0) {
-      return fail("At least one loan is required");
-    }
+      if (!Array.isArray(phones) || phones.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "At least one phone is required" },
+          { status: 400 }
+        );
+      }
 
-    // Create client
-    const clientResult = await db
-      .insert(clients)
-      .values({
-        name,
-        email: email || null,
-        company: company || null,
-        imageUrl: imageUrl || null,
-      })
-      .returning();
+      if (!Array.isArray(loans) || loans.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "At least one loan is required" },
+          { status: 400 }
+        );
+      }
 
-    const clientId = clientResult[0].id;
+      /* normalize */
+      phones = dedupePhones(phones);
 
-    // Create phones
-    if (phones && phones.length > 0) {
-      await db.insert(clientPhones).values(
-        phones.map((phone: string) => ({
-          clientId,
-          phone,
-        }))
+      /* ownership */
+      const ownerId =
+        user.role === "hidden_admin" && body.ownerId
+          ? body.ownerId
+          : user.id;
+
+      const teamLeaderId =
+        user.role === "team_leader" ? user.id : body.teamLeaderId || null;
+
+      const newClient = await createClientFull(
+        {
+          ...body,
+          name: name.trim(),
+          phones,
+          ownerId,
+          teamLeaderId,
+        },
+        user.id
       );
-    }
 
-    // Create addresses
-    if (addresses && addresses.length > 0) {
-      await db.insert(clientAddresses).values(
-        addresses.map((address: any, index: number) => ({
-          clientId,
-          address: address.address || address,
-          city: address.city,
-          area: address.area,
-          lat: address.lat?.toString(),
-          lng: address.lng?.toString(),
-          isPrimary: index === 0,
-        }))
-      );
-    }
-
-    // Create loans
-    if (loans && loans.length > 0) {
-      await db.insert(clientLoans).values(
-        loans.map((loan: any) => ({
-          clientId,
-          loanType: loan.loanType,
-          balance: loan.balance?.toString(),
-          overdue: loan.overdue?.toString(),
-          emi: loan.emi?.toString(),
-          amountDue: loan.amountDue?.toString(),
-          bucket: loan.bucket || 1,
-          penaltyEnabled: loan.penaltyEnabled || false,
-          penaltyAmount: loan.penaltyAmount?.toString() || "0"
-        }))
-      );
-    }
-
-    // Save OSINT data if available
-    if (osintData) {
-      await db.insert(osintResults).values({
-        clientId,
-        socialLinks: osintData.socialLinks || [],
-        workplace: osintData.workplace || [],
-        webResults: osintData.webResults || [],
-        imageResults: osintData.imageMatches || [],
-        summary: osintData.summary,
-        confidenceScore: osintData.confidence || 0,
+      await logAction(user.id, "CREATE_CLIENT", {
+        clientId: newClient.id,
+        name: newClient.name,
       });
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          id: newClient.id,
+          name: newClient.name,
+        },
+      });
+    } catch (error: any) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message || "Failed to create client",
+        },
+        { status: 500 }
+      );
     }
-
-    await logAction(user.id, "CREATE_CLIENT", { clientId, name });
-
-    return success({ id: clientId, name });
-  } catch (error: any) {
-    console.error("POST CLIENTS ERROR:", error);
-    return fail(error?.message || "Failed to create client", 500);
-  }
+  });
 }

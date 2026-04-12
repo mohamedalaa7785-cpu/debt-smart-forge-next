@@ -1,15 +1,17 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { runOSINT } from "@/server/services/osint.service";
 import { db } from "@/server/db";
 import { osintResults } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { requireUser } from "@/server/lib/auth";
+import { getClientById } from "@/server/services/client.service";
+import { logger } from "@/server/lib/logger";
 
-/* =========================
-   RATE LIMIT 🔥
-========================= */
+/* ================= RATE LIMIT ================= */
+
 const rateMap = new Map<string, { count: number; time: number }>();
 
-function rateLimit(key: string, limit = 10) {
+function rateLimit(key: string, limit = 15) {
   const now = Date.now();
   const data = rateMap.get(key) || { count: 0, time: now };
 
@@ -19,7 +21,6 @@ function rateLimit(key: string, limit = 10) {
   }
 
   data.count++;
-
   rateMap.set(key, data);
 
   if (data.count > limit) {
@@ -27,19 +28,15 @@ function rateLimit(key: string, limit = 10) {
   }
 }
 
-/* =========================
-   VALIDATION
-========================= */
+/* ================= VALIDATION ================= */
+
 function validate(body: any) {
-  if (!body.name && !body.phone) {
-    return "Name or phone required";
+  if (!body.name && !body.phone && !body.clientId) {
+    return "Name or phone or clientId required";
   }
   return null;
 }
 
-/* =========================
-   SANITIZE
-========================= */
 function sanitize(body: any) {
   return {
     clientId: body.clientId || null,
@@ -51,69 +48,53 @@ function sanitize(body: any) {
   };
 }
 
-/* =========================
-   SAVE RESULT 🔥 (FIXED)
-========================= */
-async function saveResult(clientId: string, result: any) {
-  try {
-    const existing = await db.query.osintResults.findFirst({
-      where: eq(osintResults.clientId, clientId),
-    });
+/* ================= CACHE ================= */
 
-    const payload = {
-      summary: result.summary || null,
-      confidenceScore: result.confidence || 0,
+async function getCached(clientId: string, allowStale = false) {
+  const existing = await db.query.osintResults.findFirst({
+    where: eq(osintResults.clientId, clientId),
+  });
 
-      socialLinks: JSON.stringify(result.socialLinks || []),
-      workplace: JSON.stringify(result.workplace || []),
-      webResults: JSON.stringify(result.webResults || []),
-      imageResults: JSON.stringify(result.imageMatches || []),
+  if (!existing) return null;
 
-      updatedAt: new Date(),
-    };
+  const age =
+    Date.now() - new Date(existing.lastAnalyzedAt || 0).getTime();
 
-    if (existing) {
-      await db
-        .update(osintResults)
-        .set(payload)
-        .where(eq(osintResults.clientId, clientId));
+  const isFresh = age < 1000 * 60 * 60;
 
-      return;
-    }
+  if (!isFresh && !allowStale) return null;
 
-    await db.insert(osintResults).values({
-      clientId,
-      ...payload,
-      createdAt: new Date(),
-    });
-  } catch (error) {
-    console.error("SAVE OSINT ERROR:", error);
-  }
+  return {
+    socialLinks: existing.social || [],
+    webResults: existing.webResults || [],
+    workplace: existing.workplace || [],
+    imageMatches: existing.imageResults || [],
+    mapsResults: existing.mapsResults || [],
+    summary: existing.summary,
+    confidence: existing.confidenceScore,
+    fraudFlags: existing.fraudFlags || [],
+    riskLevel: existing.riskLevel || "low",
+  };
 }
 
-/* =========================
-   POST OSINT 🔥
-========================= */
-export async function POST(req: Request) {
+/* ================= MAIN ================= */
+
+export async function POST(req: NextRequest) {
   try {
-    /* =========================
-       RATE LIMIT
-    ========================= */
+    const user = await requireUser();
+
     const ip =
       req.headers.get("x-forwarded-for") ||
       req.headers.get("x-real-ip") ||
       "unknown";
 
-    rateLimit(ip);
+    rateLimit(`${user.id}:${ip}:${req.nextUrl.pathname}`);
 
     const body = await req.json();
 
-    /* =========================
-       VALIDATION
-    ========================= */
     const error = validate(body);
-
     if (error) {
+      logger.warn("OSINT_VALIDATION_FAILED", { body });
       return NextResponse.json(
         { success: false, error },
         { status: 400 }
@@ -122,75 +103,143 @@ export async function POST(req: Request) {
 
     const clean = sanitize(body);
 
-    /* =========================
-       RUN OSINT
-    ========================= */
-    let result = null;
+    logger.info("OSINT_REQUEST", {
+      userId: user.id,
+      input: clean,
+    });
 
-    try {
-      result = await runOSINT({
-        name: clean.name,
-        phone: clean.phone,
-        company: clean.company,
-        city: clean.city,
-        imageUrl: clean.imageUrl,
-      });
-    } catch (err) {
-      console.error("OSINT ENGINE ERROR:", err);
+    /* ================= ACCESS ================= */
+
+    if (clean.clientId) {
+      const client = await getClientById(
+        clean.clientId,
+        user.id,
+        user.role
+      );
+
+      if (!client || !client.id) {
+        logger.warn("OSINT_FORBIDDEN", {
+          userId: user.id,
+          clientId: clean.clientId,
+        });
+
+        return NextResponse.json(
+          { success: false, error: "Forbidden" },
+          { status: 403 }
+        );
+      }
+
+      /* 🔥 CACHE */
+      const cached = await getCached(clean.clientId);
+
+      if (cached) {
+        logger.info("OSINT_CACHE_HIT", {
+          clientId: clean.clientId,
+        });
+
+        return NextResponse.json({
+          success: true,
+          data: cached,
+          meta: { cached: true },
+        });
+      }
     }
 
-    /* =========================
-       FALLBACK
-    ========================= */
+    /* ================= RUN ENGINE ================= */
+
+    let result: any = null;
+
+    try {
+      result = await Promise.race([
+        runOSINT({
+          clientId: clean.clientId || undefined,
+          name: clean.name || "",
+          phone: clean.phone,
+          company: clean.company,
+          city: clean.city,
+          imageUrl: clean.imageUrl,
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("Timeout")), 15000)
+        ),
+      ]);
+    } catch (err) {
+      logger.error("OSINT_ENGINE_ERROR", {
+        error: err,
+        input: clean,
+      });
+    }
+
+    /* 🔥 FALLBACK */
+    if (!result && clean.clientId) {
+      const stale = await getCached(clean.clientId, true);
+
+      if (stale) {
+        logger.warn("OSINT_STALE_FALLBACK", {
+          clientId: clean.clientId,
+        });
+
+        return NextResponse.json({
+          success: true,
+          data: stale,
+          meta: { stale: true },
+        });
+      }
+    }
+
     if (!result) {
+      logger.error("OSINT_FAILED", {
+        input: clean,
+      });
+
       return NextResponse.json(
-        {
-          success: false,
-          error: "OSINT temporarily unavailable",
-        },
+        { success: false, error: "OSINT unavailable" },
         { status: 503 }
       );
     }
 
-    /* =========================
-       SAVE TO DB
-    ========================= */
-    if (clean.clientId) {
-      await saveResult(clean.clientId, result);
-    }
+    /* ================= SUCCESS ================= */
 
-    /* =========================
-       RESPONSE
-    ========================= */
+    logger.info("OSINT_SUCCESS", {
+      clientId: clean.clientId,
+    });
+
     return NextResponse.json({
       success: true,
-      data: result,
-
+      data: {
+        ...result,
+        fraudFlags: result.fraudFlags || [],
+        riskLevel: result.riskLevel || "low",
+      },
       meta: {
-        confidence: result.confidence || 0,
         hasImage: !!clean.imageUrl,
+        processedAt: new Date(),
       },
     });
   } catch (error: any) {
-    console.error("OSINT ERROR:", error);
+    logger.error("OSINT_FATAL_ERROR", {
+      error,
+    });
 
-    /* 🔥 RATE LIMIT ERROR */
     if (error.message === "Too many requests") {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Too many requests",
-        },
+        { success: false, error: "Too many requests" },
         { status: 429 }
       );
     }
+
+    const status =
+      error?.message === "Unauthorized" ||
+      error?.message === "Invalid session"
+        ? 401
+        : 500;
 
     return NextResponse.json(
       {
         success: false,
         error: error.message || "OSINT failed",
       },
-      { status: 500 }
+      { status }
     );
   }
-     }
+}

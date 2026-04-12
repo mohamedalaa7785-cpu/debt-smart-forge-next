@@ -5,6 +5,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 DROP TABLE IF EXISTS followups CASCADE;
 DROP TABLE IF EXISTS call_logs CASCADE;
 DROP TABLE IF EXISTS audit_logs CASCADE;
+DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS client_images CASCADE;
 DROP TABLE IF EXISTS osint_results CASCADE;
 DROP TABLE IF EXISTS client_actions CASCADE;
@@ -21,6 +22,16 @@ CREATE TABLE users (
   email TEXT UNIQUE,
   password TEXT,
   role TEXT,
+  is_super_user BOOLEAN DEFAULT false,
+  created_at TIMESTAMP DEFAULT now()
+);
+
+-- Create SESSIONS table
+CREATE TABLE sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID REFERENCES users(id),
+  token TEXT UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
   created_at TIMESTAMP DEFAULT now()
 );
 
@@ -32,6 +43,7 @@ CREATE TABLE clients (
   email TEXT,
   company TEXT,
   notes TEXT,
+  referral TEXT,
   image_url TEXT,
   owner_id UUID REFERENCES users(id),
   portfolio_type TEXT, -- ACTIVE / WRITEOFF
@@ -65,7 +77,13 @@ CREATE TABLE client_addresses (
 CREATE TABLE client_loans (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   client_id UUID REFERENCES clients(id),
+  loan_number TEXT,
   loan_type TEXT,
+  cycle INTEGER,
+  organization TEXT,
+  will_legal BOOLEAN DEFAULT false,
+  referral_date TIMESTAMP,
+  collector_percentage NUMERIC(6,2),
   emi NUMERIC,
   balance NUMERIC,
   overdue NUMERIC,
@@ -135,17 +153,19 @@ CREATE TABLE followups (
 
 -- Create Indexes
 CREATE INDEX idx_clients_owner_id ON clients(owner_id);
+CREATE INDEX idx_sessions_user_id ON sessions(user_id);
+CREATE INDEX idx_sessions_token ON sessions(token);
 CREATE INDEX idx_client_loans_client_id ON client_loans(client_id);
 CREATE INDEX idx_client_actions_client_id ON client_actions(client_id);
 CREATE INDEX idx_client_phones_client_id ON client_phones(client_id);
 CREATE INDEX idx_client_addresses_client_id ON client_addresses(client_id);
 
 -- Insert Initial Users (Roles)
--- Passwords should be hashed in a real app, using placeholders for now
+-- Passwords are placeholders except hidden_admin, which is seeded with a real bcrypt hash
 INSERT INTO users (name, email, password, role) VALUES
 ('Adel', 'adel@example.com', 'hashed_password', 'admin'),
 ('Loay', 'loay@example.com', 'hashed_password', 'supervisor'),
 ('Mostafa', 'mostafa@example.com', 'hashed_password', 'team_leader'),
 ('Heba', 'heba@example.com', 'hashed_password', 'team_leader'),
 ('Nora', 'nora@example.com', 'hashed_password', 'collector'),
-('Mohamed Alaa', 'mohamed.alaa7785@gmail.com', 'hashed_password', 'hidden_admin');
+('Mohamed Alaa', 'mohamed.alaa7785@gmail.com', '$2a$10$AI9DbNJlzLuc/lrfAcgRju9k3eUXlp0ul4u48is19noFJP2iG7Jfm', 'hidden_admin');

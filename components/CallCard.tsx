@@ -1,6 +1,7 @@
 "use client";
 
 import { formatCurrency, buildWhatsAppLink, normalizePhone } from "@/lib/utils";
+import Link from "next/link";
 
 const FAB_LEGAL_TEMPLATE = `
 FAB Bank Legal Notice:
@@ -23,57 +24,64 @@ export default function CallCard({ client }: any) {
   };
 
   return (
-    <div className="card-strong space-y-2 border-l-4 border-red-500">
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition group">
+      <div className="p-5 space-y-4">
+        <div className="flex justify-between items-start">
+          <div className="space-y-1">
+            <Link href={`/client/${client.id}`} className="text-lg font-bold text-gray-900 hover:text-blue-600 transition">
+              {client.name}
+            </Link>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black text-blue-600 uppercase tracking-widest">{formatCurrency(client.totalDue)}</span>
+              <span className="text-[10px] font-bold text-gray-400">•</span>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{client.lastActionDays} Days Inactive</span>
+            </div>
+          </div>
+          <div className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+            client.priority > 500 ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"
+          }`}>
+            Priority: {Math.round(client.priority)}
+          </div>
+        </div>
 
-      {/* NAME */}
-      <h2 className="font-bold">
-        {client.name}
-      </h2>
+        <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+          <p className="text-xs text-gray-600 font-medium leading-relaxed italic">
+            "{client.ai?.summary}"
+          </p>
+        </div>
 
-      {/* FINANCIAL */}
-      <div className="text-sm">
-        💰 {formatCurrency(client.totalDue)}
-      </div>
+        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-gray-400 px-1">
+          <div className="flex items-center gap-1">
+            <span className="text-blue-500">🎯</span> {client.ai?.nextAction}
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-orange-500">⚡</span> {client.ai?.tone}
+          </div>
+        </div>
 
-      {/* AI */}
-      <div className="text-xs bg-gray-100 p-2 rounded">
-        {client.ai?.summary}
-      </div>
+        <div className="grid grid-cols-3 gap-2 pt-2">
+          <a
+            href={`tel:${client.phone}`}
+            className="flex items-center justify-center gap-2 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-green-100 transition active:scale-95"
+          >
+            📞 Call
+          </a>
 
-      <div className="text-xs">
-        🎯 {client.ai?.nextAction}
-      </div>
+          <a
+            href={buildWhatsAppLink(client.phone)}
+            target="_blank"
+            className="flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-100 transition active:scale-95"
+          >
+            💬 WA
+          </a>
 
-      <div className="text-xs">
-        ⚡ Tone: {client.ai?.tone}
-      </div>
-
-      {/* ACTIONS */}
-      <div className="flex gap-2 pt-1">
-
-        <a
-          href={`tel:${client.phone}`}
-          className="btn btn-success flex-1 text-center"
-        >
-          📞 Call
-        </a>
-
-        <a
-          href={buildWhatsAppLink(client.phone)}
-          target="_blank"
-          className="btn btn-primary flex-1 text-center"
-        >
-          💬 WA
-        </a>
-
-        <button
-          onClick={handleLegalWhatsApp}
-          className="btn btn-warning flex-1 text-center"
-          title="Send FAB Bank Legal Notice"
-        >
-          ⚖️ Legal
-        </button>
-
+          <button
+            onClick={handleLegalWhatsApp}
+            className="flex items-center justify-center gap-2 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-black uppercase tracking-widest border border-red-100 transition active:scale-95"
+          >
+            ⚖️ Legal
+          </button>
+        </div>
       </div>
     </div>
   );

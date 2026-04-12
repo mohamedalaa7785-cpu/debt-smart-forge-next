@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { safeJsonParse, parseNumber } from "@/lib/utils";
+import { getRequiredEnv } from "@/lib/env";
 
 /* =========================
    OPENAI INIT (SAFE)
@@ -7,9 +8,9 @@ import { safeJsonParse, parseNumber } from "@/lib/utils";
 let openai: OpenAI | null = null;
 
 function getOpenAI() {
-  if (!openai && process.env.OPENAI_API_KEY) {
+  if (!openai) {
     openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: getRequiredEnv("OPENAI_API_KEY"),
     });
   }
   return openai;
@@ -206,13 +207,15 @@ Focus on:
 ========================= */
 export async function generateCallScript(input: AIInput, aiResult: AIResult): Promise<CallScript> {
   const client = getOpenAI();
+  const agentName = process.env.COLLECTION_AGENT_NAME || "Muhammad";
+  const orgName = process.env.COLLECTION_ORG_NAME || "First Abu Dhabi Bank (Awda Sabqa)";
   if (!client) {
     return {
       opening: `Hello ${input.clientName}, this is Debt Smart OS calling regarding your outstanding balance.`,
       mainBody: `We noticed an overdue amount of ${input.totalAmountDue}. We need to discuss a payment plan.`,
       objectionHandling: ["I understand, but we need to settle this.", "We can offer a temporary extension if you pay a portion now."],
       closing: "Thank you, we expect the payment by the agreed date.",
-      whatsappMessage: `Dear ${input.clientName}, please contact us regarding your balance of ${input.totalAmountDue}.`
+      whatsappMessage: `الأستاذ/ة ${input.clientName}، مع حضرتك ${agentName} من ${orgName}. نرجو التواصل معنا بشكل عاجل بخصوص المستحقات القائمة لتسوية الموقف وتجنب التصعيد النظامي.`
     };
   }
 
@@ -224,6 +227,14 @@ Client: ${input.clientName}
 Amount Due: ${input.totalAmountDue}
 Risk Level: ${input.riskLabel}
 Strategy: ${aiResult.strategy}
+Agent Name: ${agentName}
+Organization: ${orgName}
+
+Constraints:
+- WhatsApp message must start with formal identification (agent + organization).
+- Include client name clearly.
+- Ask for immediate contact in a professional tone.
+- You may mention lawful escalation if no response, but do not use insults, harassment, or illegal threats.
 
 Return ONLY valid JSON:
 {
@@ -252,7 +263,7 @@ Return ONLY valid JSON:
       mainBody: `بخصوص المديونية المتأخرة بقيمة ${input.totalAmountDue}، محتاجين نعرف ميعاد السداد.`,
       objectionHandling: ["فاهم حضرتك، بس لازم نلاقي حل دلوقتي.", "ممكن نجدول المبلغ لو سددت جزء حالاً."],
       closing: "شكراً لحضرتك، منتظرين السداد في الميعاد.",
-      whatsappMessage: `الأستاذ ${input.clientName}، يرجى التواصل بخصوص مديونية ${input.totalAmountDue} لتجنب الإجراءات القانونية.`
+      whatsappMessage: `الأستاذ/ة ${input.clientName}، مع حضرتك ${agentName} من ${orgName}. نرجو التواصل فورًا بخصوص المديونية ${input.totalAmountDue} لتسوية الموقف في أسرع وقت وتجنب التصعيد النظامي.`
     };
   } catch (error) {
     console.error("SCRIPT ERROR:", error);
@@ -261,7 +272,7 @@ Return ONLY valid JSON:
       mainBody: `بخصوص المديونية المتأخرة بقيمة ${input.totalAmountDue}، محتاجين نعرف ميعاد السداد.`,
       objectionHandling: ["فاهم حضرتك، بس لازم نلاقي حل دلوقتي.", "ممكن نجدول المبلغ لو سددت جزء حالاً."],
       closing: "شكراً لحضرتك، منتظرين السداد في الميعاد.",
-      whatsappMessage: `الأستاذ ${input.clientName}، يرجى التواصل بخصوص مديونية ${input.totalAmountDue} لتجنب الإجراءات القانونية.`
+      whatsappMessage: `الأستاذ/ة ${input.clientName}، مع حضرتك ${agentName} من ${orgName}. نرجو التواصل فورًا بخصوص المديونية ${input.totalAmountDue} لتسوية الموقف في أسرع وقت وتجنب التصعيد النظامي.`
     };
   }
 }

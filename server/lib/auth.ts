@@ -1,111 +1,199 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getUserFromToken } from "@/server/services/auth.service";
+import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
+import { ensureUsersTableColumns, isMissingUsersColumnError } from "@/server/lib/users-schema";
 
-/* =========================
-   TYPES 🔥
-========================= */
+/* ================= TYPES ================= */
+
+export type AuthRole =
+  | "admin"
+  | "supervisor"
+  | "team_leader"
+  | "collector"
+  | "hidden_admin";
+
 export interface AuthUser {
   id: string;
   email: string;
-  role: "admin" | "agent";
+  role: AuthRole;
+  name?: string | null;
+  isSuperUser?: boolean;
 }
 
-/* =========================
-   HELPERS
-========================= */
-function fail(error: string, status = 401) {
-  return NextResponse.json(
-    { success: false, error },
-    { status }
-  );
+/* ================= CACHE (SAFE) ================= */
+
+const userCache = new Map<string, { data: AuthUser; expiry: number }>();
+const TTL = 1000 * 30;
+
+/* 🔥 cleanup every minute */
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, val] of userCache.entries()) {
+    if (val.expiry < now) {
+      userCache.delete(key);
+    }
+  }
+}, 60000);
+
+/* ================= HELPERS ================= */
+
+function fail(message: string, status = 401) {
+  return NextResponse.json({ success: false, error: message }, { status });
 }
 
-/* =========================
-   EXTRACT TOKEN 🔥 (SAFE)
-========================= */
-function extractToken(req: NextRequest): string | null {
-  const authHeader = req.headers.get("authorization");
+function getEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  if (!authHeader) return null;
-
-  const clean = authHeader.trim();
-
-  if (clean.toLowerCase().startsWith("bearer ")) {
-    return clean.slice(7).trim();
+  if (!url || !key) {
+    throw new Error("Supabase env not configured");
   }
 
-  return clean;
+  return { url, key };
 }
 
-/* =========================
-   REQUIRE USER 🔐 (SAFE)
-========================= */
-export async function requireUser(
-  req: NextRequest
-): Promise<AuthUser> {
-  const token = extractToken(req);
+function getSupabaseServerClient() {
+  const cookieStore = cookies();
+  const { url, key } = getEnv();
 
-  if (!token) {
-    console.warn("⚠️ Missing token");
-    throw new Error("Unauthorized");
-  }
+  return createServerClient(url, key, {
+    cookies: {
+      getAll: () => cookieStore.getAll(),
+      setAll: (cookieValues) => {
+        cookieValues.forEach(({ name, value, options }) => {
+          cookieStore.set({ name, value, ...options });
+        });
+      },
+    },
+  });
+}
 
-  const user = await getUserFromToken(token);
+/* ================= CORE ================= */
 
-  if (!user) {
-    console.warn("⚠️ Invalid session");
+export async function requireUser(): Promise<AuthUser> {
+  const supabase = getSupabaseServerClient();
+
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+
+  if (error || !user) {
     throw new Error("Invalid session");
   }
 
-  return user as AuthUser;
+  if (!user.email) {
+    throw new Error("User email missing");
+  }
+
+  /* ⚡ CACHE */
+  const cached = userCache.get(user.id);
+  if (cached && cached.expiry > Date.now()) {
+    return cached.data;
+  }
+
+  let dbUser: typeof users.$inferSelect | undefined;
+
+  try {
+    dbUser = await db.query.users.findFirst({
+      where: eq(users.id, user.id),
+    });
+  } catch (error) {
+    if (!isMissingUsersColumnError(error)) throw error;
+    await ensureUsersTableColumns();
+    dbUser = await db.query.users.findFirst({
+      where: eq(users.id, user.id),
+    });
+  }
+
+  if (!dbUser) {
+    throw new Error("User record not synced");
+  }
+
+  /* 🔥 hidden admin */
+  let role: AuthRole = dbUser.role as AuthRole;
+  if (dbUser.isSuperUser) role = "hidden_admin";
+
+  const authUser: AuthUser = {
+    id: dbUser.id,
+    email: dbUser.email,
+    role,
+    name: dbUser.name,
+    isSuperUser: dbUser.isSuperUser ?? false,
+  };
+
+  userCache.set(user.id, {
+    data: authUser,
+    expiry: Date.now() + TTL,
+  });
+
+  return authUser;
 }
 
-/* =========================
-   REQUIRE ROLE 🧠
-========================= */
-export function requireRole(
-  user: AuthUser,
-  roles: ("admin" | "agent")[]
-) {
+/* ================= ROLES ================= */
+
+export function requireRole(user: AuthUser, roles: AuthRole[]) {
+  if (user.role === "hidden_admin") return;
+
   if (!roles.includes(user.role)) {
-    console.warn(
-      `⚠️ Forbidden access by user ${user.id} role=${user.role}`
-    );
     throw new Error("Forbidden");
   }
 }
 
-/* =========================
-   WITH AUTH WRAPPER 🔥🔥🔥
-========================= */
-export async function withAuth(
-  req: NextRequest,
-  handler: (user: AuthUser) => Promise<NextResponse>
-) {
-  try {
-    const user = await requireUser(req);
+/* ================= HELPERS ================= */
 
+export function isAdmin(user: AuthUser) {
+  return user.role === "admin" || user.role === "hidden_admin";
+}
+
+export function isPrivileged(user: AuthUser) {
+  return (
+    user.role === "hidden_admin" ||
+    user.role === "admin" ||
+    user.role === "supervisor"
+  );
+}
+
+/* ================= WRAPPERS ================= */
+
+type AuthHandler = (user: AuthUser) => Promise<NextResponse>;
+
+export async function withAuth(handler: AuthHandler): Promise<NextResponse> {
+  try {
+    const user = await requireUser();
     return await handler(user);
   } catch (error: any) {
-    return fail(error?.message || "Unauthorized", 401);
+    const message = error?.message || "Unauthorized";
+
+    const status =
+      message === "User record not synced" ? 500 : 401;
+
+    return fail(message, status);
   }
 }
 
-/* =========================
-   WITH ROLE WRAPPER 🔥
-========================= */
 export async function withRole(
-  req: NextRequest,
-  roles: ("admin" | "agent")[],
+  roles: AuthRole[],
   handler: (user: AuthUser) => Promise<NextResponse>
-) {
+) : Promise<NextResponse> {
   try {
-    const user = await requireUser(req);
-
+    const user = await requireUser();
     requireRole(user, roles);
 
     return await handler(user);
   } catch (error: any) {
-    return fail(error?.message || "Forbidden", 403);
+    const message = error?.message || "Forbidden";
+
+    const status =
+      message === "Forbidden"
+        ? 403
+        : message === "User record not synced"
+        ? 500
+        : 401;
+
+    return fail(message, status);
   }
 }

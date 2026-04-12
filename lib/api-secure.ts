@@ -1,24 +1,16 @@
 const API_BASE = "";
 
-/* =========================
-   TOKEN
-========================= */
 function getToken() {
   if (typeof window === "undefined") return null;
   return localStorage.getItem("token");
 }
 
-/* =========================
-   BASE REQUEST
-========================= */
-async function request(
-  url: string,
-  options: RequestInit = {}
-) {
+async function request(url: string, options: RequestInit = {}) {
   const token = getToken();
 
   const res = await fetch(API_BASE + url, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -35,16 +27,10 @@ async function request(
   return data;
 }
 
-/* =========================
-   GET
-========================= */
 export function apiGet(url: string) {
   return request(url);
 }
 
-/* =========================
-   POST
-========================= */
 export function apiPost(url: string, body: any) {
   return request(url, {
     method: "POST",
@@ -52,9 +38,6 @@ export function apiPost(url: string, body: any) {
   });
 }
 
-/* =========================
-   PUT
-========================= */
 export function apiPut(url: string, body: any) {
   return request(url, {
     method: "PUT",
@@ -62,11 +45,16 @@ export function apiPut(url: string, body: any) {
   });
 }
 
-/* =========================
-   DELETE
-========================= */
-export function apiDelete(url: string) {
+export function apiPatch(url: string, body: any) {
+  return request(url, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function apiDelete(url: string, body?: any) {
   return request(url, {
     method: "DELETE",
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 }

@@ -1,35 +1,153 @@
+export const dynamic = "force-dynamic";
+
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { login } from "@/server/services/auth.service";
+import { db } from "@/server/db";
+import { users } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
+import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 
-/* =========================
-   LOGIN
-========================= */
-export async function POST(req: Request) {
+/* ---------------- ENV ---------------- */
+
+function getEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    throw new Error("Supabase env not configured");
+  }
+
+  return { url, key };
+}
+
+/* ---------------- ROLE FALLBACK ---------------- */
+
+function resolveRole(email: string) {
+  const e = email.toLowerCase();
+
+  if (e.includes("adel")) return "admin";
+  if (e.includes("loai")) return "supervisor";
+  if (e.includes("mostafa") || e.includes("heba"))
+    return "team_leader";
+
+  return "collector";
+}
+
+function isSuperUser(email: string) {
+  return email.toLowerCase().includes("mohamed");
+}
+
+function maskEmail(email: string) {
+  const [name = "", domain = ""] = email.split("@");
+  if (!domain) return "***";
+  if (name.length <= 2) return `**@${domain}`;
+  return `${name.slice(0, 2)}***@${domain}`;
+}
+
+/* ---------------- MAIN ---------------- */
+
+export async function POST(request: Request) {
   try {
-    const body = await req.json();
+    const body = await request.json();
 
-    if (!body.email || !body.password) {
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password ?? "";
+
+    if (!email || !password) {
       return NextResponse.json(
-        { success: false, error: "Email and password required" },
+        { success: false, error: "Email and password are required" },
         { status: 400 }
       );
     }
 
-    const result = await login(body.email, body.password);
+    const cookieStore = cookies();
+    const { url, key } = getEnv();
 
-    await logAction(result.user.id, "LOGIN", {
-      email: body.email,
+    const supabase = createServerClient(url, key, {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (cookieValues) => {
+          cookieValues.forEach(({ name, value, options }) => {
+            cookieStore.set({ name, value, ...options });
+          });
+        },
+      },
     });
 
+    /* ---------------- LOGIN ---------------- */
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error || !data.session || !data.user) {
+      const message = (error?.message || "Invalid credentials").toLowerCase();
+      const isUnconfirmed = message.includes("email not confirmed");
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: isUnconfirmed
+            ? "Email is not confirmed yet. Please verify your email or ask admin to auto-confirm users."
+            : error?.message || "Invalid login credentials",
+        },
+        { status: isUnconfirmed ? 403 : 401 }
+      );
+    }
+
+    await ensureUsersTableColumns();
+
+    /* ---------------- DB SYNC ---------------- */
+    let dbUser = await db.query.users.findFirst({
+      where: eq(users.id, data.user.id),
+    });
+
+    if (!dbUser) {
+      await db
+        .insert(users)
+        .values({
+          id: data.user.id,
+          email: data.user.email!,
+          role: resolveRole(email),
+          name: data.user.user_metadata?.name || null,
+          isSuperUser: isSuperUser(email),
+        })
+        .onConflictDoNothing();
+
+      dbUser = await db.query.users.findFirst({
+        where: eq(users.id, data.user.id),
+      });
+    }
+
+    if (!dbUser) {
+      throw new Error("User record not synced");
+    }
+
+    /* ---------------- LOG ---------------- */
+    await logAction(dbUser.id, "LOGIN", { email: maskEmail(email) });
+
+    /* ---------------- RESPONSE ---------------- */
     return NextResponse.json({
       success: true,
-      data: result,
+      user: {
+        id: dbUser.id,
+        email: dbUser.email,
+        role: dbUser.role,
+        name: dbUser.name,
+        is_super_user: dbUser.isSuperUser,
+      },
     });
-  } catch (error: any) {
+  } catch (err: any) {
+    console.error("LOGIN ERROR:", err);
+
     return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 401 }
+      {
+        success: false,
+        error: err?.message || "Internal server error",
+      },
+      { status: 500 }
     );
   }
 }

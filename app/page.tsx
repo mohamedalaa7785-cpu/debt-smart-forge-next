@@ -1,219 +1,126 @@
-"use client";
+// app/page.tsx
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
-import RiskBadge from "@/components/RiskBadge";
-import { formatCurrency } from "@/lib/utils";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/server/lib/auth";
 
-/* =========================
-   TYPES
-========================= */
-interface Client {
-  id: string;
-  name: string;
-}
+export default async function HomePage() {
+  /* ----------------------------- AUTH CHECK ----------------------------- */
 
-interface ClientFull {
-  client: {
-    id: string;
-    name: string;
-  };
+  try {
+    const user = await requireUser();
 
-  summary: {
-    totalAmountDue: number;
-    riskScore: number;
-    riskLabel: "HIGH" | "MEDIUM" | "LOW";
-  };
-
-  ai: {
-    nextAction: string;
-    paymentProbability: number;
-  };
-}
-
-/* =========================
-   PAGE
-========================= */
-export default function DashboardPage() {
-  const [clients, setClients] = useState<ClientFull[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  /* =========================
-     LOAD + BUILD PRIORITY
-  ========================= */
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch("/api/clients");
-        const data = await res.json();
-
-        const baseClients: Client[] = data.data || [];
-
-        /* =========================
-           GET FULL DATA (IMPORTANT)
-        ========================= */
-        const full = await Promise.all(
-          baseClients.map(async (c) => {
-            const r = await fetch(`/api/client/${c.id}`);
-            const d = await r.json();
-            return d.data;
-          })
-        );
-
-        /* =========================
-           SORT BY PRIORITY 🔥
-        ========================= */
-        full.sort((a, b) => {
-          const p1 =
-            a.summary.totalAmountDue * 0.5 +
-            a.summary.riskScore * 10;
-
-          const p2 =
-            b.summary.totalAmountDue * 0.5 +
-            b.summary.riskScore * 10;
-
-          return p2 - p1;
-        });
-
-        setClients(full);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+    // 🔥 logged in → dashboard
+    if (user) {
+      redirect("/dashboard");
     }
-
-    load();
-  }, []);
-
-  if (loading) {
-    return <div className="p-4">Loading...</div>;
+  } catch {
+    // 🔥 not logged in → show landing
   }
 
-  /* =========================
-     KPIs
-  ========================= */
-  const totalClients = clients.length;
-
-  const totalDue = clients.reduce(
-    (sum, c) => sum + (c.summary?.totalAmountDue || 0),
-    0
-  );
-
-  const highRisk = clients.filter(
-    (c) => c.summary?.riskLabel === "HIGH"
-  ).length;
+  /* ----------------------------- UI ----------------------------- */
 
   return (
-    <div className="space-y-5">
+    <main className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.25),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(16,185,129,0.18),transparent_30%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(15,23,42,0.4),rgba(2,6,23,0.95))]" />
 
-      {/* =========================
-          HEADER
-      ========================= */}
-      <div className="flex justify-between items-center">
-        <h1 className="title">📊 Smart Dashboard</h1>
+      <div className="relative mx-auto flex min-h-screen max-w-6xl items-center px-4 py-10">
+        <div className="grid w-full gap-8 lg:grid-cols-2 lg:gap-12">
+          <section className="flex flex-col justify-center">
+            <div className="inline-flex w-fit items-center rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-200 backdrop-blur">
+              Debt Smart OS
+            </div>
 
-        <Link href="/add-client" className="btn btn-primary">
-          + Add
-        </Link>
-      </div>
+            <h1 className="mt-6 max-w-xl text-4xl font-black tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Collections intelligence.
+              <span className="block text-sky-300">One system.</span>
+            </h1>
 
-      {/* =========================
-          KPIs
-      ========================= */}
-      <div className="grid grid-cols-3 gap-2">
-
-        <div className="card text-center">
-          <p className="text-xs text-gray-500">Clients</p>
-          <p className="font-bold">{totalClients}</p>
-        </div>
-
-        <div className="card text-center">
-          <p className="text-xs text-gray-500">Total Due</p>
-          <p className="font-bold">
-            {formatCurrency(totalDue)}
-          </p>
-        </div>
-
-        <div className="card text-center">
-          <p className="text-xs text-gray-500">High Risk</p>
-          <p className="font-bold text-red-500">
-            {highRisk}
-          </p>
-        </div>
-      </div>
-
-      {/* =========================
-          CALL NEXT 🔥
-      ========================= */}
-      {clients[0] && (
-        <div className="card-strong flex justify-between items-center">
-
-          <div>
-            <p className="text-sm text-gray-500">
-              Next Call
+            <p className="mt-5 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+              Sign in to manage portfolios, review clients, and work from a single
+              controlled workspace built for fast collection operations.
             </p>
-            <p className="font-bold">
-              {clients[0].client.name}
-            </p>
-          </div>
 
-          <Link
-            href={`/client/${clients[0].client.id}`}
-            className="btn btn-danger"
-          >
-            Open
-          </Link>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/login"
+                className="inline-flex items-center justify-center rounded-xl bg-white px-6 py-3 font-semibold text-slate-950 transition hover:bg-slate-100"
+              >
+                Sign In
+              </Link>
+
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-6 py-3 font-semibold text-white backdrop-blur transition hover:bg-white/10"
+              >
+                Sign Up
+              </Link>
+            </div>
+
+            <div className="mt-8 grid max-w-xl gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-sm font-semibold text-white">Secure login</p>
+                <p className="mt-1 text-sm text-slate-400">Supabase session flow</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-sm font-semibold text-white">Role-based access</p>
+                <p className="mt-1 text-sm text-slate-400">Admin, leader, collector</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-sm font-semibold text-white">Client tracking</p>
+                <p className="mt-1 text-sm text-slate-400">Portfolios and cases</p>
+              </div>
+            </div>
+          </section>
+
+          <section className="flex items-center justify-center">
+            <div className="w-full max-w-md rounded-3xl border border-white/10 bg-white/8 p-6 shadow-2xl shadow-sky-950/30 backdrop-blur-xl">
+              <div className="rounded-2xl border border-white/10 bg-slate-900/70 p-5">
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-sky-300">
+                  Welcome back
+                </p>
+                <h2 className="mt-3 text-2xl font-bold text-white">
+                  Start from the secure auth screen
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  Sign in for existing users or create a new account. The next step is
+                  fully routed through the server auth flow.
+                </p>
+
+                <div className="mt-5 grid gap-3">
+                  <Link
+                    href="/login"
+                    className="rounded-xl bg-sky-500 px-4 py-3 text-center font-semibold text-white transition hover:bg-sky-400"
+                  >
+                    Sign In
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="rounded-xl border border-white/10 px-4 py-3 text-center font-semibold text-white transition hover:bg-white/5"
+                  >
+                    Create Account
+                  </Link>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  Access
+                </p>
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <span className="text-slate-300">Collectors</span>
+                  <span className="text-emerald-300">Default</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="text-slate-300">Admin account</span>
+                  <span className="text-sky-300">Role-based</span>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
-      )}
-
-      {/* =========================
-          CLIENT LIST
-      ========================= */}
-      <div className="space-y-3">
-
-        {clients.length === 0 && (
-          <div className="card text-center text-gray-500">
-            No clients yet
-          </div>
-        )}
-
-        {clients.map((c) => (
-          <Link
-            key={c.client.id}
-            href={`/client/${c.client.id}`}
-            className="card flex flex-col gap-2"
-          >
-            {/* HEADER */}
-            <div className="flex justify-between items-center">
-              <p className="font-semibold">
-                {c.client.name}
-              </p>
-
-              <RiskBadge
-                label={c.summary.riskLabel}
-                score={c.summary.riskScore}
-                size="sm"
-              />
-            </div>
-
-            {/* FINANCIAL */}
-            <div className="text-sm">
-              💰 {formatCurrency(c.summary.totalAmountDue)}
-            </div>
-
-            {/* AI */}
-            <div className="text-xs text-gray-500">
-              {c.ai?.nextAction}
-            </div>
-
-            {/* PROGRESS */}
-            <div className="text-xs">
-              Pay Chance: {c.ai?.paymentProbability}%
-            </div>
-          </Link>
-        ))}
       </div>
-    </div>
+    </main>
   );
-          }
+}

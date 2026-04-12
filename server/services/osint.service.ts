@@ -1,18 +1,19 @@
+// server/services/osint.service.ts
+
 import axios from "axios";
 import { uniqueArray } from "@/lib/utils";
 import { db } from "@/server/db";
-import { osintResults } from "@/server/db/schema";
+import { osintResults, osintHistory, clientAddresses } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
+import { getRequiredEnv } from "@/lib/env";
 
-/* =========================
-   CACHE (TTL SAFE)
-========================= */
+/* ================= CACHE ================= */
+
 const cache = new Map<string, { data: any; expiry: number }>();
-const TTL = 1000 * 60 * 10; // 10 min
+const TTL = 1000 * 60 * 10;
 
-/* =========================
-   TYPES
-========================= */
+/* ================= TYPES ================= */
+
 export interface OSINTInput {
   clientId?: string;
   name: string;
@@ -27,150 +28,354 @@ export interface OSINTResult {
   webResults: string[];
   workplace: string[];
   imageMatches: string[];
+  mapsResults: string[];
+  mapPlaces?: Array<{
+    name: string;
+    address: string;
+    lat?: number;
+    lng?: number;
+  }>;
   summary: string;
   confidence: number;
+  fraudFlags: string[];
+  riskLevel: string;
 }
 
-/* =========================
-   SAFE GET KEY (LAZY)
-========================= */
-function getApiKey() {
-  const key = process.env.SERPAPI_API_KEY;
-  if (!key) {
-    console.warn("⚠️ SERPAPI_API_KEY missing");
+/* ================= KEYS ================= */
+
+const SERP_KEY = getRequiredEnv("SERPAPI_API_KEY");
+const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const MAPS_KEY =
+  process.env.GOOGLE_MAPS_API_KEY ||
+  process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+
+/* ================= HELPERS ================= */
+
+function cacheKey(input: OSINTInput) {
+  return `${input.name}-${input.phone}-${input.company}-${input.city}`;
+}
+
+function safeJSONParse(text: string) {
+  try {
+    return JSON.parse(text);
+  } catch {
     return null;
   }
-  return key;
 }
 
-/* =========================
-   GENERATE QUERIES (LIMITED)
-========================= */
 function generateQueries(input: OSINTInput): string[] {
   const queries: string[] = [];
-  if (input.name) {
-    queries.push(input.name);
-    queries.push(`${input.name} Facebook`);
-    queries.push(`${input.name} LinkedIn`);
+  const name = input.name?.trim();
+  const company = input.company?.trim();
+  const city = input.city?.trim();
+
+  if (name) {
+    queries.push(name);
+    queries.push(`${name} LinkedIn`);
+    queries.push(`${name} Facebook`);
+    queries.push(`${name} CV`);
+    queries.push(`${name} profile`);
   }
-  if (input.phone) queries.push(input.phone);
-  if (input.company) queries.push(`${input.name} ${input.company}`);
-  return uniqueArray(queries).slice(0, 5);
+
+  if (name && company) {
+    queries.push(`${name} ${company}`);
+    queries.push(`${name} ${company} LinkedIn`);
+    queries.push(`${name} works at ${company}`);
+  }
+
+  if (name && city) {
+    queries.push(`${name} ${city}`);
+    queries.push(`${name} ${city} LinkedIn`);
+  }
+
+  if (input.phone) {
+    queries.push(input.phone);
+    if (name) queries.push(`${name} ${input.phone}`);
+  }
+
+  if (company && city) {
+    queries.push(`${company} ${city}`);
+  }
+
+  return uniqueArray(queries).slice(0, 10);
 }
 
-/* =========================
-   SAFE REQUEST (RETRY + TIMEOUT)
-========================= */
-async function safeRequest(url: string, params: any) {
+async function safeRequest(url: string, params: any, retries = 2) {
   try {
-    const res = await axios.get(url, { params, timeout: 7000 });
+    const res = await axios.get(url, { params, timeout: 8000 });
     return res.data;
-  } catch (error: any) {
-    console.warn("OSINT request failed:", error?.message);
+  } catch {
+    if (retries > 0) return safeRequest(url, params, retries - 1);
     return null;
   }
 }
 
-/* =========================
-   WEB SEARCH
-========================= */
-async function searchWeb(query: string) {
-  const key = getApiKey();
-  if (!key) return [];
-  const data = await safeRequest("https://serpapi.com/search.json", { q: query, api_key: key });
-  return data?.organic_results?.slice(0, 5) || [];
-}
-
-/* =========================
-   IMAGE SEARCH (CONTROLLED)
-========================= */
-async function searchImage(imageUrl: string) {
-  const key = getApiKey();
-  if (!key || !imageUrl) return [];
-  const data = await safeRequest("https://serpapi.com/search.json", { engine: "google_lens", url: imageUrl, api_key: key });
-  return data?.visual_matches?.slice(0, 5) || [];
-}
-
-/* =========================
-   EXTRACT DATA
-========================= */
-function extractData(results: any[]) {
-  const social = new Set<string>();
-  const workplace = new Set<string>();
-  const links = new Set<string>();
-  for (const r of results) {
-    const link = r?.link;
-    if (!link) continue;
-    links.add(link);
-    const lower = link.toLowerCase();
-    if (lower.includes("facebook") || lower.includes("linkedin") || lower.includes("instagram") || lower.includes("twitter")) {
-      social.add(link);
-    }
-    if (r?.snippet) {
-      const text = r.snippet.toLowerCase();
-      if (text.includes("works at") || text.includes("company") || text.includes("employee")) {
-        workplace.add(r.snippet);
-      }
-    }
+async function runLimited(arr: any[], fn: any, limit = 2) {
+  const results: any[] = [];
+  for (let i = 0; i < arr.length; i += limit) {
+    const chunk = arr.slice(i, i + limit);
+    const res = await Promise.all(chunk.map(fn));
+    results.push(...res);
   }
-  return {
-    social: Array.from(social).slice(0, 5),
-    workplace: Array.from(workplace).slice(0, 5),
-    links: Array.from(links).slice(0, 10),
-  };
+  return results;
 }
 
-/* =========================
-   MAIN FUNCTION 🔥
-========================= */
+async function syncClientAddressesFromMaps(
+  clientId: string,
+  places: Array<{ address: string; lat?: number; lng?: number }>
+) {
+  if (!places.length) return;
+
+  const existing = await db
+    .select({ address: clientAddresses.address })
+    .from(clientAddresses)
+    .where(eq(clientAddresses.clientId, clientId));
+
+  const existingSet = new Set(
+    existing.map((e) => e.address.trim().toLowerCase())
+  );
+
+  const toInsert = places
+    .filter((p) => p.address?.trim())
+    .filter((p) => !existingSet.has(p.address.trim().toLowerCase()))
+    .slice(0, 5)
+    .map((p, idx) => ({
+      clientId,
+      address: p.address.trim(),
+      city: null,
+      area: null,
+      lat: p.lat != null ? String(p.lat) : null,
+      lng: p.lng != null ? String(p.lng) : null,
+      isPrimary: idx === 0 && existing.length === 0,
+    }));
+
+  if (toInsert.length) {
+    await db.insert(clientAddresses).values(toInsert);
+  }
+}
+
+function scoreResult(result: any, input: OSINTInput) {
+  const title = String(result?.title || "").toLowerCase();
+  const snippet = String(result?.snippet || "").toLowerCase();
+  const link = String(result?.link || "").toLowerCase();
+  const text = `${title} ${snippet} ${link}`;
+
+  let score = 0;
+
+  const nameParts = String(input.name || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  for (const part of nameParts) {
+    if (text.includes(part)) score += 3;
+  }
+
+  if (input.company && text.includes(input.company.toLowerCase())) score += 4;
+  if (input.city && text.includes(input.city.toLowerCase())) score += 2;
+  if (input.phone && text.includes(input.phone.replace(/\D/g, ""))) score += 4;
+
+  if (link.includes("linkedin.com")) score += 3;
+  if (link.includes("facebook.com")) score += 2;
+
+  return score;
+}
+
+/* ================= PROVIDERS ================= */
+
+const searchWeb = (q: string) =>
+  safeRequest("https://serpapi.com/search.json", { q, api_key: SERP_KEY });
+
+const searchMaps = (q: string) =>
+  MAPS_KEY
+    ? safeRequest("https://maps.googleapis.com/maps/api/place/textsearch/json", {
+        query: q,
+        key: MAPS_KEY,
+      })
+    : null;
+
+async function searchImage(url: string) {
+  if (!url) return [];
+  const data = await safeRequest("https://serpapi.com/search.json", {
+    engine: "google_lens",
+    url,
+    api_key: SERP_KEY,
+  });
+  return data?.visual_matches || [];
+}
+
+/* ================= AI ================= */
+
+async function analyzeAI(payload: any) {
+  if (!OPENAI_KEY) return null;
+
+  try {
+    const res = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "Return JSON only: { riskLevel, fraudFlags[], summary }",
+          },
+          {
+            role: "user",
+            content: JSON.stringify(payload).slice(0, 3000),
+          },
+        ],
+      },
+      {
+        headers: { Authorization: `Bearer ${OPENAI_KEY}` },
+      }
+    );
+
+    const raw = res.data?.choices?.[0]?.message?.content;
+    return safeJSONParse(raw || "");
+  } catch {
+    return null;
+  }
+}
+
+/* ================= MAIN ================= */
+
 export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
-  const cacheKey = JSON.stringify(input);
-  const cached = cache.get(cacheKey);
+  const key = cacheKey(input);
+
+  const cached = cache.get(key);
   if (cached && cached.expiry > Date.now()) return cached.data;
 
   const queries = generateQueries(input);
-  const webResultsRaw = await Promise.all(queries.map((q) => searchWeb(q)));
-  const flatResults = webResultsRaw.flat();
-  const extracted = extractData(flatResults);
 
-  let imageMatches: string[] = [];
-  if (input.imageUrl) {
-    const images = await searchImage(input.imageUrl);
-    imageMatches = images.map((i: any) => i?.link).filter(Boolean);
-  }
+  const webRaw = await runLimited(queries, searchWeb);
+  const mapsRaw = await runLimited(queries, searchMaps);
 
-  const summary = extracted.social.length ? "Social presence detected." : "Low online presence.";
-  const confidence = Math.min(100, extracted.social.length * 25 + extracted.workplace.length * 20);
+  const webFlat = webRaw.flatMap((r: any) => r?.organic_results || []);
+  const knowledgeGraph = webRaw
+    .map((r: any) => r?.knowledge_graph)
+    .filter(Boolean);
+  const mapsFlat = mapsRaw.flatMap((r: any) => r?.results || []);
+
+  const rankedWeb = webFlat
+    .map((item: any) => ({ ...item, __score: scoreResult(item, input) }))
+    .filter((item: any) => item.__score >= 2)
+    .sort((a: any, b: any) => b.__score - a.__score)
+    .slice(0, 30);
+
+  const social = rankedWeb
+    .map((r: any) => r.link)
+    .filter((l: string) => l?.includes("facebook") || l?.includes("linkedin"));
+
+  const links = rankedWeb.map((r: any) => r.link).filter(Boolean);
+
+  const workplaceFromOrganic = rankedWeb
+    .map((r: any) => `${r.title || ""} ${r.snippet || ""}`.trim())
+    .filter((s: string) =>
+      /works?|employee|manager|director|engineer|owner|founder/i.test(s)
+    );
+
+  const workplaceFromKg = knowledgeGraph
+    .map((k: any) => [k?.title, k?.type, k?.description].filter(Boolean).join(" - "))
+    .filter(Boolean);
+
+  const workplace = uniqueArray([...workplaceFromOrganic, ...workplaceFromKg]).slice(0, 12);
+
+  const mapPlaces = mapsFlat
+    .map((m: any) => ({
+      name: m?.name || "",
+      address: m?.formatted_address || "",
+      lat: m?.geometry?.location?.lat,
+      lng: m?.geometry?.location?.lng,
+    }))
+    .filter((m: any) => m.name || m.address);
+
+  const mapsResults = uniqueArray(
+    mapPlaces.map((m: any) =>
+      [m.name, m.address].filter(Boolean).join(" - ")
+    )
+  ).slice(0, 20);
+
+  const imageMatches = input.imageUrl
+    ? (await searchImage(input.imageUrl)).map((i: any) => i.link)
+    : [];
+
+  const fraudFlags = [];
+  if (!social.length) fraudFlags.push("NO_SOCIAL");
+
+  const ai = await analyzeAI({ social, links, mapsResults });
+
+  const confidence = Math.min(100, social.length * 20 + links.length * 5);
 
   const result: OSINTResult = {
-    socialLinks: extracted.social,
-    webResults: extracted.links,
-    workplace: extracted.workplace,
+    socialLinks: social,
+    webResults: links,
+    workplace,
     imageMatches,
-    summary,
+    mapsResults,
+    mapPlaces,
+    summary: ai?.summary || "No strong signals",
     confidence,
+    fraudFlags,
+    riskLevel: ai?.riskLevel || "low",
   };
 
-  // Save to DB if clientId provided
   if (input.clientId) {
     try {
-      await db.insert(osintResults).values({
+      await syncClientAddressesFromMaps(
+        input.clientId,
+        mapPlaces
+          .map((m: any) => ({
+            address: m.address,
+            lat: m.lat,
+            lng: m.lng,
+          }))
+          .filter((m: any) => m.address)
+      );
+
+      await db
+        .insert(osintResults)
+        .values({
+          clientId: input.clientId,
+          social,
+          workplace,
+          webResults: links,
+          imageResults: imageMatches,
+          mapsResults,
+          summary: result.summary,
+          confidenceScore: result.confidence,
+          riskLevel: result.riskLevel,
+          fraudFlags,
+          updatedAt: new Date(),
+          lastAnalyzedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: osintResults.clientId,
+          set: {
+            social,
+            workplace,
+            webResults: links,
+            imageResults: imageMatches,
+            mapsResults,
+            summary: result.summary,
+            confidenceScore: result.confidence,
+            riskLevel: result.riskLevel,
+            fraudFlags,
+            updatedAt: new Date(),
+            lastAnalyzedAt: new Date(),
+          },
+        });
+
+      await db.insert(osintHistory).values({
         clientId: input.clientId,
-        social: extracted.social,
-        workplace: extracted.workplace,
-        webResults: extracted.links,
-        imageResults: imageMatches,
-        summary,
-        confidenceScore: confidence.toString()
-      }).onConflictDoUpdate({
-        target: osintResults.clientId,
-        set: { social: extracted.social, workplace: extracted.workplace, webResults: extracted.links, imageResults: imageMatches, summary, confidenceScore: confidence.toString() }
+        result,
+        confidence: result.confidence,
       });
-    } catch (dbError) {
-      console.error("OSINT DB SAVE ERROR:", dbError);
+    } catch (err) {
+      console.error("OSINT SAVE ERROR:", err);
     }
   }
 
-  cache.set(cacheKey, { data: result, expiry: Date.now() + TTL });
+  cache.set(key, { data: result, expiry: Date.now() + TTL });
+
   return result;
-}
+  }

@@ -5,7 +5,6 @@ export const LoginBodySchema = z.object({
   password: z.string().min(1),
 });
 
- codex/add-user-creation-with-password-vx3j4x
 export const RegisterBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   email: z.string().trim().email(),

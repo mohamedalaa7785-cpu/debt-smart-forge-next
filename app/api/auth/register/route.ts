@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { clientActions, clients, followups, logs, users, callLogs } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
@@ -67,6 +67,33 @@ async function syncUserRecord(params: {
     isSuperUser: params.isSuperUser,
   };
 
+  const moveUserReferences = async (fromUserId: string, toUserId: string) => {
+    if (fromUserId === toUserId) return;
+
+    await db.transaction(async (tx) => {
+      await tx.update(clients).set({ ownerId: toUserId }).where(eq(clients.ownerId, fromUserId));
+      await tx
+        .update(clients)
+        .set({ teamLeaderId: toUserId })
+        .where(eq(clients.teamLeaderId, fromUserId));
+      await tx.update(clients).set({ createdBy: toUserId }).where(eq(clients.createdBy, fromUserId));
+      await tx.update(clientActions).set({ userId: toUserId }).where(eq(clientActions.userId, fromUserId));
+      await tx.update(callLogs).set({ userId: toUserId }).where(eq(callLogs.userId, fromUserId));
+      await tx.update(followups).set({ userId: toUserId }).where(eq(followups.userId, fromUserId));
+      await tx.update(logs).set({ userId: toUserId }).where(eq(logs.userId, fromUserId));
+    });
+  };
+
+  const existingById = await db.query.users.findFirst({ where: eq(users.id, payload.id) });
+  const existingByEmail = await db.query.users.findFirst({
+    where: eq(users.email, payload.email),
+  });
+
+  if (existingById && existingByEmail && existingById.id !== existingByEmail.id) {
+    await moveUserReferences(existingByEmail.id, existingById.id);
+    await db.delete(users).where(eq(users.id, existingByEmail.id));
+  }
+
   const updatedById = await db
     .update(users)
     .set({
@@ -77,23 +104,25 @@ async function syncUserRecord(params: {
     })
     .where(eq(users.id, payload.id))
     .returning();
-
   if (updatedById[0]) return updatedById[0];
 
-  try {
-    const inserted = await db.insert(users).values(payload).returning();
-    if (inserted[0]) return inserted[0];
-  } catch {
-    await db
-      .update(users)
-      .set({
-        id: payload.id,
-        name: payload.name,
-        role: payload.role,
-        isSuperUser: payload.isSuperUser,
-      })
-      .where(eq(users.email, payload.email));
+  if (existingByEmail && existingByEmail.id !== payload.id) {
+    await moveUserReferences(existingByEmail.id, payload.id);
+    await db.delete(users).where(eq(users.id, existingByEmail.id));
   }
+
+  const inserted = await db.insert(users).values(payload).onConflictDoNothing().returning();
+  if (inserted[0]) return inserted[0];
+
+  await db
+    .update(users)
+    .set({
+      email: payload.email,
+      name: payload.name,
+      role: payload.role,
+      isSuperUser: payload.isSuperUser,
+    })
+    .where(eq(users.id, payload.id));
 
   return db.query.users.findFirst({ where: eq(users.id, payload.id) });
 }

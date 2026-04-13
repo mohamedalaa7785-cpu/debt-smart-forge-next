@@ -76,26 +76,43 @@ async function syncUserRecord(params: {
 }) {
   await ensureUsersTableColumns();
 
-  await db
-    .insert(users)
-    .values({
-      id: params.id,
-      email: params.email,
-      name: params.name,
-      role: params.role,
-      isSuperUser: params.isSuperUser,
-    })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: {
-        email: params.email,
-        name: params.name,
-        role: params.role,
-        isSuperUser: params.isSuperUser,
-      },
-    });
+  const payload = {
+    id: params.id,
+    email: params.email,
+    name: params.name,
+    role: params.role,
+    isSuperUser: params.isSuperUser,
+  };
 
-  return db.query.users.findFirst({ where: eq(users.id, params.id) });
+  const updatedById = await db
+    .update(users)
+    .set({
+      email: payload.email,
+      name: payload.name,
+      role: payload.role,
+      isSuperUser: payload.isSuperUser,
+    })
+    .where(eq(users.id, payload.id))
+    .returning();
+
+  if (updatedById[0]) return updatedById[0];
+
+  try {
+    const inserted = await db.insert(users).values(payload).returning();
+    if (inserted[0]) return inserted[0];
+  } catch {
+    await db
+      .update(users)
+      .set({
+        id: payload.id,
+        name: payload.name,
+        role: payload.role,
+        isSuperUser: payload.isSuperUser,
+      })
+      .where(eq(users.email, payload.email));
+  }
+
+  return db.query.users.findFirst({ where: eq(users.id, payload.id) });
 }
 
 export async function POST(req: Request) {

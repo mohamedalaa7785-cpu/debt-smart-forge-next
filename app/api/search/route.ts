@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { withAuth, type AuthRole } from "@/server/lib/auth";
 import { db } from "@/server/db";
-import { clientPhones, clients } from "@/server/db/schema";
+import {
+  clientActions,
+  clientAddresses,
+  clientLoans,
+  clientPhones,
+  clients,
+} from "@/server/db/schema";
 import { normalizePhone } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +97,15 @@ export async function GET(req: NextRequest) {
         ilike(sql`coalesce(${clients.email}, '')`, `%${q}%`),
         ilike(sql`coalesce(${clients.company}, '')`, `%${q}%`),
         ilike(sql`coalesce(${clients.customerId}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clients.notes}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clients.referral}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clients.branch}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clientAddresses.address}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clientAddresses.city}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clientAddresses.area}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clientLoans.loanNumber}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clientActions.note}, '')`, `%${q}%`),
+        ilike(sql`coalesce(${clientActions.result}, '')`, `%${q}%`),
       ];
 
       if (normalizedPhone.length >= 3) {
@@ -122,6 +137,9 @@ export async function GET(req: NextRequest) {
         })
         .from(clients)
         .leftJoin(clientPhones, eq(clients.id, clientPhones.clientId))
+        .leftJoin(clientAddresses, eq(clients.id, clientAddresses.clientId))
+        .leftJoin(clientLoans, eq(clients.id, clientLoans.clientId))
+        .leftJoin(clientActions, eq(clients.id, clientActions.clientId))
         .where(and(...conditions))
         .orderBy(getSort(sort))
         .limit(limit * 3);

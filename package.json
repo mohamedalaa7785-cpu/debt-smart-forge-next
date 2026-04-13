@@ -9,6 +9,8 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
+codex/add-user-creation-with-password-vx3j4x
+    "lint": "npm run typecheck",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke-validators.mjs",

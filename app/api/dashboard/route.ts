@@ -11,13 +11,23 @@ import { inArray } from "drizzle-orm";
 import { requireUser } from "@/server/lib/auth";
 import { getClientsForUser } from "@/server/services/client.service";
 
-export async function GET(req: NextRequest) {
+function n(value: unknown) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+type ClientRef = { id: string };
+type LoanRef = { balance: unknown; overdue: unknown };
+type OsintRef = { confidenceScore: unknown };
+type FraudRef = { level: string | null };
+
+export async function GET(_req: NextRequest) {
   try {
     const user = await requireUser();
 
     /* ================= CLIENTS ================= */
     const scopedClients = await getClientsForUser(user.id, user.role);
-    const clientIds = scopedClients.map((c: any) => c.id);
+    const clientIds = (scopedClients as ClientRef[]).map((c) => c.id);
 
     /* ================= LOANS ================= */
     const loans = clientIds.length
@@ -48,28 +58,22 @@ export async function GET(req: NextRequest) {
     const totalClients = scopedClients.length;
 
     const totalBalance = loans.reduce(
-      (sum: number, l: any) => sum + Number(l.balance || 0),
+      (sum: number, l: LoanRef) => sum + n(l.balance),
       0
     );
 
     const totalOverdue = loans.reduce(
-      (sum: number, l: any) => sum + Number(l.overdue || 0),
+      (sum: number, l: LoanRef) => sum + n(l.overdue),
       0
     );
 
     const avgRisk =
-      osint.reduce(
-        (sum: number, o: any) => sum + Number(o.confidenceScore || 0),
-        0
-      ) / (osint.length || 1);
+      (osint as OsintRef[]).reduce((sum: number, o) => sum + n(o.confidenceScore), 0) /
+      (osint.length || 1);
 
-    const highRisk = osint.filter(
-      (o: any) => Number(o.confidenceScore) >= 70
-    ).length;
+    const highRisk = (osint as OsintRef[]).filter((o) => n(o.confidenceScore) >= 70).length;
 
-    const fraudCount = fraud.filter(
-      (f: any) => f.level === "high"
-    ).length;
+    const fraudCount = (fraud as FraudRef[]).filter((f) => f.level === "high").length;
 
     /* ================= RESPONSE ================= */
 

@@ -6,6 +6,8 @@ import {
 } from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
+codex/add-user-creation-with-password-vx3j4x
+import { ClientsListQuerySchema, CreateClientBodySchema } from "@/lib/validators/api";
 import { CreateClientBodySchema } from "@/lib/validators/api";
 
 /* =========================
@@ -60,7 +62,10 @@ export async function GET(req: NextRequest) {
 
       /* 🔍 SEARCH */
       const { searchParams } = new URL(req.url);
-      const search = searchParams.get("search")?.toLowerCase() || "";
+      const queryParsed = ClientsListQuerySchema.safeParse({
+        search: searchParams.get("search") ?? "",
+      });
+      const search = (queryParsed.success ? queryParsed.data.search : "").toLowerCase();
 
       const cacheKey = `${user.id}-${page}-${limit}-${search}`;
       const cached = cache.get(cacheKey);

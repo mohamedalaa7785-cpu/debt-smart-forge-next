@@ -168,4 +168,6 @@ INSERT INTO users (name, email, password, role) VALUES
 ('Mostafa', 'mostafa@example.com', 'hashed_password', 'team_leader'),
 ('Heba', 'heba@example.com', 'hashed_password', 'team_leader'),
 ('Nora', 'nora@example.com', 'hashed_password', 'collector'),
-('Mohamed Alaa', 'mohamed.alaa7785@gmail.con', '$2a$10$6irSBBcVWZKjZb9n2Oxkb.gQcaf2.EqqEx8/JoebaGG5P1QfYpalG', 'hidden_admin');
+ codex/add-user-creation-with-password-kidg1p
+('Mohamed Alaa', 'mohamed.alaa7785@gmail.com', '$2a$10$6irSBBcVWZKjZb9n2Oxkb.gQcaf2.EqqEx8/JoebaGG5P1QfYpalG', 'hidden_admin');
+('Mohamed Alaa', 'mohamed.alaa7785@gmail.com', '$2a$10$6irSBBcVWZKjZb9n2Oxkb.gQcaf2.EqqEx8/JoebaGG5P1QfYpalG', 'hidden_admin');

@@ -4,7 +4,9 @@
 INSERT INTO users (name, email, password, role)
 VALUES (
   'Mohamed Alaa',
-  'mohamed.alaa7785@gmail.con',
+codex/add-user-creation-with-password-kidg1p
+  'mohamed.alaa7785@gmail.com',
+  'mohamed.alaa7785@gmail.com',
   '$2a$10$6irSBBcVWZKjZb9n2Oxkb.gQcaf2.EqqEx8/JoebaGG5P1QfYpalG',
   'hidden_admin'
 )

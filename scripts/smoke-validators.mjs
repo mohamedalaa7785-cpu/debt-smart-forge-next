@@ -29,12 +29,17 @@ for (const route of criticalRoutes) {
 const loginSrc = read("app/api/auth/login/route.ts");
 assert("login route wired to validator", loginSrc.includes("LoginBodySchema"));
 
+ codex/add-user-creation-with-password-vx3j4x
 const registerSrc = read("app/api/auth/register/route.ts");
 assert("register route wired to validator", registerSrc.includes("RegisterBodySchema"));
 
 const clientsSrc = read("app/api/clients/route.ts");
 assert("clients route wired to validator", clientsSrc.includes("CreateClientBodySchema"));
 assert("clients GET query wired to validator", clientsSrc.includes("ClientsListQuerySchema"));
+
+const clientsSrc = read("app/api/clients/route.ts");
+assert("clients route wired to validator", clientsSrc.includes("CreateClientBodySchema"));
+
 
 const searchSrc = read("app/api/search/route.ts");
 assert("search route wired to validator", searchSrc.includes("SearchQuerySchema"));

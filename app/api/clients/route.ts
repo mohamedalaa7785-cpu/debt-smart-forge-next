@@ -6,7 +6,9 @@ import {
 } from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
+codex/add-user-creation-with-password-vx3j4x
 import { ClientsListQuerySchema, CreateClientBodySchema } from "@/lib/validators/api";
+import { CreateClientBodySchema } from "@/lib/validators/api";
 
 /* =========================
    RATE LIMIT

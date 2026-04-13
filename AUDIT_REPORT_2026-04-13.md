@@ -12,10 +12,14 @@
   - Deduplication cleanup (`client_phones`)
   - Bucket/day normalization
   - Search indexes (btree + trigram + full text)
+ codex/add-user-creation-with-password-vx3j4x
 - Added CI workflow (`.github/workflows/ci.yml`) with install + typecheck + build gates.
 - Added baseline RLS policy migration for core entities (`supabase/0004_core_rls_policies.sql`).
 - Added shared query validation for search params (`lib/validators/search.ts`) and wired it into `/api/search`.
-
+ codex/add-user-creation-with-password-lvsrkd
+- Added CI workflow (`.github/workflows/ci.yml`) with install + typecheck + build gates.
+- Added baseline RLS policy migration for core entities (`supabase/0004_core_rls_policies.sql`).
+- Added shared query validation for search params (`lib/validators/search.ts`) and wired it into `/api/search`.
 ## Current architecture notes
 - Core domain tables are present: users, clients, phones, addresses, loans, actions, call_logs, followups, osint, fraud.
 - Search supports instant query UX; backend now scans more operational text.

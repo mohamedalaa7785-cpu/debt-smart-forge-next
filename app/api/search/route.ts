@@ -10,10 +10,11 @@ import {
   clients,
 } from "@/server/db/schema";
 import { normalizePhone } from "@/lib/utils";
+import { SearchQuerySchema, type SearchQuery } from "@/lib/validators/search";
 
 export const dynamic = "force-dynamic";
 
-type SearchSort = "newest" | "oldest" | "name_asc" | "name_desc";
+type SearchSort = SearchQuery["sort"];
 
 type CachedSearch = {
   data: SearchRow[];
@@ -30,12 +31,11 @@ type SearchRow = {
   portfolioType: string;
   domainType: string;
   createdAt: Date;
-  phones: string[];
+  phones: string[] | null;
 };
 
 const cache = new Map<string, CachedSearch>();
 const TTL_MS = 1000 * 60 * 3;
-const MAX_LIMIT = 50;
 
 function getScopeCondition(userId: string, role: AuthRole) {
   if (role === "hidden_admin") return undefined;
@@ -63,18 +63,18 @@ export async function GET(req: NextRequest) {
   return withAuth(async (user) => {
     try {
       const { searchParams } = new URL(req.url);
-      const q = searchParams.get("q")?.trim() ?? "";
-      const sort = (searchParams.get("sort") as SearchSort) || "newest";
-      const portfolio = searchParams.get("portfolio")?.trim().toUpperCase();
-      const domain = searchParams.get("domain")?.trim().toUpperCase();
-      const limitRaw = Number(searchParams.get("limit") || 20);
-      const limit = Number.isFinite(limitRaw)
-        ? Math.min(Math.max(limitRaw, 1), MAX_LIMIT)
-        : 20;
+      const parsed = SearchQuerySchema.safeParse({
+        q: searchParams.get("q") ?? "",
+        sort: searchParams.get("sort") ?? "newest",
+        portfolio: searchParams.get("portfolio") ?? undefined,
+        domain: searchParams.get("domain") ?? undefined,
+        limit: searchParams.get("limit") ?? 20,
+      });
 
-      if (q.length < 2) {
+      if (!parsed.success) {
         return NextResponse.json({ success: true, count: 0, data: [], message: "Type at least 2 characters" });
       }
+      const { q, sort, portfolio, domain, limit } = parsed.data;
 
       const cacheKey = [
         user.id,
@@ -116,11 +116,11 @@ export async function GET(req: NextRequest) {
       const scope = getScopeCondition(user.id, user.role);
 
       if (scope) conditions.push(scope);
-      if (portfolio === "ACTIVE" || portfolio === "WRITEOFF") {
+      if (portfolio) {
         conditions.push(eq(clients.portfolioType, portfolio));
       }
-      if (["FIRST", "THIRD", "WRITEOFF"].includes(domain ?? "")) {
-        conditions.push(eq(clients.domainType, domain as "FIRST" | "THIRD" | "WRITEOFF"));
+      if (domain) {
+        conditions.push(eq(clients.domainType, domain));
       }
 
       const rows = await db
@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
           portfolioType: clients.portfolioType,
           domainType: clients.domainType,
           createdAt: clients.createdAt,
-          phone: clientPhones.phone,
+          phones: sql<string[]>`array_remove(array_agg(distinct ${clientPhones.phone}), null)`,
         })
         .from(clients)
         .leftJoin(clientPhones, eq(clients.id, clientPhones.clientId))
@@ -141,34 +141,23 @@ export async function GET(req: NextRequest) {
         .leftJoin(clientLoans, eq(clients.id, clientLoans.clientId))
         .leftJoin(clientActions, eq(clients.id, clientActions.clientId))
         .where(and(...conditions))
+        .groupBy(
+          clients.id,
+          clients.name,
+          clients.email,
+          clients.company,
+          clients.customerId,
+          clients.portfolioType,
+          clients.domainType,
+          clients.createdAt
+        )
         .orderBy(getSort(sort))
-        .limit(limit * 3);
+        .limit(limit);
 
-      const byClient = new Map<string, SearchRow>();
-      for (const row of rows) {
-        if (!byClient.has(row.id)) {
-          byClient.set(row.id, {
-            id: row.id,
-            name: row.name,
-            email: row.email,
-            company: row.company,
-            customerId: row.customerId,
-            portfolioType: row.portfolioType,
-            domainType: row.domainType,
-            createdAt: row.createdAt,
-            phones: [],
-          });
-        }
-
-        if (row.phone) {
-          const item = byClient.get(row.id);
-          if (item && !item.phones.includes(row.phone)) {
-            item.phones.push(row.phone);
-          }
-        }
-      }
-
-      const data = Array.from(byClient.values()).slice(0, limit);
+      const data = rows.map((row) => ({
+        ...row,
+        phones: row.phones ?? [],
+      }));
       const response = { success: true, count: data.length, data, empty: data.length === 0 };
 
       cache.set(cacheKey, { data, count: data.length, expiry: Date.now() + TTL_MS });

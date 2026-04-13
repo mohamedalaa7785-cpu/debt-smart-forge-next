@@ -6,6 +6,7 @@ import {
 } from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { getPagination } from "@/lib/pagination";
+import { ClientsListQuerySchema, CreateClientBodySchema } from "@/lib/validators/api";
 
 /* =========================
    RATE LIMIT
@@ -59,7 +60,10 @@ export async function GET(req: NextRequest) {
 
       /* 🔍 SEARCH */
       const { searchParams } = new URL(req.url);
-      const search = searchParams.get("search")?.toLowerCase() || "";
+      const queryParsed = ClientsListQuerySchema.safeParse({
+        search: searchParams.get("search") ?? "",
+      });
+      const search = (queryParsed.success ? queryParsed.data.search : "").toLowerCase();
 
       const cacheKey = `${user.id}-${page}-${limit}-${search}`;
       const cached = cache.get(cacheKey);
@@ -147,16 +151,16 @@ export async function POST(req: NextRequest) {
       const ip = req.headers.get("x-forwarded-for") || user.id;
       rateLimit(ip, 15);
 
-      const body = await req.json();
-
-      let { name, phones, loans } = body;
-
-      if (!name?.trim()) {
+      const rawBody = await req.json();
+      const parsed = CreateClientBodySchema.safeParse(rawBody);
+      if (!parsed.success) {
         return NextResponse.json(
-          { success: false, error: "Name is required" },
+          { success: false, error: "Invalid client payload" },
           { status: 400 }
         );
       }
+      const body = parsed.data;
+      let { name, phones, loans } = body;
 
       if (!Array.isArray(phones) || phones.length === 0) {
         return NextResponse.json(
@@ -187,7 +191,7 @@ export async function POST(req: NextRequest) {
       const newClient = await createClientFull(
         {
           ...body,
-          name: name.trim(),
+          name,
           phones,
           ownerId,
           teamLeaderId,

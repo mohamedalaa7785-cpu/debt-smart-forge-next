@@ -9,7 +9,10 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "npm run typecheck",
+    "typecheck": "tsc --noEmit",
+    "smoke": "node scripts/smoke-validators.mjs",
+    "test": "npm run typecheck && npm run smoke"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

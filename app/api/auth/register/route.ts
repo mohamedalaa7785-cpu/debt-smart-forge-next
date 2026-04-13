@@ -10,30 +10,13 @@ import { eq } from "drizzle-orm";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 import { isSuperUserEmail, resolveRoleByEmail } from "@/server/lib/role";
+import { RegisterBodySchema } from "@/lib/validators/api";
 
 type RegisterBody = {
   name?: string;
   email?: string;
   password?: string;
 };
-
-function validateInput(body: RegisterBody): string[] {
-  const errors: string[] = [];
-  const email = body.email?.trim().toLowerCase() ?? "";
-  const password = body.password ?? "";
-
-  if (!email) errors.push("Email is required");
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.push("Invalid email format");
-  }
-
-  if (!password) errors.push("Password is required");
-  if (password && password.length < 8) {
-    errors.push("Password must be at least 8 characters");
-  }
-
-  return errors;
-}
 
 function getDisplayName(name?: string, email?: string): string {
   const trimmed = name?.trim();
@@ -76,26 +59,43 @@ async function syncUserRecord(params: {
 }) {
   await ensureUsersTableColumns();
 
-  await db
-    .insert(users)
-    .values({
-      id: params.id,
-      email: params.email,
-      name: params.name,
-      role: params.role,
-      isSuperUser: params.isSuperUser,
-    })
-    .onConflictDoUpdate({
-      target: users.id,
-      set: {
-        email: params.email,
-        name: params.name,
-        role: params.role,
-        isSuperUser: params.isSuperUser,
-      },
-    });
+  const payload = {
+    id: params.id,
+    email: params.email,
+    name: params.name,
+    role: params.role,
+    isSuperUser: params.isSuperUser,
+  };
 
-  return db.query.users.findFirst({ where: eq(users.id, params.id) });
+  const updatedById = await db
+    .update(users)
+    .set({
+      email: payload.email,
+      name: payload.name,
+      role: payload.role,
+      isSuperUser: payload.isSuperUser,
+    })
+    .where(eq(users.id, payload.id))
+    .returning();
+
+  if (updatedById[0]) return updatedById[0];
+
+  try {
+    const inserted = await db.insert(users).values(payload).returning();
+    if (inserted[0]) return inserted[0];
+  } catch {
+    await db
+      .update(users)
+      .set({
+        id: payload.id,
+        name: payload.name,
+        role: payload.role,
+        isSuperUser: payload.isSuperUser,
+      })
+      .where(eq(users.email, payload.email));
+  }
+
+  return db.query.users.findFirst({ where: eq(users.id, payload.id) });
 }
 
 export async function POST(req: Request) {
@@ -107,15 +107,17 @@ export async function POST(req: Request) {
       );
     }
 
-    const body = (await req.json()) as RegisterBody;
-    const email = body.email?.trim().toLowerCase() ?? "";
-    const password = body.password ?? "";
-    const name = getDisplayName(body.name, email);
-
-    const errors = validateInput({ email, password });
-    if (errors.length > 0) {
-      return NextResponse.json({ success: false, error: errors }, { status: 400 });
+    const rawBody = (await req.json()) as RegisterBody;
+    const parsed = RegisterBodySchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid registration payload" },
+        { status: 400 }
+      );
     }
+    const email = parsed.data.email.toLowerCase();
+    const password = parsed.data.password;
+    const name = getDisplayName(parsed.data.name, email);
 
     const role = resolveRoleByEmail(email);
     const isSuperUser = isSuperUserEmail(email);

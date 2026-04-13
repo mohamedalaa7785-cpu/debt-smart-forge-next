@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
 import { isSuperUserEmail, resolveRoleByEmail } from "@/server/lib/role";
+import { LoginBodySchema } from "@/lib/validators/api";
 
 /* ---------------- ENV ---------------- */
 
@@ -34,17 +35,16 @@ function maskEmail(email: string) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-
-    const email = body.email?.trim().toLowerCase();
-    const password = body.password ?? "";
-
-    if (!email || !password) {
+    const rawBody = await request.json();
+    const parsed = LoginBodySchema.safeParse(rawBody);
+    if (!parsed.success) {
       return NextResponse.json(
-        { success: false, error: "Email and password are required" },
+        { success: false, error: "Valid email and password are required" },
         { status: 400 }
       );
     }
+    const email = parsed.data.email.toLowerCase();
+    const password = parsed.data.password;
 
     const cookieStore = cookies();
     const { url, key } = getEnv();

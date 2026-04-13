@@ -26,7 +26,6 @@ export default function AddClientPage() {
 
   const [portfolioType, setPortfolioType] = useState("ACTIVE");
   const [domainType, setDomainType] = useState("FIRST");
-  const [cycleStartDate, setCycleStartDate] = useState(new Date().toISOString().split("T")[0]);
 
   const [phones, setPhones] = useState([""]);
   const [addresses, setAddresses] = useState([{ address: "", city: "", area: "" }]);
@@ -34,12 +33,9 @@ export default function AddClientPage() {
     {
       loanType: "PIL",
       loanNumber: "",
-      amountDue: "",
       cycle: "",
       emi: "",
       balance: "",
-      overdue: "",
-      bucket: "",
       organization: "",
       willLegal: false,
       referralDate: "",
@@ -59,12 +55,9 @@ export default function AddClientPage() {
       {
         loanType: "PIL",
         loanNumber: "",
-        amountDue: "",
         cycle: "",
         emi: "",
         balance: "",
-        overdue: "",
-        bucket: "",
         organization: "",
         willLegal: false,
         referralDate: "",
@@ -184,18 +177,16 @@ export default function AddClientPage() {
           referral: referral || null,
           portfolioType,
           domainType,
-          cycleStartDate,
           phones: phones.filter(Boolean),
           addresses: addresses.filter((a) => a.address.trim()),
           loans: loans.map((l) => ({
             ...l,
             emi: l.emi || "0",
             balance: l.balance || "0",
-            overdue: l.overdue || "0",
-            amountDue: l.amountDue || l.overdue || "0",
+            overdue: null,
+            amountDue: null,
             loanNumber: l.loanNumber || null,
             cycle: l.cycle || null,
-            bucket: l.bucket || null,
             organization: l.organization || null,
             willLegal: Boolean(l.willLegal),
             referralDate: l.referralDate || null,
@@ -279,7 +270,7 @@ export default function AddClientPage() {
         <textarea className="w-full border rounded-xl p-3 md:col-span-2 min-h-24" placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
+      <div className="grid md:grid-cols-2 gap-4">
         <select className="w-full border rounded-xl p-3" value={portfolioType} onChange={(e) => setPortfolioType(e.target.value)}>
           <option value="ACTIVE">ACTIVE</option>
           <option value="WRITEOFF">WRITEOFF</option>
@@ -289,7 +280,6 @@ export default function AddClientPage() {
           <option value="THIRD">THIRD</option>
           <option value="WRITEOFF">WRITEOFF</option>
         </select>
-        <input type="date" className="w-full border rounded-xl p-3" value={cycleStartDate} onChange={(e) => setCycleStartDate(e.target.value)} />
       </div>
 
       <div className="space-y-3">
@@ -314,12 +304,9 @@ export default function AddClientPage() {
           <div key={i} className="grid md:grid-cols-2 gap-3 border rounded-xl p-3">
             <input className="border rounded-xl p-3" placeholder="Loan Number" value={l.loanNumber} onChange={(e) => updateLoan(i, "loanNumber", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="Loan type" value={l.loanType} onChange={(e) => updateLoan(i, "loanType", e.target.value)} />
-            <input className="border rounded-xl p-3" placeholder="Amount Due" value={l.amountDue} onChange={(e) => updateLoan(i, "amountDue", e.target.value)} />
-            <input className="border rounded-xl p-3" placeholder="Cycle (CYL)" value={l.cycle} onChange={(e) => updateLoan(i, "cycle", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="EMI" value={l.emi} onChange={(e) => updateLoan(i, "emi", e.target.value)} />
+            <input className="border rounded-xl p-3" placeholder="BKT Day (1-31)" value={l.cycle} onChange={(e) => updateLoan(i, "cycle", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="Balance" value={l.balance} onChange={(e) => updateLoan(i, "balance", e.target.value)} />
-            <input className="border rounded-xl p-3" placeholder="Overdue" value={l.overdue} onChange={(e) => updateLoan(i, "overdue", e.target.value)} />
-            <input className="border rounded-xl p-3" placeholder="Bucket (BKT)" value={l.bucket} onChange={(e) => updateLoan(i, "bucket", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="Organization" value={l.organization} onChange={(e) => updateLoan(i, "organization", e.target.value)} />
             <input type="date" className="border rounded-xl p-3" placeholder="Referral Date" value={l.referralDate} onChange={(e) => updateLoan(i, "referralDate", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="Collector %" value={l.collectorPercentage} onChange={(e) => updateLoan(i, "collectorPercentage", e.target.value)} />

@@ -10,6 +10,7 @@ import {
   followups,
 } from "@/server/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
+import { calculateFinancials } from "@/server/services/financial.service";
 
 /* =========================
    HELPERS
@@ -35,6 +36,12 @@ function dedupeAddresses(addresses: any[]) {
 function toSafeNumber(val: any) {
   const num = Number(val);
   return isNaN(num) ? 0 : num;
+}
+
+function normalizeDueDay(cycle: any) {
+  const dueDay = Number(cycle);
+  if (isNaN(dueDay)) return null;
+  return Math.min(31, Math.max(1, Math.floor(dueDay)));
 }
 
 /* =========================
@@ -154,28 +161,52 @@ export async function createClientFull(data: any, creatorId: string) {
 
     /* LOANS */
     await tx.insert(clientLoans).values(
-      data.loans.map((l: any) => ({
-        clientId: client.id,
-        loanType: l.loanType || "UNKNOWN",
-        loanNumber: l.loanNumber || null,
-        cycle: Number(l.cycle || 0) || null,
-        organization: l.organization || null,
-        willLegal: Boolean(l.willLegal),
-        referralDate: l.referralDate ? new Date(l.referralDate) : null,
-        collectorPercentage:
-          l.collectorPercentage !== undefined &&
-          l.collectorPercentage !== null &&
-          l.collectorPercentage !== ""
-            ? toSafeNumber(l.collectorPercentage)
-            : null,
-        emi: toSafeNumber(l.emi),
-        balance: toSafeNumber(l.balance),
-        overdue: toSafeNumber(l.overdue),
-        amountDue: toSafeNumber(l.amountDue ?? l.overdue),
-        bucket: Number(l.bucket || 1),
-        penaltyEnabled: Boolean(l.penaltyEnabled),
-        penaltyAmount: toSafeNumber(l.penaltyAmount),
-      }))
+      data.loans.map((l: any) => {
+        const loanType = l.loanType || "UNKNOWN";
+        const baseEmi = toSafeNumber(l.emi);
+        const bucket = Math.max(1, Number(l.bucket || 1));
+        const organization = l.organization || null;
+
+        const isPersonalOrCompanyLoan =
+          String(loanType).toUpperCase() === "PIL" || Boolean(organization);
+
+        const financial = calculateFinancials({
+          loanType,
+          emi: baseEmi,
+          bucket,
+          penaltyEnabled:
+            Boolean(l.penaltyEnabled) || isPersonalOrCompanyLoan,
+          penaltyAmount: toSafeNumber(l.penaltyAmount),
+        });
+
+        const adjustedEmi =
+          isPersonalOrCompanyLoan && bucket > 1
+            ? Number((financial.amountDue / bucket).toFixed(2))
+            : baseEmi;
+
+        return {
+          clientId: client.id,
+          loanType,
+          loanNumber: l.loanNumber || null,
+          cycle: normalizeDueDay(l.cycle),
+          organization,
+          willLegal: Boolean(l.willLegal),
+          referralDate: l.referralDate ? new Date(l.referralDate) : null,
+          collectorPercentage:
+            l.collectorPercentage !== undefined &&
+            l.collectorPercentage !== null &&
+            l.collectorPercentage !== ""
+              ? toSafeNumber(l.collectorPercentage)
+              : null,
+          emi: adjustedEmi,
+          balance: toSafeNumber(l.balance),
+          overdue: financial.amountDue,
+          amountDue: financial.amountDue,
+          bucket,
+          penaltyEnabled: financial.penaltyEnabled,
+          penaltyAmount: financial.penaltyAmount,
+        };
+      })
     );
 
     return client;

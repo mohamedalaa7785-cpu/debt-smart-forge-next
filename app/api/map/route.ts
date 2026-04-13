@@ -3,10 +3,13 @@ import { getClientsForMap } from "@/server/services/map.service";
 import { getClientsForUser } from "@/server/services/client.service";
 import { requireUser } from "@/server/lib/auth";
 import { APIResponse } from "@/types";
+import type { MapClient } from "@/server/services/map.service";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
+type ScopedClient = { id: string };
+
+export async function GET(_req: NextRequest) {
   try {
     const user = await requireUser();
     const [scopedClients, mapClients] = await Promise.all([
@@ -14,8 +17,8 @@ export async function GET(req: NextRequest) {
       getClientsForMap(),
     ]);
 
-    const allowed = new Set(scopedClients.map((c: any) => c.id));
-    const data = mapClients.filter((c: any) => allowed.has(c.id));
+    const allowed = new Set((scopedClients as ScopedClient[]).map((c) => c.id));
+    const data = (mapClients as MapClient[]).filter((c) => allowed.has(c.id));
 
     return NextResponse.json({
       success: true,

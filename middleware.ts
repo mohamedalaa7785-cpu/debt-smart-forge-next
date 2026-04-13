@@ -2,6 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 
+function isAuthBypassEnabled() {
+  return process.env.AUTH_BYPASS !== "false";
+}
+
 function createSupabase(request: NextRequest, response: NextResponse) {
   const { url, anonKey } = getSupabaseEnv();
 
@@ -41,6 +45,10 @@ function isAdminLike(user: { app_metadata?: Record<string, unknown>; user_metada
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   const pathname = request.nextUrl.pathname;
+
+  if (isAuthBypassEnabled()) {
+    return response;
+  }
 
   if (!hasSupabaseEnv()) return response;
 

@@ -19,6 +19,8 @@ type Result = {
   mapsResults: string[];
   summary: string;
   confidence: number;
+  riskLevel?: string;
+  fraudFlags?: string[];
 };
 
 export default function OSINTPage() {
@@ -28,7 +30,7 @@ export default function OSINTPage() {
   const [error, setError] = useState("");
 
   async function handleSearch() {
-    if (!query) return;
+    if (!query.trim()) return;
 
     setLoading(true);
     setError("");
@@ -37,22 +39,22 @@ export default function OSINTPage() {
     try {
       const res = await fetch("/api/osint", {
         method: "POST",
-        body: JSON.stringify({ name: query }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: query.trim() }),
       });
 
       const json = await res.json();
 
-      if (!json.success) throw new Error(json.error);
+      if (!res.ok || !json.success) throw new Error(json.error || "OSINT request failed");
 
       setData(json.data);
     } catch (err: any) {
-      setError(err.message);
+      setError(err?.message || "OSINT request failed");
     } finally {
       setLoading(false);
     }
   }
 
-  /* 🔥 memoized chart */
   const chartData = useMemo(() => {
     if (!data) return [];
 
@@ -60,6 +62,7 @@ export default function OSINTPage() {
       { name: "Social", value: data.socialLinks.length },
       { name: "Work", value: data.workplace.length },
       { name: "Web", value: data.webResults.length },
+      { name: "Maps", value: data.mapsResults.length },
     ];
   }, [data]);
 
@@ -67,7 +70,6 @@ export default function OSINTPage() {
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">OSINT Intelligence</h1>
 
-      {/* SEARCH */}
       <div className="flex gap-2">
         <input
           className="border p-2 w-full rounded"
@@ -86,28 +88,19 @@ export default function OSINTPage() {
         </button>
       </div>
 
-      {/* STATES */}
-      {loading && (
-        <div className="p-4 border rounded animate-pulse">
-          Searching OSINT data...
-        </div>
-      )}
-
+      {loading && <div className="p-4 border rounded animate-pulse">Searching OSINT data...</div>}
       {error && <p className="text-red-500">{error}</p>}
 
-      {/* RESULT */}
       {data && (
         <div className="space-y-6">
-          {/* SCORE */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Risk Score</h2>
             <p className="text-xl">{data.confidence}%</p>
+            <p className="text-sm text-gray-600">Level: {data.riskLevel || "low"}</p>
           </div>
 
-          {/* 🔥 RESPONSIVE CHART */}
           <div className="p-4 border rounded">
             <h2 className="font-bold mb-2">Analysis Chart</h2>
-
             <div className="w-full h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData}>
@@ -121,24 +114,22 @@ export default function OSINTPage() {
             </div>
           </div>
 
-          {/* SUMMARY */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">AI Summary</h2>
             <p>{data.summary}</p>
+            <p className="text-xs text-gray-500 mt-2">Flags: {data.fraudFlags?.join(", ") || "None"}</p>
           </div>
 
-          {/* SOCIAL */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Social Links</h2>
             {data.socialLinks.length === 0 && <p>No data</p>}
             {data.socialLinks.map((l, i) => (
-              <a key={i} href={l} target="_blank" className="block text-blue-500">
+              <a key={i} href={l} target="_blank" rel="noreferrer" className="block text-blue-500">
                 {l}
               </a>
             ))}
           </div>
 
-          {/* WORK */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Workplaces</h2>
             {data.workplace.length === 0 && <p>No data</p>}
@@ -147,30 +138,30 @@ export default function OSINTPage() {
             ))}
           </div>
 
-          {/* WEB */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Web Results</h2>
+            {data.webResults.length === 0 && <p>No data</p>}
             {data.webResults.map((l, i) => (
-              <a key={i} href={l} target="_blank" className="block text-blue-500">
+              <a key={i} href={l} target="_blank" rel="noreferrer" className="block text-blue-500">
                 {l}
               </a>
             ))}
           </div>
 
-          {/* MAPS */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Locations</h2>
+            {data.mapsResults.length === 0 && <p>No data</p>}
             {data.mapsResults.map((m, i) => (
               <p key={i}>{m}</p>
             ))}
           </div>
 
-          {/* IMAGES */}
           <div className="p-4 border rounded">
             <h2 className="font-bold">Image Matches</h2>
+            {data.imageMatches.length === 0 && <p>No data</p>}
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {data.imageMatches.map((img, i) => (
-                <img key={i} src={img} className="rounded" />
+                <img key={i} src={img} alt={`OSINT match ${i + 1}`} className="rounded" />
               ))}
             </div>
           </div>
@@ -178,4 +169,4 @@ export default function OSINTPage() {
       )}
     </div>
   );
-              }
+}

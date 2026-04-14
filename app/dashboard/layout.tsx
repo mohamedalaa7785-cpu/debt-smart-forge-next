@@ -7,7 +7,8 @@ import { useEffect, useState } from "react";
 type User = {
   role: string;
   name?: string | null;
-  is_super_user?: boolean;
+  username?: string | null;
+  isSuperUser?: boolean;
 };
 
 export default function DashboardLayout({
@@ -18,43 +19,34 @@ export default function DashboardLayout({
   const path = usePathname();
   const [user, setUser] = useState<User | null>(null);
 
-  /* ---------------- LOAD USER ---------------- */
   useEffect(() => {
-    fetch("/api/auth/me")
+    fetch("/api/auth/me", { cache: "no-store" })
       .then((res) => res.json())
       .then((data) => {
         if (data?.data) setUser(data.data);
-      });
+      })
+      .catch(() => setUser(null));
   }, []);
 
-  /* ---------------- MENU ---------------- */
   const baseMenu = [
     { name: "Dashboard", href: "/dashboard" },
     { name: "Clients", href: "/dashboard/clients" },
     { name: "OSINT", href: "/dashboard/osint" },
+    { name: "Map", href: "/dashboard/map" },
+    { name: "AI Intelligence", href: "/dashboard/intelligence" },
+    { name: "My Profile", href: "/dashboard/profile" },
   ];
 
-  const adminMenu = [
-    { name: "Admin Panel", href: "/dashboard/admin" },
-  ];
+  const adminMenu = [{ name: "Admin Panel", href: "/dashboard/admin/users" }];
 
-  /* ---------------- ROLE LOGIC ---------------- */
   let menu = [...baseMenu];
 
-  if (user?.role === "admin" || user?.role === "hidden_admin") {
+  if (user?.role === "admin" || user?.role === "hidden_admin" || user?.isSuperUser) {
     menu = [...menu, ...adminMenu];
   }
-
-  // 👑 hidden super user (محمد)
-  if (user?.is_super_user) {
-    menu = [...menu, ...adminMenu];
-  }
-
-  /* ---------------- UI ---------------- */
 
   return (
     <div className="flex min-h-screen bg-gray-100">
-      {/* SIDEBAR */}
       <aside className="w-64 bg-black text-white p-5 flex flex-col justify-between">
         <div>
           <h2 className="text-2xl font-bold mb-6">Debt System</h2>
@@ -68,9 +60,7 @@ export default function DashboardLayout({
                   key={item.href}
                   href={item.href}
                   className={`block px-3 py-2 rounded transition ${
-                    active
-                      ? "bg-gray-700"
-                      : "hover:bg-gray-800 text-gray-300"
+                    active ? "bg-gray-700" : "hover:bg-gray-800 text-gray-300"
                   }`}
                 >
                   {item.name}
@@ -80,13 +70,11 @@ export default function DashboardLayout({
           </nav>
         </div>
 
-        {/* FOOTER */}
         <div className="text-xs text-gray-400">
-          Logged as: {user?.name || "loading..."} ({user?.role || "..."})
+          Logged as: {user?.name || user?.username || "loading..."} ({user?.role || "..."})
         </div>
       </aside>
 
-      {/* CONTENT */}
       <main className="flex-1 p-6">{children}</main>
     </div>
   );

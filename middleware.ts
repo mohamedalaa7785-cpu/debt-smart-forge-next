@@ -5,7 +5,7 @@ import { normalizeRole } from "@/server/lib/role";
 
 type UserRoleRow = {
   role: string | null;
-  is_super_user: boolean | null;
+  is_hidden_admin: boolean | null;
 };
 
 function createSupabase(request: NextRequest, response: NextResponse) {
@@ -24,7 +24,7 @@ function createSupabase(request: NextRequest, response: NextResponse) {
 }
 
 function isPublic(pathname: string) {
-  return pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/api/auth");
+  return pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/api/auth") || pathname.startsWith("/auth/callback");
 }
 
 function isProtected(pathname: string) {
@@ -33,14 +33,14 @@ function isProtected(pathname: string) {
 
 async function getDbRole(supabase: ReturnType<typeof createSupabase>, userId: string) {
   const { data } = await supabase
-    .from("users")
-    .select("role,is_super_user")
-    .eq("id", userId)
+    .from("profiles")
+    .select("role,is_hidden_admin")
+    .eq("user_id", userId)
     .maybeSingle<UserRoleRow>();
 
   return {
     role: normalizeRole(data?.role),
-    isSuperUser: Boolean(data?.is_super_user),
+    isSuperUser: Boolean(data?.is_hidden_admin),
   };
 }
 
@@ -70,7 +70,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (user && pathname.startsWith("/admin")) {
+  if (user && (pathname.startsWith("/admin") || pathname.startsWith("/dashboard/admin"))) {
     const roleState = await getDbRole(supabase, user.id);
     const isAdminLike = roleState.isSuperUser || roleState.role === "admin" || roleState.role === "hidden_admin";
 

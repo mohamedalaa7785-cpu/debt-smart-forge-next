@@ -1,12 +1,13 @@
 import { z } from "zod";
 
 export const LoginBodySchema = z.object({
-  identifier: z.string().trim().min(1).max(120),
+  email: z.string().trim().email(),
   password: z.string().min(1),
 });
 
 export const RegisterBodySchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
+  username: z.string().trim().min(3).max(50).regex(/^[a-z0-9._-]+$/i, "Username must be letters, numbers, dot, underscore, or dash").optional(),
   email: z.string().trim().email(),
   password: z.string().min(8).max(128),
 });

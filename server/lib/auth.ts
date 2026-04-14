@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/server/db";
-import { users } from "@/server/db/schema";
+import { profiles, users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { APP_ROLES, type AppRole, normalizeRole } from "@/server/lib/role";
 import { createSupabaseServerClient } from "@/server/auth/session.service";
@@ -13,6 +13,7 @@ export interface AuthUser {
   email: string;
   role: AuthRole;
   name?: string | null;
+  username?: string | null;
   isSuperUser?: boolean;
 }
 
@@ -31,24 +32,26 @@ export async function requireUser(): Promise<AuthUser> {
     throw new AuthError("User email missing");
   }
 
-  const dbUser = await db.query.users.findFirst({ where: eq(users.id, user.id) });
+  const [dbUser, profile] = await Promise.all([
+    db.query.users.findFirst({ where: eq(users.id, user.id) }),
+    db.query.profiles.findFirst({ where: eq(profiles.userId, user.id) }),
+  ]);
 
   if (!dbUser) {
     throw new AuthError("User record not synced", 409);
   }
 
-  if (!dbUser.email) {
-    throw new AuthError("User email missing in profile", 409);
-  }
-
-  const role: AuthRole = dbUser.isSuperUser ? "hidden_admin" : normalizeRole(dbUser.role);
+  const role: AuthRole = profile?.isHiddenAdmin
+    ? "hidden_admin"
+    : normalizeRole(profile?.role ?? dbUser.role);
 
   return {
     id: dbUser.id,
-    email: dbUser.email,
+    email: dbUser.email || user.email,
     role,
-    name: dbUser.name,
-    isSuperUser: dbUser.isSuperUser ?? false,
+    name: profile?.fullName ?? dbUser.name,
+    username: profile?.username,
+    isSuperUser: Boolean(profile?.isHiddenAdmin ?? dbUser.isSuperUser),
   };
 }
 

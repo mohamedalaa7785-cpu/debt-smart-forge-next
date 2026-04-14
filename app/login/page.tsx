@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 export default function LoginPage() {
   const router = useRouter();
 
-  const [identifier, setIdentifier] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -24,19 +24,19 @@ export default function LoginPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ identifier, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.success) {
-        throw new Error(data?.error || "Login failed");
+        throw new Error(data?.error || "Login failed. Please check your email and password.");
       }
 
       router.refresh();
-      router.push("/");
+      router.push("/dashboard");
     } catch (err: any) {
-      setError(err?.message || "Login failed");
+      setError(err?.message || "Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -47,18 +47,18 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6 rounded-xl bg-white p-8 shadow-lg">
         <div className="space-y-2 text-center">
           <h1 className="text-3xl font-bold text-gray-900">Debt Smart OS</h1>
-          <p className="text-sm text-gray-500">Login with assigned username. First password you enter will be saved for this user.</p>
+          <p className="text-sm text-gray-500">Sign in using your email and password.</p>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">Username</label>
+            <label className="text-sm font-medium text-gray-700">Email</label>
             <input
-              type="text"
+              type="email"
               className="w-full rounded-lg border border-gray-300 px-4 py-2 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
-              placeholder="adel / loay / mohamed.alaa"
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               required
             />
           </div>

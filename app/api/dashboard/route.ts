@@ -89,7 +89,6 @@ export async function GET(_req: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("DASHBOARD ERROR:", error);
 
     return NextResponse.json(
       {

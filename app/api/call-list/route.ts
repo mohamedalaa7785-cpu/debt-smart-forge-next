@@ -15,7 +15,6 @@ export async function GET(req: NextRequest) {
       data: callList,
     } as APIResponse<any>);
   } catch (error: any) {
-    console.error("GET /api/call-list error:", error);
     return NextResponse.json(
       { success: false, error: error?.message || "Unauthorized" },
       { status: 401 }

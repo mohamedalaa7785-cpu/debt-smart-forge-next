@@ -2,23 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendWhatsAppMessage } from "@/server/services/whatsapp.service";
 import { APIResponse } from "@/types";
 import { requireUser } from "@/server/lib/auth";
-import { canAccessClient, getClientById } from "@/server/services/client.service";
+import { getClientById } from "@/server/services/client.service";
+import { WhatsAppBodySchema } from "@/lib/validators/api";
 
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
-    const body = await req.json();
-    const { phone, message, clientId } = body;
+    const rawBody = await req.json();
+    const parsed = WhatsAppBodySchema.safeParse(rawBody);
 
-    if (!phone || !message || !clientId) {
-      return NextResponse.json(
-        { success: false, error: "Missing required fields" },
-        { status: 400 }
-      );
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: "Invalid WhatsApp payload" }, { status: 400 });
     }
 
-    const client = await getClientById(clientId);
-    if (!client || !canAccessClient(client, user.id, user.role)) {
+    const { phone, message, clientId } = parsed.data;
+
+    const client = await getClientById(clientId, user.id, user.role);
+    if (!client) {
       return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
     }
 
@@ -34,7 +34,6 @@ export async function POST(req: NextRequest) {
       data: result,
     } as APIResponse<any>);
   } catch (error: any) {
-    console.error("POST /api/whatsapp error:", error);
     const status = error?.message === "Unauthorized" || error?.message === "Invalid session" ? 401 : 500;
     return NextResponse.json(
       { success: false, error: error?.message || "Failed to send WhatsApp message" },

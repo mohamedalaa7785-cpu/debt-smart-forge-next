@@ -1,10 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
-
-function isAuthBypassEnabled() {
-  return process.env.AUTH_BYPASS !== "false";
-}
+import { normalizeRole } from "@/server/lib/role";
 
 function createSupabase(request: NextRequest, response: NextResponse) {
   const { url, anonKey } = getSupabaseEnv();
@@ -26,29 +23,12 @@ function isPublic(pathname: string) {
 }
 
 function isProtected(pathname: string) {
-  return (
-    pathname === "/" ||
-    pathname.startsWith("/dashboard") ||
-    pathname.startsWith("/client") ||
-    pathname.startsWith("/add-client") ||
-    pathname.startsWith("/admin")
-  );
-}
-
-function isAdminLike(user: { app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown> }) {
-  const role = String(user.app_metadata?.role || user.user_metadata?.role || "").toLowerCase();
-  const superUser = Boolean(user.app_metadata?.is_super_user || user.user_metadata?.is_super_user);
-
-  return superUser || role === "admin" || role === "hidden_admin";
+  return pathname === "/" || pathname.startsWith("/dashboard") || pathname.startsWith("/client") || pathname.startsWith("/add-client") || pathname.startsWith("/admin");
 }
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
   const pathname = request.nextUrl.pathname;
-
-  if (isAuthBypassEnabled()) {
-    return response;
-  }
 
   if (!hasSupabaseEnv()) return response;
 
@@ -72,8 +52,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (user && pathname.startsWith("/admin") && !isAdminLike(user)) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+  if (user && pathname.startsWith("/admin")) {
+    const role = normalizeRole(user.app_metadata?.role || user.user_metadata?.role);
+    const superUser = Boolean(user.app_metadata?.is_super_user || user.user_metadata?.is_super_user);
+    const isAdminLike = superUser || role === "admin" || role === "hidden_admin";
+
+    if (!isAdminLike) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
   }
 
   return response;

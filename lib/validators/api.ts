@@ -50,3 +50,57 @@ export const CreateClientBodySchema = z.object({
   ownerId: z.string().uuid().optional().nullable(),
   teamLeaderId: z.string().uuid().optional().nullable(),
 });
+
+
+export const AssignClientsBodySchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
+  ownerId: z.string().uuid(),
+});
+
+export const BulkIdsBodySchema = z.object({
+  ids: z.array(z.string().uuid()).min(1),
+});
+
+export const SettlementBodySchema = z.object({
+  originalBalance: z.number().nonnegative(),
+  haircutPercentage: z.number().min(0).max(100),
+});
+
+export const UploadBodySchema = z.object({
+  file: z.string().min(20),
+  folder: z.string().trim().optional(),
+});
+
+export const AdminCreateUserSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(8).max(128),
+  name: z.string().trim().max(120).optional().nullable(),
+  role: z.enum(["admin", "supervisor", "team_leader", "collector", "hidden_admin"]),
+});
+
+export const AdminUpdateUserSchema = z.object({
+  userId: z.string().uuid(),
+  role: z.enum(["admin", "supervisor", "team_leader", "collector", "hidden_admin"]).optional(),
+  name: z.string().trim().max(120).optional().nullable(),
+  password: z.string().min(8).max(128).optional(),
+});
+
+export const AdminDeleteUserSchema = z.object({
+  userId: z.string().uuid(),
+});
+
+
+export const CreateActionBodySchema = z.object({
+  clientId: z.string().uuid(),
+  actionType: z.string().trim().min(1).max(50),
+  note: z.string().trim().max(4000).optional().nullable(),
+  result: z.string().trim().max(2000).optional().nullable(),
+  amountPaid: z.union([z.string(), z.number()]).optional().nullable(),
+  nextActionDate: z.string().optional().nullable(),
+});
+
+export const WhatsAppBodySchema = z.object({
+  clientId: z.string().uuid(),
+  phone: z.string().trim().min(6).max(32),
+  message: z.string().trim().min(1).max(2000),
+});

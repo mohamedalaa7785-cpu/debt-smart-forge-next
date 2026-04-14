@@ -39,7 +39,6 @@ export async function GET(req: NextRequest) {
       data: history,
     });
   } catch (error: any) {
-    console.error("OSINT HISTORY ERROR:", error);
 
     const status =
       error?.message === "Unauthorized" ||

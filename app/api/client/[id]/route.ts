@@ -4,10 +4,11 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
-import { getClientById, canAccessClient } from "@/server/services/client.service";
+import { getClientById } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
 import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
+import { buildClientIntelligenceProfile } from "@/server/services/intelligence.service";
 import { logAction } from "@/server/services/log.service";
 
 export async function GET(
@@ -25,7 +26,7 @@ export async function GET(
         );
       }
 
-      const data = await getClientById(clientId);
+      const data = await getClientById(clientId, user.id, user.role);
 
       if (!data) {
         return NextResponse.json(
@@ -34,12 +35,6 @@ export async function GET(
         );
       }
 
-      if (!canAccessClient(data as any, user.id, user.role)) {
-        return NextResponse.json(
-          { success: false, error: "Forbidden" },
-          { status: 403 }
-        );
-      }
 
       /* =========================
          SAFE DATA
@@ -94,19 +89,47 @@ export async function GET(
 
         aiResult = await analyzeClient(aiInput);
         script = await generateCallScript(aiInput, aiResult);
-      } catch (err) {
-        console.error("AI ERROR:", err);
+      } catch {
+        aiResult = null;
+        script = null;
       }
 
       /* =========================
          DECISION ENGINE
       ========================= */
+      const aiSafe = aiResult || {
+        behaviorPrediction: "unknown",
+        paymentProbability: 0,
+        strategy: "fallback",
+        tone: "balanced",
+        nextAction: "CALL",
+        summary: "No AI summary",
+        confidence: 0,
+        redFlags: [],
+        strengths: [],
+        riskBoost: 0,
+        urgency: 0,
+      };
+
       const decision = decideAction({
         risk,
-        ai: aiResult,
+        ai: aiSafe,
         osintConfidence: Number(osint?.confidenceScore || 0),
         lastActionDays: 0,
         totalDue,
+      });
+
+      const intelligence = buildClientIntelligenceProfile({
+        client: {
+          name: data.name,
+          phones,
+          addresses,
+          actions,
+          loans,
+          osint,
+        },
+        ai: aiSafe,
+        riskScore: risk.score,
       });
 
       /* =========================
@@ -134,11 +157,11 @@ export async function GET(
           ai: aiResult,
           script,
           decision,
+          intelligence,
           totalDue,
         },
       });
     } catch (error: any) {
-      console.error("GET CLIENT ERROR:", error);
 
       return NextResponse.json(
         {

@@ -15,7 +15,6 @@ export async function POST(request: Request) {
     const password = body.password;
     const name = body.name;
 
-    // ✅ validation
     if (!email || !password) {
       return NextResponse.json(
         { success: false, error: "Email and password required" },
@@ -27,7 +26,7 @@ export async function POST(request: Request) {
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!, // 🔥 مهم جدًا
       {
         cookies: {
           getAll: () => cookieStore.getAll(),
@@ -41,7 +40,7 @@ export async function POST(request: Request) {
     );
 
     /* =========================
-       SIGNUP (Supabase Auth)
+       SIGNUP
     ========================= */
 
     const { data, error } = await supabase.auth.signUp({
@@ -59,19 +58,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // 🔥 أهم check (كان ناقص عندك)
     if (!data.user || !data.user.id) {
       return NextResponse.json(
         {
           success: false,
-          error: "User not created properly",
+          error: "User not created (check email confirmation setting)",
         },
         { status: 500 }
       );
     }
 
     /* =========================
-       INSERT INTO users TABLE
+       DB INSERT
     ========================= */
 
     try {
@@ -84,15 +82,18 @@ export async function POST(request: Request) {
           role: resolveRoleByEmail(email),
           isSuperUser: isSuperUserEmail(email),
         })
-        .onConflictDoNothing(); // 🔥 يمنع الكراش
+        .onConflictDoNothing();
     } catch (dbError: any) {
-      console.error("DB ERROR:", dbError.message);
-      // ❌ متكسرش signup بسبب DB
-    }
+      console.error("DB ERROR FULL:", dbError);
 
-    /* =========================
-       SUCCESS
-    ========================= */
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database error: " + dbError.message,
+        },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -102,7 +103,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (err: any) {
-    console.error("SIGNUP ERROR:", err.message);
+    console.error("SIGNUP ERROR FULL:", err);
 
     return NextResponse.json(
       {
@@ -112,4 +113,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-      }
+                             }

@@ -1,4 +1,5 @@
 import "server-only";
+
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
@@ -12,18 +13,23 @@ declare global {
 function createClient() {
   const connectionString = getRequiredEnv("DATABASE_URL");
 
+  const isLocal =
+    connectionString.includes("localhost") ||
+    connectionString.includes("127.0.0.1");
+
   return postgres(connectionString, {
-    ssl: "require",
+    ssl: isLocal ? undefined : "require",
     max: 1,
     idle_timeout: 20,
     connect_timeout: 10,
+    prepare: false,
   });
 }
 
-const sql = global.__dbClient ?? createClient();
+const sql = globalThis.__dbClient ?? createClient();
 
 if (process.env.NODE_ENV !== "production") {
-  global.__dbClient = sql;
+  globalThis.__dbClient = sql;
 }
 
 export const db = drizzle(sql, { schema });

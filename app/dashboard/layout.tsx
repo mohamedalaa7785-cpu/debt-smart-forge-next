@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 type User = {
   role: string;
+  name?: string | null;
   is_super_user?: boolean;
 };
 
@@ -81,7 +82,7 @@ export default function DashboardLayout({
 
         {/* FOOTER */}
         <div className="text-xs text-gray-400">
-          Logged as: {user?.role || "loading..."}
+          Logged as: {user?.name || "loading..."} ({user?.role || "..."})
         </div>
       </aside>
 

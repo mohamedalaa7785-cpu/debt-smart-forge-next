@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { db } from "@/server/db";
-import { clientActions, clients, followups, logs, users, callLogs } from "@/server/db/schema";
+import { users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { ensureUsersTableColumns } from "@/server/lib/users-schema";
@@ -67,34 +67,21 @@ async function syncUserRecord(params: {
     isSuperUser: params.isSuperUser,
   };
 
-  const moveUserReferences = async (fromUserId: string, toUserId: string) => {
-    if (fromUserId === toUserId) return;
+  const existingById = await db.query.users.findFirst({
+    where: eq(users.id, payload.id),
+  });
 
-    await db.transaction(async (tx) => {
-      await tx.update(clients).set({ ownerId: toUserId }).where(eq(clients.ownerId, fromUserId));
-      await tx
-        .update(clients)
-        .set({ teamLeaderId: toUserId })
-        .where(eq(clients.teamLeaderId, fromUserId));
-      await tx.update(clients).set({ createdBy: toUserId }).where(eq(clients.createdBy, fromUserId));
-      await tx.update(clientActions).set({ userId: toUserId }).where(eq(clientActions.userId, fromUserId));
-      await tx.update(callLogs).set({ userId: toUserId }).where(eq(callLogs.userId, fromUserId));
-      await tx.update(followups).set({ userId: toUserId }).where(eq(followups.userId, fromUserId));
-      await tx.update(logs).set({ userId: toUserId }).where(eq(logs.userId, fromUserId));
-    });
-  };
-
-  const existingById = await db.query.users.findFirst({ where: eq(users.id, payload.id) });
   const existingByEmail = await db.query.users.findFirst({
     where: eq(users.email, payload.email),
   });
 
-  if (existingById && existingByEmail && existingById.id !== existingByEmail.id) {
-    await moveUserReferences(existingByEmail.id, existingById.id);
+  // لو في duplicate email → نحذف القديم بس (بدون لمس أي data تانية)
+  if (existingByEmail && existingByEmail.id !== payload.id) {
     await db.delete(users).where(eq(users.id, existingByEmail.id));
   }
 
-  const updatedById = await db
+  // update لو موجود
+  const updated = await db
     .update(users)
     .set({
       email: payload.email,
@@ -104,27 +91,21 @@ async function syncUserRecord(params: {
     })
     .where(eq(users.id, payload.id))
     .returning();
-  if (updatedById[0]) return updatedById[0];
 
-  if (existingByEmail && existingByEmail.id !== payload.id) {
-    await moveUserReferences(existingByEmail.id, payload.id);
-    await db.delete(users).where(eq(users.id, existingByEmail.id));
-  }
+  if (updated[0]) return updated[0];
 
-  const inserted = await db.insert(users).values(payload).onConflictDoNothing().returning();
+  // insert لو مش موجود
+  const inserted = await db
+    .insert(users)
+    .values(payload)
+    .onConflictDoNothing()
+    .returning();
+
   if (inserted[0]) return inserted[0];
 
-  await db
-    .update(users)
-    .set({
-      email: payload.email,
-      name: payload.name,
-      role: payload.role,
-      isSuperUser: payload.isSuperUser,
-    })
-    .where(eq(users.id, payload.id));
-
-  return db.query.users.findFirst({ where: eq(users.id, payload.id) });
+  return db.query.users.findFirst({
+    where: eq(users.id, payload.id),
+  });
 }
 
 export async function POST(req: Request) {
@@ -138,12 +119,14 @@ export async function POST(req: Request) {
 
     const rawBody = (await req.json()) as RegisterBody;
     const parsed = RegisterBodySchema.safeParse(rawBody);
+
     if (!parsed.success) {
       return NextResponse.json(
         { success: false, error: "Invalid registration payload" },
         { status: 400 }
       );
     }
+
     const email = parsed.data.email.toLowerCase();
     const password = parsed.data.password;
     const name = getDisplayName(parsed.data.name, email);
@@ -186,6 +169,7 @@ export async function POST(req: Request) {
 
       const { data: signInData, error: signInError } =
         await supabase.auth.signInWithPassword({ email, password });
+
       if (!signInError && signInData.session) {
         hasSession = true;
       }
@@ -243,7 +227,12 @@ export async function POST(req: Request) {
       emailConfirmationRequired: !hasSession,
     });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "Internal server error";
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 500 }
+    );
   }
-}
+        }

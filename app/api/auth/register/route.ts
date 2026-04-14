@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
 import { NextResponse } from "next/server";
 import { RegisterBodySchema } from "@/lib/validators/api";
 import { signupUser } from "@/server/auth/signup.service";
@@ -30,3 +31,4 @@ export async function POST(request: Request) {
     return handleApiError(error);
   }
 }
+export { POST } from "@/app/api/auth/signup/route";

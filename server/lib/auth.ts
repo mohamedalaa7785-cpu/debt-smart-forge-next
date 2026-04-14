@@ -33,7 +33,9 @@ export async function requireUser(): Promise<AuthUser> {
     throw new AuthError("User email missing");
   }
 
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
   let [dbUser, profile] = await Promise.all([
+  const [dbUser, profile] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, user.id) }),
     db.query.profiles.findFirst({ where: eq(profiles.userId, user.id) }),
   ]);
@@ -58,6 +60,7 @@ export async function requireUser(): Promise<AuthUser> {
     ]);
   }
 
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
   if (!dbUser) {
     throw new AuthError("User record not synced", 409);
   }

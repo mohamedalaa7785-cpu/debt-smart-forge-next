@@ -32,6 +32,7 @@ export default function DashboardLayout({
     { name: "Dashboard", href: "/dashboard" },
     { name: "Clients", href: "/dashboard/clients" },
     { name: "OSINT", href: "/dashboard/osint" },
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
     { name: "Map", href: "/dashboard/map" },
     { name: "AI Intelligence", href: "/dashboard/intelligence" },
     { name: "My Profile", href: "/dashboard/profile" },

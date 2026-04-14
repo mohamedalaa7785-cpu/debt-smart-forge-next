@@ -1,15 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
-} from "recharts";
 
 type Result = {
   socialLinks: string[];
@@ -66,6 +57,8 @@ export default function OSINTPage() {
     ];
   }, [data]);
 
+  const maxVal = Math.max(...chartData.map(d => d.value), 1);
+
   return (
     <div className="p-6 space-y-6">
       <h1 className="text-2xl font-bold">OSINT Intelligence</h1>
@@ -100,17 +93,17 @@ export default function OSINTPage() {
           </div>
 
           <div className="p-4 border rounded">
-            <h2 className="font-bold mb-2">Analysis Chart</h2>
-            <div className="w-full h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip />
-                  <Line type="monotone" dataKey="value" />
-                </LineChart>
-              </ResponsiveContainer>
+            <h2 className="font-bold mb-4">Analysis Chart</h2>
+            <div className="flex items-end gap-4 h-40 px-2">
+              {chartData.map((d, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                  <div 
+                    className="w-full bg-blue-500 rounded-t" 
+                    style={{ height: `${(d.value / maxVal) * 100}%` }}
+                  ></div>
+                  <span className="text-xs font-medium">{d.name} ({d.value})</span>
+                </div>
+              ))}
             </div>
           </div>
 

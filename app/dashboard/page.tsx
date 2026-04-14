@@ -3,14 +3,6 @@
 import Link from "next/link";
 import RiskBadge from "@/components/RiskBadge";
 import { formatCurrency } from "@/lib/utils";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-} from "recharts";
 import { useEffect, useState } from "react";
 
 /* =========================
@@ -116,24 +108,14 @@ export default function DashboardPage() {
     stats.highRisk ||
     clients.filter((c) => c.riskScore >= 70).length;
 
-  /* ================= CHART ================= */
+  /* ================= CHART DATA ================= */
 
-  const chartData = [
-    {
-      name: "Low",
-      value: clients.filter((c) => c.riskScore < 40).length,
-    },
-    {
-      name: "Medium",
-      value: clients.filter(
-        (c) => c.riskScore >= 40 && c.riskScore < 70
-      ).length,
-    },
-    {
-      name: "High",
-      value: clients.filter((c) => c.riskScore >= 70).length,
-    },
-  ];
+  const lowCount = clients.filter((c) => c.riskScore < 40).length;
+  const mediumCount = clients.filter(
+    (c) => c.riskScore >= 40 && c.riskScore < 70
+  ).length;
+  const highCount = clients.filter((c) => c.riskScore >= 70).length;
+  const maxCount = Math.max(lowCount, mediumCount, highCount, 1);
 
   if (loading) return <p className="p-6">Loading...</p>;
 
@@ -173,17 +155,32 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🔥 CHART */}
+      {/* 🔥 CHART (CSS-based Bar Chart) */}
       <div className="p-4 bg-white rounded-xl border shadow">
-        <h2 className="font-bold mb-2">Risk Distribution</h2>
-
-        <LineChart width={400} height={200} data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="name" />
-          <YAxis />
-          <Tooltip />
-          <Line type="monotone" dataKey="value" />
-        </LineChart>
+        <h2 className="font-bold mb-4">Risk Distribution</h2>
+        <div className="flex items-end gap-4 h-40 px-2">
+          <div className="flex-1 flex flex-col items-center gap-2">
+            <div 
+              className="w-full bg-green-500 rounded-t" 
+              style={{ height: `${(lowCount / maxCount) * 100}%` }}
+            ></div>
+            <span className="text-xs font-medium">Low ({lowCount})</span>
+          </div>
+          <div className="flex-1 flex flex-col items-center gap-2">
+            <div 
+              className="w-full bg-yellow-500 rounded-t" 
+              style={{ height: `${(mediumCount / maxCount) * 100}%` }}
+            ></div>
+            <span className="text-xs font-medium">Med ({mediumCount})</span>
+          </div>
+          <div className="flex-1 flex flex-col items-center gap-2">
+            <div 
+              className="w-full bg-red-500 rounded-t" 
+              style={{ height: `${(highCount / maxCount) * 100}%` }}
+            ></div>
+            <span className="text-xs font-medium">High ({highCount})</span>
+          </div>
+        </div>
       </div>
 
       {/* TABLE */}

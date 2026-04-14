@@ -24,19 +24,38 @@ function createSupabase(request: NextRequest, response: NextResponse) {
 }
 
 function isPublic(pathname: string) {
-  return pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/api/auth") || pathname.startsWith("/auth/callback");
+  return (
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/auth/callback")
+  );
 }
 
 function isProtected(pathname: string) {
-  return pathname === "/" || pathname.startsWith("/dashboard") || pathname.startsWith("/client") || pathname.startsWith("/add-client") || pathname.startsWith("/admin");
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/dashboard") ||
+    pathname.startsWith("/client") ||
+    pathname.startsWith("/add-client") ||
+    pathname.startsWith("/admin")
+  );
 }
 
-async function getDbRole(supabase: ReturnType<typeof createSupabase>, userId: string) {
-  const { data } = await supabase
+async function getDbRole(
+  supabase: ReturnType<typeof createSupabase>,
+  userId: string
+) {
+  const { data, error } = await supabase
     .from("profiles")
     .select("role,is_hidden_admin")
-    .eq("user_id", userId)
+    .eq("id", userId) // ✅ FIX IMPORTANT
     .maybeSingle<UserRoleRow>();
+
+  if (error) {
+    console.error("Role fetch error:", error);
+    return { role: "user", isSuperUser: false };
+  }
 
   return {
     role: normalizeRole(data?.role),
@@ -51,10 +70,17 @@ export async function middleware(request: NextRequest) {
   if (!hasSupabaseEnv()) return response;
 
   const supabase = createSupabase(request, response);
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
+  // ✅ FIX: use session instead of getUser
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const user = session?.user ?? null;
+
+  // ========================
+  // Public routes
+  // ========================
   if (isPublic(pathname)) {
     if (user && (pathname === "/login" || pathname === "/signup")) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
@@ -62,17 +88,36 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // ========================
+  // Protected routes
+  // ========================
   if (!user && isProtected(pathname)) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    if (pathname !== "/login") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
   }
 
+  // ========================
+  // Root redirect
+  // ========================
   if (user && pathname === "/") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (user && (pathname.startsWith("/admin") || pathname.startsWith("/dashboard/admin"))) {
+  // ========================
+  // Admin protection
+  // ========================
+  if (
+    user &&
+    (pathname.startsWith("/admin") ||
+      pathname.startsWith("/dashboard/admin"))
+  ) {
     const roleState = await getDbRole(supabase, user.id);
-    const isAdminLike = roleState.isSuperUser || roleState.role === "admin" || roleState.role === "hidden_admin";
+
+    const isAdminLike =
+      roleState?.isSuperUser ||
+      roleState?.role === "admin" ||
+      roleState?.role === "hidden_admin";
 
     if (!isAdminLike) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
@@ -83,5 +128,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+  ],
 };

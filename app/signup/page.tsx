@@ -1,25 +1,19 @@
 "use client";
 
- codex/fix-and-refactor-debt-smart-forge-project-lsg950
 import { FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
+
 export default function SignUpPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
-import { FormEvent, useState } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-export default function SignUpPage() {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
- codex/fix-and-refactor-debt-smart-forge-project-lsg950
   const [googleLoading, setGoogleLoading] = useState(false);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -53,12 +47,12 @@ export default function SignUpPage() {
     }
   }
 
- codex/fix-and-refactor-debt-smart-forge-project-lsg950
   async function signupWithGoogle() {
     setGoogleLoading(true);
     setError("");
 
-    const redirectTo = process.env.NEXT_PUBLIC_SUPABASE_AUTH_REDIRECT_URL || `${window.location.origin}/auth/callback`;
+    const redirectTo =
+      process.env.NEXT_PUBLIC_SUPABASE_AUTH_REDIRECT_URL || `${window.location.origin}/auth/callback`;
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo },
@@ -69,12 +63,12 @@ export default function SignUpPage() {
       setGoogleLoading(false);
     }
   }
+
   return (
     <main className="min-h-screen flex items-center justify-center bg-neutral-950 px-4 text-white">
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/5 p-8 shadow-2xl">
         <h1 className="text-3xl font-bold">Create account</h1>
         <p className="mt-2 text-sm text-white/70">
-          codex/fix-and-refactor-debt-smart-forge-project-lsg950
           Sign up with email and password, or continue with Google. Username is optional profile data.
         </p>
 
@@ -87,19 +81,44 @@ export default function SignUpPage() {
           {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
         </button>
 
-          Sign up with email and password. Username is optional profile data (not a login credential).
-        </p>
-
-
         <form className="mt-6 space-y-3" onSubmit={onSubmit}>
-          <input className="w-full rounded-lg bg-black/30 border border-white/20 p-2" placeholder="Full name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="w-full rounded-lg bg-black/30 border border-white/20 p-2" placeholder="Username (optional)" value={username} onChange={(e) => setUsername(e.target.value)} />
-          <input className="w-full rounded-lg bg-black/30 border border-white/20 p-2" placeholder="Email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="w-full rounded-lg bg-black/30 border border-white/20 p-2" placeholder="Password" type="password" minLength={8} required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input
+            className="w-full rounded-lg border border-white/20 bg-black/30 p-2"
+            placeholder="Full name (optional)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="w-full rounded-lg border border-white/20 bg-black/30 p-2"
+            placeholder="Username (optional)"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            className="w-full rounded-lg border border-white/20 bg-black/30 p-2"
+            placeholder="Email"
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+          <input
+            className="w-full rounded-lg border border-white/20 bg-black/30 p-2"
+            placeholder="Password"
+            type="password"
+            minLength={8}
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
           {error ? <p className="text-sm text-red-300">{error}</p> : null}
 
-          <button disabled={loading} className="w-full rounded-lg bg-white text-black font-semibold p-2 disabled:opacity-60" type="submit">
+          <button
+            disabled={loading}
+            className="w-full rounded-lg bg-white p-2 font-semibold text-black disabled:opacity-60"
+            type="submit"
+          >
             {loading ? "Creating account..." : "Sign up"}
           </button>
         </form>

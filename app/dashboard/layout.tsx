@@ -32,7 +32,6 @@ export default function DashboardLayout({
     { name: "Dashboard", href: "/dashboard" },
     { name: "Clients", href: "/dashboard/clients" },
     { name: "OSINT", href: "/dashboard/osint" },
- codex/fix-and-refactor-debt-smart-forge-project-lsg950
     { name: "Map", href: "/dashboard/map" },
     { name: "AI Intelligence", href: "/dashboard/intelligence" },
     { name: "My Profile", href: "/dashboard/profile" },
@@ -48,9 +47,9 @@ export default function DashboardLayout({
 
   return (
     <div className="flex min-h-screen bg-gray-100">
-      <aside className="w-64 bg-black text-white p-5 flex flex-col justify-between">
+      <aside className="w-64 bg-black p-5 text-white flex flex-col justify-between">
         <div>
-          <h2 className="text-2xl font-bold mb-6">Debt System</h2>
+          <h2 className="mb-6 text-2xl font-bold">Debt System</h2>
 
           <nav className="space-y-2">
             {menu.map((item) => {
@@ -60,8 +59,8 @@ export default function DashboardLayout({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`block px-3 py-2 rounded transition ${
-                    active ? "bg-gray-700" : "hover:bg-gray-800 text-gray-300"
+                  className={`block rounded px-3 py-2 transition ${
+                    active ? "bg-gray-700" : "text-gray-300 hover:bg-gray-800"
                   }`}
                 >
                   {item.name}

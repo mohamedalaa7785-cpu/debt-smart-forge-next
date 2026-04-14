@@ -6,6 +6,7 @@ import { parseNumber } from "@/lib/utils";
 import { getClientById } from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
 import { CreateActionBodySchema } from "@/lib/validators/api";
+import { ValidationError, handleApiError } from "@/server/core/error.handler";
 
 function normalizeActionType(type: string) {
   const t = String(type).toUpperCase();
@@ -23,7 +24,9 @@ export async function POST(req: NextRequest) {
       const rawBody = await req.json();
       const parsed = CreateActionBodySchema.safeParse(rawBody);
       if (!parsed.success) {
-        return NextResponse.json({ success: false, error: "Invalid action payload" }, { status: 400 });
+        throw new ValidationError("Invalid action payload", {
+          issues: parsed.error.issues.map((issue) => issue.message),
+        });
       }
 
       const body = parsed.data;
@@ -62,8 +65,8 @@ export async function POST(req: NextRequest) {
           requiresFollowUp: !body.nextActionDate,
         },
       });
-    } catch (error: any) {
-      return NextResponse.json({ success: false, error: error.message || "Action failed" }, { status: 500 });
+    } catch (error) {
+      return handleApiError(error);
     }
   });
 }

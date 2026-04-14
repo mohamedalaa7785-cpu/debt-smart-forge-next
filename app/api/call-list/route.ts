@@ -1,23 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateDailyCallList } from "@/server/services/daily-call.service";
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
 import { APIResponse } from "@/types";
+import { handleApiError } from "@/server/core/error.handler";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(req: NextRequest) {
-  try {
-    const user = await requireUser();
-    const callList = await generateDailyCallList(user.id);
+export async function GET(_req: NextRequest) {
+  return withAuth(async (user) => {
+    try {
+      const callList = await generateDailyCallList(user.id);
 
-    return NextResponse.json({
-      success: true,
-      data: callList,
-    } as APIResponse<any>);
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error?.message || "Unauthorized" },
-      { status: 401 }
-    );
-  }
+      return NextResponse.json({
+        success: true,
+        data: callList,
+      } as APIResponse<any>);
+    } catch (error) {
+      return handleApiError(error);
+    }
+  });
 }

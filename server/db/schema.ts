@@ -11,6 +11,7 @@ import {
   uuid,
   pgEnum,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 /* =========================
@@ -51,6 +52,7 @@ export const users = pgTable(
   },
   (table) => ({
     emailIdx: index("users_email_idx").on(table.email),
+    emailUnique: uniqueIndex("users_email_uidx").on(table.email),
   })
 );
 
@@ -93,6 +95,8 @@ export const clients = pgTable(
   (table) => ({
     ownerIdx: index("clients_owner_idx").on(table.ownerId),
     teamIdx: index("clients_team_idx").on(table.teamLeaderId),
+    createdByIdx: index("clients_created_by_idx").on(table.createdBy),
+    createdAtIdx: index("clients_created_at_idx").on(table.createdAt),
   })
 );
 
@@ -437,5 +441,6 @@ export const logs = pgTable(
   (table) => ({
     userIdx: index("audit_logs_user_idx").on(table.userId),
     clientIdx: index("audit_logs_client_idx").on(table.clientId),
+    createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt),
   })
 );

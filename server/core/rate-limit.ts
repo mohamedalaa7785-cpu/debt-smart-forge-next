@@ -1,4 +1,6 @@
-const map = new Map();
+import { RateLimitError } from "@/server/core/error.handler";
+
+const map = new Map<string, { count: number; time: number }>();
 
 export function rateLimit(key: string, limit = 20) {
   const now = Date.now();
@@ -11,10 +13,9 @@ export function rateLimit(key: string, limit = 20) {
   }
 
   data.count++;
-
   map.set(key, data);
 
   if (data.count > limit) {
-    throw new Error("Too many requests");
+    throw new RateLimitError();
   }
 }

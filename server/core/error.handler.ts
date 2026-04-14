@@ -37,6 +37,12 @@ export class DbError extends ApiError {
   }
 }
 
+export class RateLimitError extends ApiError {
+  constructor(message = "Too many requests", details?: Record<string, unknown>) {
+    super("forbidden", 429, message, details);
+  }
+}
+
 export function handleApiError(error: unknown) {
   if (error instanceof ApiError) {
     return NextResponse.json(

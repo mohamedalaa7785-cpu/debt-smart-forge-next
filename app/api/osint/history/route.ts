@@ -4,54 +4,42 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { osintHistory } from "@/server/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
+import { getClientById } from "@/server/services/client.service";
+import { OsintHistoryQuerySchema } from "@/lib/validators/api";
+import { ForbiddenError, ValidationError, handleApiError } from "@/server/core/error.handler";
 
 export async function GET(req: NextRequest) {
-  try {
-    /* 🔐 AUTH */
-    await requireUser();
+  return withAuth(async (user) => {
+    try {
+      const { searchParams } = new URL(req.url);
+      const parsed = OsintHistoryQuerySchema.safeParse({
+        clientId: searchParams.get("clientId"),
+        limit: searchParams.get("limit") ?? 10,
+      });
 
-    /* 📥 PARAMS */
-    const { searchParams } = new URL(req.url);
-    const clientId = searchParams.get("clientId");
+      if (!parsed.success) {
+        throw new ValidationError("Invalid osint history query", {
+          issues: parsed.error.issues.map((issue) => issue.message),
+        });
+      }
 
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "clientId is required" },
-        { status: 400 }
-      );
+      const { clientId, limit } = parsed.data;
+      const client = await getClientById(clientId, user.id, user.role);
+      if (!client) {
+        throw new ForbiddenError();
+      }
+
+      const history = await db
+        .select()
+        .from(osintHistory)
+        .where(eq(osintHistory.clientId, clientId))
+        .orderBy(desc(osintHistory.createdAt))
+        .limit(limit);
+
+      return NextResponse.json({ success: true, data: history });
+    } catch (error) {
+      return handleApiError(error);
     }
-
-    /* 📊 LIMIT (pagination ready) */
-    const limit = Number(searchParams.get("limit") || 10);
-
-    /* 🔍 QUERY */
-    const history = await db
-      .select()
-      .from(osintHistory)
-      .where(eq(osintHistory.clientId, clientId))
-      .orderBy(desc(osintHistory.createdAt))
-      .limit(limit);
-
-    /* ✅ RESPONSE */
-    return NextResponse.json({
-      success: true,
-      data: history,
-    });
-  } catch (error: any) {
-
-    const status =
-      error?.message === "Unauthorized" ||
-      error?.message === "Invalid session"
-        ? 401
-        : 500;
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: error?.message || "Failed to fetch history",
-      },
-      { status }
-    );
-  }
+  });
 }

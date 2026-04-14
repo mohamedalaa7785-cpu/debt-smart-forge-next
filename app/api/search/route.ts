@@ -163,7 +163,6 @@ export async function GET(req: NextRequest) {
       cache.set(cacheKey, { data, count: data.length, expiry: Date.now() + TTL_MS });
       return NextResponse.json(response);
     } catch (error) {
-      console.error("SEARCH ERROR:", error);
       return NextResponse.json({ success: false, error: "Search failed" }, { status: 500 });
     }
   });

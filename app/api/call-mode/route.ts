@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
-import { getClientsForUser, getClientById } from "@/server/services/client.service";
+import { getClientBundlesByIds, getClientsForUser } from "@/server/services/client.service";
 import { analyzeClient } from "@/server/services/ai.service";
 
 export const dynamic = "force-dynamic";
@@ -13,10 +13,9 @@ export async function GET(req: NextRequest) {
       // Limit to top 20 for performance in call mode
       const result: any[] = [];
       const limitedClients = baseClients.slice(0, 20);
+      const bundles = await getClientBundlesByIds(limitedClients.map((c) => c.id), user.id, user.role);
 
-      for (const client of limitedClients) {
-        const fullData = await getClientById(client.id);
-        if (!fullData) continue;
+      for (const fullData of bundles) {
 
         const totalDue = fullData.loans.reduce((sum, l) => sum + Number(l.overdue || 0), 0);
         const lastAction = fullData.actions[0]?.createdAt;
@@ -25,7 +24,7 @@ export async function GET(req: NextRequest) {
           : 999;
 
         const ai = await analyzeClient({
-          clientName: client.name || "Unknown",
+          clientName: fullData.name || "Unknown",
           totalAmountDue: totalDue,
           lastActionDays,
           phonesCount: fullData.phones.length,
@@ -35,8 +34,8 @@ export async function GET(req: NextRequest) {
         const priority = (totalDue / 1000) * 10 + (ai.paymentProbability) * 0.5 + (lastActionDays * 2);
 
         result.push({
-          id: client.id,
-          name: client.name,
+          id: fullData.id,
+          name: fullData.name,
           phone: fullData.phones[0]?.phone || "",
           totalDue,
           lastActionDays,
@@ -52,7 +51,6 @@ export async function GET(req: NextRequest) {
         data: result,
       });
     } catch (error: any) {
-      console.error("CALL MODE API ERROR:", error);
       return NextResponse.json({ success: false, error: error.message }, { status: 500 });
     }
   });

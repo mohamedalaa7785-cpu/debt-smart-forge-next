@@ -12,7 +12,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke-validators.mjs",
-    "test": "npm run typecheck && npm run smoke"
+    "test": "npm run typecheck && npm run smoke",
+    "checkup": "node scripts/system-check.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

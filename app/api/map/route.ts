@@ -25,7 +25,6 @@ export async function GET(_req: NextRequest) {
       data,
     } as APIResponse<any>);
   } catch (error: any) {
-    console.error("GET /api/map error:", error);
     return NextResponse.json(
       { success: false, error: error?.message || "Unauthorized" },
       { status: 401 }

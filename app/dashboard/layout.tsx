@@ -22,7 +22,7 @@ export default function DashboardLayout({
     fetch("/api/auth/me")
       .then((res) => res.json())
       .then((data) => {
-        if (data?.user) setUser(data.user);
+        if (data?.data) setUser(data.data);
       });
   }, []);
 
@@ -40,7 +40,7 @@ export default function DashboardLayout({
   /* ---------------- ROLE LOGIC ---------------- */
   let menu = [...baseMenu];
 
-  if (user?.role === "admin") {
+  if (user?.role === "admin" || user?.role === "hidden_admin") {
     menu = [...menu, ...adminMenu];
   }
 

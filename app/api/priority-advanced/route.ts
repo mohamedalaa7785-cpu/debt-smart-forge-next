@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-import { getClientById, getClientsForUser } from "@/server/services/client.service";
+import { getClientBundlesByIds, getClientsForUser } from "@/server/services/client.service";
 import { sortClientsByPriority } from "@/server/core/priority.engine";
 import { requireUser } from "@/server/lib/auth";
 
@@ -10,8 +10,7 @@ export async function GET(req: NextRequest) {
     const user = await requireUser();
     const clients = await getClientsForUser(user.id, user.role);
 
-    const full = await Promise.all(clients.map((c: any) => getClientById(c.id)));
-    const valid = full.filter(Boolean);
+    const valid = await getClientBundlesByIds(clients.map((c: any) => c.id), user.id, user.role);
     const sorted = sortClientsByPriority(valid);
 
     return NextResponse.json({

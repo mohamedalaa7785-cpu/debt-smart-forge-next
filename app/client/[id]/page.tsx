@@ -1,5 +1,5 @@
 import { requireUser } from "@/server/lib/auth";
-import { getClientById, canAccessClient } from "@/server/services/client.service";
+import { getClientById } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
 import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
@@ -14,10 +14,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ClientPage({ params }: { params: { id: string } }) {
   const user = await requireUser();
-  const data = await getClientById(params.id);
+  const data = await getClientById(params.id, user.id, user.role);
 
   if (!data) return <div className="p-8 text-center">Client not found</div>;
-  if (!canAccessClient(data as any, user.id, user.role)) return <div className="p-8 text-center">Access Denied</div>;
 
   const phones = data.phones || [];
   const addresses = data.addresses || [];

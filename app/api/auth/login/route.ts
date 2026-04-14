@@ -134,7 +134,6 @@ export async function POST(request: Request) {
       },
     });
   } catch (err: any) {
-    console.error("LOGIN ERROR:", err);
 
     return NextResponse.json(
       {

@@ -4,43 +4,30 @@ import { db } from "@/server/db";
 import { clients } from "@/server/db/schema";
 import { inArray } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
+import { AssignClientsBodySchema } from "@/lib/validators/api";
+import { canAssignClients } from "@/server/lib/role";
 
 export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
     try {
       const body = await req.json();
-      const { ids, userId } = body;
+      const parsed = AssignClientsBodySchema.safeParse(body);
 
-      if (!ids || !Array.isArray(ids) || ids.length === 0) {
-        return NextResponse.json(
-          { success: false, error: "No client IDs provided" },
-          { status: 400 }
-        );
+      if (!parsed.success) {
+        return NextResponse.json({ success: false, error: "Invalid assign payload" }, { status: 400 });
       }
 
-      if (!userId) {
-        return NextResponse.json(
-          { success: false, error: "userId is required" },
-          { status: 400 }
-        );
+      if (!canAssignClients(user.role)) {
+        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
       }
 
-      /* 🔐 ROLE CHECK */
-      if (user.role !== "admin" && user.role !== "hidden_admin") {
-        return NextResponse.json(
-          { success: false, error: "Forbidden" },
-          { status: 403 }
-        );
-      }
+      const { ids, ownerId } = parsed.data;
 
-      await db
-        .update(clients)
-        .set({ ownerId: userId })
-        .where(inArray(clients.id, ids));
+      await db.update(clients).set({ ownerId }).where(inArray(clients.id, ids));
 
       await logAction(user.id, "ASSIGN_CLIENTS", {
         count: ids.length,
-        assignedTo: userId,
+        assignedTo: ownerId,
       });
 
       return NextResponse.json({
@@ -48,10 +35,7 @@ export async function POST(req: NextRequest) {
         updated: ids.length,
       });
     } catch (error: any) {
-      return NextResponse.json(
-        { success: false, error: error.message || "Assign failed" },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: error.message || "Assign failed" }, { status: 500 });
     }
   });
-    }
+}

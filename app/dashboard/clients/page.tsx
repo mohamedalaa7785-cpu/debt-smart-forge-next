@@ -53,6 +53,7 @@ export default function ClientsPage() {
 
     await fetch("/api/clients/bulk-delete", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: selected }),
     });
 
@@ -62,13 +63,14 @@ export default function ClientsPage() {
 
   /* ---------------- BULK ASSIGN ---------------- */
   async function assignSelected() {
-    const userId = prompt("Enter user ID to assign:");
+    const ownerId = prompt("Enter owner user ID:");
 
-    if (!userId) return;
+    if (!ownerId) return;
 
     await fetch("/api/clients/assign", {
       method: "POST",
-      body: JSON.stringify({ ids: selected, userId }),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: selected, ownerId }),
     });
 
     setSelected([]);

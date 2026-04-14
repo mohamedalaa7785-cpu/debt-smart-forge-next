@@ -3,8 +3,9 @@ import { withAuth } from "@/server/lib/auth";
 import { db } from "@/server/db";
 import { clientActions } from "@/server/db/schema";
 import { parseNumber } from "@/lib/utils";
-import { canAccessClient, getClientById } from "@/server/services/client.service";
+import { getClientById } from "@/server/services/client.service";
 import { logAction } from "@/server/services/log.service";
+import { CreateActionBodySchema } from "@/lib/validators/api";
 
 function normalizeActionType(type: string) {
   const t = String(type).toUpperCase();
@@ -19,19 +20,16 @@ function normalizeActionType(type: string) {
 export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
     try {
-      const body = await req.json();
-      
-      if (!body.clientId || !body.actionType) {
-        return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 });
+      const rawBody = await req.json();
+      const parsed = CreateActionBodySchema.safeParse(rawBody);
+      if (!parsed.success) {
+        return NextResponse.json({ success: false, error: "Invalid action payload" }, { status: 400 });
       }
 
-      const client = await getClientById(body.clientId);
+      const body = parsed.data;
+      const client = await getClientById(body.clientId, user.id, user.role);
       if (!client) {
         return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
-      }
-
-      if (!canAccessClient(client as any, user.id, user.role)) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
       }
 
       const actionType = normalizeActionType(body.actionType);
@@ -46,7 +44,7 @@ export async function POST(req: NextRequest) {
           note: body.note?.trim() || null,
           result: body.result?.trim() || null,
           amountPaid: amountPaid.toString(),
-          nextActionDate: body.nextActionDate || null,
+          nextActionDate: body.nextActionDate ? new Date(body.nextActionDate) : null,
         })
         .returning();
 
@@ -65,7 +63,6 @@ export async function POST(req: NextRequest) {
         },
       });
     } catch (error: any) {
-      console.error("ACTION ERROR:", error);
       return NextResponse.json({ success: false, error: error.message || "Action failed" }, { status: 500 });
     }
   });

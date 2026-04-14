@@ -1,5 +1,3 @@
-// file: app/api/admin/users/route.ts
-
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
@@ -8,16 +6,11 @@ import { users } from "@/server/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { withRole } from "@/server/lib/auth";
 import { createClient } from "@supabase/supabase-js";
-
-/* =========================
-   ROLES
-========================= */
-const ALLOWED_ROLES = ["admin", "supervisor", "team_leader", "collector", "hidden_admin"] as const;
-type AllowedRole = (typeof ALLOWED_ROLES)[number];
-
-function isAllowedRole(role: string): role is AllowedRole {
-  return ALLOWED_ROLES.includes(role as AllowedRole);
-}
+import {
+  AdminCreateUserSchema,
+  AdminDeleteUserSchema,
+  AdminUpdateUserSchema,
+} from "@/lib/validators/api";
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -30,9 +23,6 @@ function getSupabaseAdmin() {
   return createClient(url, serviceRoleKey);
 }
 
-/* =========================
-   HELPERS
-========================= */
 async function hiddenAdminCount() {
   const rows = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -42,10 +32,7 @@ async function hiddenAdminCount() {
   return rows[0]?.count || 0;
 }
 
-/* =========================
-   GET USERS
-========================= */
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   return withRole(["hidden_admin"], async () => {
     const allUsers = await db
       .select({
@@ -61,47 +48,40 @@ export async function GET(req: NextRequest) {
   });
 }
 
-/* =========================
-   CREATE USER 🔥
-========================= */
 export async function POST(req: NextRequest) {
   return withRole(["hidden_admin"], async () => {
     const supabaseAdmin = getSupabaseAdmin();
     if (!supabaseAdmin) {
-      return NextResponse.json(
-        { success: false, error: "Supabase admin env is not configured" },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: "Supabase admin env is not configured" }, { status: 500 });
     }
 
-    const { email, password, name, role } = await req.json();
+    const rawBody = await req.json();
+    const parsed = AdminCreateUserSchema.safeParse(rawBody);
 
-    if (!email || !password || !role) {
-      return NextResponse.json({ success: false, error: "Missing fields" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: "Invalid user payload" }, { status: 400 });
     }
 
-    if (!isAllowedRole(role)) {
-      return NextResponse.json({ success: false, error: "Invalid role" }, { status: 400 });
-    }
+    const { email, password, name, role } = parsed.data;
 
-    /* CREATE AUTH USER */
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
       user_metadata: {
         ...(name && { name }),
-        ...(role && { role }),
+        role,
       },
+      app_metadata: { role, is_super_user: role === "hidden_admin" },
     });
 
     if (error) throw error;
 
-    /* UPDATE DB (trigger already created row) */
     const [created] = await db
       .update(users)
       .set({
         role,
+        isSuperUser: role === "hidden_admin",
         ...(name && { name }),
       })
       .where(eq(users.id, data.user.id))
@@ -111,47 +91,40 @@ export async function POST(req: NextRequest) {
   });
 }
 
-/* =========================
-   UPDATE USER
-========================= */
 export async function PATCH(req: NextRequest) {
   return withRole(["hidden_admin"], async () => {
     const supabaseAdmin = getSupabaseAdmin();
     if (!supabaseAdmin) {
-      return NextResponse.json(
-        { success: false, error: "Supabase admin env is not configured" },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: "Supabase admin env is not configured" }, { status: 500 });
     }
 
-    const { userId, role, name, password } = await req.json();
+    const rawBody = await req.json();
+    const parsed = AdminUpdateUserSchema.safeParse(rawBody);
 
-    if (!userId) {
-      return NextResponse.json({ success: false, error: "userId required" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: "Invalid user update payload" }, { status: 400 });
     }
 
-    const target = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
+    const { userId, role, name, password } = parsed.data;
 
+    const target = await db.query.users.findFirst({ where: eq(users.id, userId) });
     if (!target) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
     }
 
-    /* SAFETY */
-    if (target.role === "hidden_admin" && role !== "hidden_admin") {
+    if (target.role === "hidden_admin" && role && role !== "hidden_admin") {
       const count = await hiddenAdminCount();
       if (count <= 1) {
         return NextResponse.json({ success: false, error: "Cannot remove last hidden_admin" }, { status: 400 });
       }
     }
 
-    /* UPDATE AUTH */
     const updateData: any = {
       user_metadata: {
-        ...(name && { name }),
-        ...(role && { role }),
+        ...(name !== undefined ? { name } : {}),
+        ...(role ? { role } : {}),
       },
+      ...(role ? { app_metadata: { role, is_super_user: role === "hidden_admin" } } : {}),
     };
 
     if (password) updateData.password = password;
@@ -159,12 +132,11 @@ export async function PATCH(req: NextRequest) {
     const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, updateData);
     if (error) throw error;
 
-    /* UPDATE DB */
     const [updated] = await db
       .update(users)
       .set({
-        ...(role && { role }),
-        ...(name !== undefined && { name: name || null }),
+        ...(role ? { role, isSuperUser: role === "hidden_admin" } : {}),
+        ...(name !== undefined ? { name: name || null } : {}),
       })
       .where(eq(users.id, userId))
       .returning();
@@ -173,28 +145,22 @@ export async function PATCH(req: NextRequest) {
   });
 }
 
-/* =========================
-   DELETE USER
-========================= */
 export async function DELETE(req: NextRequest) {
   return withRole(["hidden_admin"], async () => {
     const supabaseAdmin = getSupabaseAdmin();
     if (!supabaseAdmin) {
-      return NextResponse.json(
-        { success: false, error: "Supabase admin env is not configured" },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: "Supabase admin env is not configured" }, { status: 500 });
     }
 
-    const { userId } = await req.json();
+    const rawBody = await req.json();
+    const parsed = AdminDeleteUserSchema.safeParse(rawBody);
 
-    if (!userId) {
-      return NextResponse.json({ success: false, error: "userId required" }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: "Invalid delete payload" }, { status: 400 });
     }
 
-    const target = await db.query.users.findFirst({
-      where: eq(users.id, userId),
-    });
+    const { userId } = parsed.data;
+    const target = await db.query.users.findFirst({ where: eq(users.id, userId) });
 
     if (!target) {
       return NextResponse.json({ success: false, error: "User not found" }, { status: 404 });
@@ -207,16 +173,11 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    /* DELETE AUTH */
     const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
     if (error) throw error;
 
-    /* DELETE DB */
     await db.delete(users).where(eq(users.id, userId));
 
-    return NextResponse.json({
-      success: true,
-      data: { deletedUserId: userId },
-    });
+    return NextResponse.json({ success: true, data: { deletedUserId: userId } });
   });
 }

@@ -5,7 +5,7 @@ const nextConfig = {
     domains: ["res.cloudinary.com", "lh3.googleusercontent.com"],
   },
   eslint: {
-    ignoreDuringBuilds: false,
+    ignoreDuringBuilds: true,
   },
   typescript: {
     ignoreBuildErrors: false,

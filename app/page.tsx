@@ -50,12 +50,6 @@ export default async function HomePage() {
                 Sign In
               </Link>
 
-              <Link
-                href="/signup"
-                className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/5 px-6 py-3 font-semibold text-white backdrop-blur transition hover:bg-white/10"
-              >
-                Sign Up
-              </Link>
             </div>
 
             <div className="mt-8 grid max-w-xl gap-3 sm:grid-cols-3">
@@ -84,8 +78,7 @@ export default async function HomePage() {
                   Start from the secure auth screen
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Sign in for existing users or create a new account. The next step is
-                  fully routed through the server auth flow.
+                  Sign in with your assigned username and password. Self registration is temporarily disabled.
                 </p>
 
                 <div className="mt-5 grid gap-3">
@@ -94,12 +87,6 @@ export default async function HomePage() {
                     className="rounded-xl bg-sky-500 px-4 py-3 text-center font-semibold text-white transition hover:bg-sky-400"
                   >
                     Sign In
-                  </Link>
-                  <Link
-                    href="/signup"
-                    className="rounded-xl border border-white/10 px-4 py-3 text-center font-semibold text-white transition hover:bg-white/5"
-                  >
-                    Create Account
                   </Link>
                 </div>
               </div>

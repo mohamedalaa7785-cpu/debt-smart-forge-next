@@ -20,39 +20,40 @@ interface Props {
   address?: string;
 }
 
-/* =========================
-   LOAD GOOGLE SCRIPT
-========================= */
+const MAPS_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY?.trim();
+
 function loadGoogleMaps() {
   if (typeof window === "undefined") return;
+  if (!MAPS_KEY) return;
+  if (window.google?.maps) return;
 
-  if (window.google) return;
+  const existing = document.querySelector('script[data-google-maps="true"]');
+  if (existing) return;
 
   const script = document.createElement("script");
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`;
+  script.src = `https://maps.googleapis.com/maps/api/js?key=${MAPS_KEY}`;
   script.async = true;
+  script.defer = true;
+  script.dataset.googleMaps = "true";
 
   document.body.appendChild(script);
 }
 
-/* =========================
-   COMPONENT
-========================= */
-export default function MapView({
-  clients = [],
-  address,
-}: Props) {
+export default function MapView({ clients = [], address }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
+  const [error, setError] = useState("");
 
-  /* =========================
-     INIT MAP
-  ========================= */
   useEffect(() => {
+    if (!MAPS_KEY) {
+      setError("Google Maps key is missing");
+      return;
+    }
+
     loadGoogleMaps();
 
     const interval = setInterval(() => {
-      if (window.google && mapRef.current) {
+      if (window.google?.maps && mapRef.current) {
         const m = new window.google.maps.Map(mapRef.current, {
           center: { lat: 30.0444, lng: 31.2357 },
           zoom: 10,
@@ -62,16 +63,13 @@ export default function MapView({
         setMap(m);
         clearInterval(interval);
       }
-    }, 300);
+    }, 250);
 
     return () => clearInterval(interval);
   }, []);
 
-  /* =========================
-     HANDLE ADDRESS
-  ========================= */
   useEffect(() => {
-    if (!map || !address) return;
+    if (!map || !address || !window.google?.maps) return;
 
     const geocoder = new window.google.maps.Geocoder();
 
@@ -91,11 +89,8 @@ export default function MapView({
     });
   }, [map, address]);
 
-  /* =========================
-     HANDLE CLIENTS
-  ========================= */
   useEffect(() => {
-    if (!map || clients.length === 0) return;
+    if (!map || clients.length === 0 || !window.google?.maps) return;
 
     const bounds = new window.google.maps.LatLngBounds();
 
@@ -127,24 +122,19 @@ export default function MapView({
     map.fitBounds(bounds);
   }, [map, clients]);
 
-  /* =========================
-     UI
-  ========================= */
+  if (error) {
+    return <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-700">{error}</div>;
+  }
+
   return (
     <div className="relative">
+      <div ref={mapRef} className="w-full h-[320px] rounded-xl border" />
 
-      <div
-        ref={mapRef}
-        className="w-full h-[320px] rounded-xl border"
-      />
-
-      {/* QUICK ACTIONS */}
       {address && (
         <a
-          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-            address
-          )}`}
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}
           target="_blank"
+          rel="noreferrer"
           className="absolute bottom-2 right-2 bg-black text-white text-xs px-3 py-1 rounded"
         >
           Open in Maps
@@ -152,4 +142,4 @@ export default function MapView({
       )}
     </div>
   );
-          }
+}

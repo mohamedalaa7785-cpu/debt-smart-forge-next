@@ -99,6 +99,11 @@ function adjustPriority(base: RecommendationResult, input: RecommendationInput) 
   };
 }
 
+
+function isRecommendationAction(value: unknown): value is RecommendationResult["action"] {
+  return value === "CALL" || value === "VISIT" || value === "WAIT" || value === "SKIP";
+}
+
 /* ================= AI (STRUCTURED) ================= */
 
 async function aiDecision(input: RecommendationInput) {
@@ -127,9 +132,8 @@ async function aiDecision(input: RecommendationInput) {
       }
     );
 
-    return JSON.parse(
-      res.data?.choices?.[0]?.message?.content || "{}"
-    );
+    const raw = JSON.parse(res.data?.choices?.[0]?.message?.content || "{}");
+    return raw && typeof raw === "object" ? raw : null;
   } catch {
     return null;
   }
@@ -149,12 +153,12 @@ export async function getRecommendation(
   /* 🔥 AI LAYER */
   const ai = await aiDecision(input);
 
-  if (ai?.action) {
+  if (isRecommendationAction(ai?.action)) {
     result.action = ai.action;
   }
 
-  if (ai?.reason) {
-    result.reason = ai.reason;
+  if (typeof ai?.reason === "string" && ai.reason.trim()) {
+    result.reason = ai.reason.trim();
   }
 
   return result;

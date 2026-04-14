@@ -5,7 +5,6 @@ import { uniqueArray } from "@/lib/utils";
 import { db } from "@/server/db";
 import { osintResults, osintHistory, clientAddresses } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { getRequiredEnv } from "@/lib/env";
 
 /* ================= CACHE ================= */
 
@@ -43,8 +42,8 @@ export interface OSINTResult {
 
 /* ================= KEYS ================= */
 
-const SERP_KEY = getRequiredEnv("SERPAPI_API_KEY");
-const OPENAI_KEY = process.env.OPENAI_API_KEY;
+const SERP_KEY = process.env.SERPAPI_API_KEY?.trim() || null;
+const OPENAI_KEY = process.env.OPENAI_API_KEY?.trim() || null;
 const MAPS_KEY =
   process.env.GOOGLE_MAPS_API_KEY ||
   process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -183,7 +182,7 @@ function scoreResult(result: any, input: OSINTInput) {
 /* ================= PROVIDERS ================= */
 
 const searchWeb = (q: string) =>
-  safeRequest("https://serpapi.com/search.json", { q, api_key: SERP_KEY });
+  SERP_KEY ? safeRequest("https://serpapi.com/search.json", { q, api_key: SERP_KEY }) : null;
 
 const searchMaps = (q: string) =>
   MAPS_KEY
@@ -195,6 +194,7 @@ const searchMaps = (q: string) =>
 
 async function searchImage(url: string) {
   if (!url) return [];
+  if (!SERP_KEY) return [];
   const data = await safeRequest("https://serpapi.com/search.json", {
     engine: "google_lens",
     url,
@@ -246,6 +246,21 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
   if (cached && cached.expiry > Date.now()) return cached.data;
 
   const queries = generateQueries(input);
+
+  if (!SERP_KEY && !MAPS_KEY) {
+    return {
+      socialLinks: [],
+      webResults: [],
+      workplace: [],
+      imageMatches: [],
+      mapsResults: [],
+      mapPlaces: [],
+      summary: "OSINT providers are not configured",
+      confidence: 0,
+      fraudFlags: ["MISSING_OSINT_KEYS"],
+      riskLevel: "low",
+    };
+  }
 
   const webRaw = await runLimited(queries, searchWeb);
   const mapsRaw = await runLimited(queries, searchMaps);

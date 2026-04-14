@@ -24,7 +24,7 @@ function createSupabase(request: NextRequest, response: NextResponse) {
 }
 
 function isPublic(pathname: string) {
-  return pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/api/auth");
+  return pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/api/auth") || pathname.startsWith("/auth/callback");
 }
 
 function isProtected(pathname: string) {

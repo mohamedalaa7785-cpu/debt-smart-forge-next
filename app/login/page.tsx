@@ -1,15 +1,19 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createClient } from "@/lib/supabase";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const supabase = useMemo(() => createClient(), []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -42,11 +46,53 @@ export default function LoginPage() {
     }
   }
 
+  async function loginWithGoogle() {
+    setGoogleLoading(true);
+    setError("");
+
+    const redirectTo = process.env.NEXT_PUBLIC_SUPABASE_AUTH_REDIRECT_URL || `${window.location.origin}/auth/callback`;
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
+      },
+    });
+
+    if (oauthError) {
+      setError(oauthError.message);
+      setGoogleLoading(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md space-y-6 rounded-xl bg-white p-8 shadow-lg">
         <div className="space-y-2 text-center">
           <h1 className="text-3xl font-bold text-gray-900">Debt Smart OS</h1>
+ codex/fix-and-refactor-debt-smart-forge-project-lsg950
+          <p className="text-sm text-gray-500">Sign in using your email/password or Google account.</p>
+        </div>
+
+        <button
+          type="button"
+          className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={loginWithGoogle}
+          disabled={googleLoading}
+        >
+          {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
+        </button>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-white px-2 text-gray-500">Or with email</span>
+          </div>
           <p className="text-sm text-gray-500">Sign in using your email and password.</p>
         </div>
 
@@ -64,9 +110,7 @@ export default function LoginPage() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-sm font-medium text-gray-700">
-              Password
-            </label>
+            <label className="text-sm font-medium text-gray-700">Password</label>
             <input
               type="password"
               className="w-full rounded-lg border border-gray-300 px-4 py-2 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
@@ -77,9 +121,9 @@ export default function LoginPage() {
             />
           </div>
 
-          {error ? (
+          {error || searchParams.get("error") ? (
             <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-              {error}
+              {error || searchParams.get("error")}
             </div>
           ) : null}
 

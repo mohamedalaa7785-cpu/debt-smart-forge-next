@@ -37,6 +37,10 @@ export async function requireUser(): Promise<AuthUser> {
     throw new AuthError("User record not synced", 409);
   }
 
+  if (!dbUser.email) {
+    throw new AuthError("User email missing in profile", 409);
+  }
+
   const role: AuthRole = dbUser.isSuperUser ? "hidden_admin" : normalizeRole(dbUser.role);
 
   return {

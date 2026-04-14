@@ -1,53 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
 import { getClientById } from "@/server/services/client.service";
 import { analyzeFraud } from "@/server/services/fraud.service";
+import { ClientIdBodySchema } from "@/lib/validators/api";
+import { ForbiddenError, ValidationError, handleApiError } from "@/server/core/error.handler";
 
 export async function POST(req: NextRequest) {
-  try {
-    const user = await requireUser();
+  return withAuth(async (user) => {
+    try {
+      const body = await req.json();
+      const parsed = ClientIdBodySchema.safeParse(body);
 
-    const body = await req.json();
-    const { clientId } = body;
+      if (!parsed.success) {
+        throw new ValidationError("clientId required", {
+          issues: parsed.error.issues.map((issue) => issue.message),
+        });
+      }
 
-    if (!clientId) {
-      return NextResponse.json(
-        { success: false, error: "clientId required" },
-        { status: 400 }
-      );
+      const { clientId } = parsed.data;
+      const client = await getClientById(clientId, user.id, user.role);
+
+      if (!client) {
+        throw new ForbiddenError();
+      }
+
+      const result = await analyzeFraud({
+        clientId,
+        phones: client.phones?.map((p) => p.phone),
+        loans: client.loans,
+        osint: client.osint,
+      });
+
+      return NextResponse.json({
+        success: true,
+        data: result,
+      });
+    } catch (error) {
+      return handleApiError(error);
     }
-
-    const client = await getClientById(
-      clientId,
-      user.id,
-      user.role
-    );
-
-    if (!client) {
-      return NextResponse.json(
-        { success: false, error: "Forbidden" },
-        { status: 403 }
-      );
-    }
-
-    const result = await analyzeFraud({
-      clientId,
-      phones: client.phones?.map((p: any) => p.phone),
-      loans: client.loans,
-      osint: client.osint,
-    });
-
-    return NextResponse.json({
-      success: true,
-      data: result,
-    });
-  } catch (error: any) {
-    return NextResponse.json(
-      {
-        success: false,
-        error: error.message || "Fraud failed",
-      },
-      { status: 500 }
-    );
-  }
+  });
 }

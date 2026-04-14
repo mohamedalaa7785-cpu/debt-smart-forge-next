@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { uploadImage } from "@/server/services/cloudinary.service";
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
 import { UploadBodySchema } from "@/lib/validators/api";
+import { ValidationError, handleApiError } from "@/server/core/error.handler";
 
 const MAX_SIZE_MB = 5;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -27,48 +28,44 @@ function validateBase64(file: string) {
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    await requireUser();
-
-    let body: unknown;
+  return withAuth(async () => {
     try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
+      const body = await req.json();
+
+      const parsed = UploadBodySchema.safeParse(body);
+      if (!parsed.success) {
+        throw new ValidationError("Invalid upload payload", {
+          issues: parsed.error.issues.map((issue) => issue.message),
+        });
+      }
+
+      const validationError = validateBase64(parsed.data.file);
+      if (validationError) {
+        throw new ValidationError(validationError);
+      }
+
+      const requestedFolder = (parsed.data.folder || "debt-smart/clients").trim();
+      const folder = ALLOWED_FOLDERS.has(requestedFolder) ? requestedFolder : "debt-smart/clients";
+
+      const result = await uploadImage(parsed.data.file, folder);
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          url: result.url,
+          publicId: result.publicId,
+          width: result.width,
+          height: result.height,
+          format: result.format,
+          sizeKB: result.sizeKB,
+        },
+        meta: {
+          maxSizeMB: MAX_SIZE_MB,
+          folder,
+        },
+      });
+    } catch (error) {
+      return handleApiError(error);
     }
-
-    const parsed = UploadBodySchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ success: false, error: "Invalid upload payload" }, { status: 400 });
-    }
-
-    const validationError = validateBase64(parsed.data.file);
-    if (validationError) {
-      return NextResponse.json({ success: false, error: validationError }, { status: 400 });
-    }
-
-    const requestedFolder = (parsed.data.folder || "debt-smart/clients").trim();
-    const folder = ALLOWED_FOLDERS.has(requestedFolder) ? requestedFolder : "debt-smart/clients";
-
-    const result = await uploadImage(parsed.data.file, folder);
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        url: result.url,
-        publicId: result.publicId,
-        width: result.width,
-        height: result.height,
-        format: result.format,
-        sizeKB: result.sizeKB,
-      },
-      meta: {
-        maxSizeMB: MAX_SIZE_MB,
-        folder,
-      },
-    });
-  } catch (error: any) {
-    const status = error?.message === "Unauthorized" || error?.message === "Invalid session" ? 401 : 500;
-    return NextResponse.json({ success: false, error: error?.message || "Upload failed" }, { status });
-  }
+  });
 }

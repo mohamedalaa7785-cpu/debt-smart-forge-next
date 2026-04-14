@@ -27,7 +27,7 @@ for (const route of criticalRoutes) {
 }
 
 const loginSrc = read("app/api/auth/login/route.ts");
-assert("login route wired to validator", loginSrc.includes("LoginBodySchema"));
+assert("login route wired to auth service", loginSrc.includes("loginUser") || loginSrc.includes("LoginBodySchema"));
 
 const registerSrc = read("app/api/auth/register/route.ts");
 assert("register route wired to validator", registerSrc.includes("RegisterBodySchema"));

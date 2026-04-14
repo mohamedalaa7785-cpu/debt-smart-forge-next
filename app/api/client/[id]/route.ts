@@ -1,62 +1,50 @@
-// file: app/api/client/[id]/route.ts
-
 export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getClientById } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
-import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
+import { analyzeClient, generateCallScript, type AIResult } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
 import { buildClientIntelligenceProfile } from "@/server/services/intelligence.service";
 import { logAction } from "@/server/services/log.service";
+import { ValidationError, handleApiError } from "@/server/core/error.handler";
 
-export async function GET(
-  req: NextRequest,
-  context: { params: { id: string } }
-) {
+const FALLBACK_AI: AIResult = {
+  behaviorPrediction: "unknown",
+  paymentProbability: 0,
+  strategy: "fallback",
+  tone: "balanced",
+  nextAction: "CALL",
+  summary: "No AI summary",
+  confidence: 0,
+  redFlags: [],
+  strengths: [],
+  riskBoost: 0,
+  urgency: 0,
+};
+
+export async function GET(_req: NextRequest, context: { params: { id: string } }) {
   return withAuth(async (user) => {
     try {
       const clientId = context.params?.id;
-
       if (!clientId) {
-        return NextResponse.json(
-          { success: false, error: "Client ID missing" },
-          { status: 400 }
-        );
+        throw new ValidationError("Client ID missing");
       }
 
       const data = await getClientById(clientId, user.id, user.role);
-
       if (!data) {
-        return NextResponse.json(
-          { success: false, error: "Client not found" },
-          { status: 404 }
-        );
+        return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
       }
 
-
-      /* =========================
-         SAFE DATA
-      ========================= */
       const phones = data.phones ?? [];
       const addresses = data.addresses ?? [];
       const loans = data.loans ?? [];
       const osint = data.osint ?? null;
       const actions = data.actions ?? [];
 
-      /* =========================
-         TOTAL DUE
-      ========================= */
-      const totalDue = loans.reduce(
-        (sum: number, l: any) =>
-          sum + (parseFloat(l.amountDue as any) || 0),
-        0
-      );
+      const totalDue = loans.reduce((sum: number, loan) => sum + Number(loan.amountDue || 0), 0);
 
-      /* =========================
-         RISK
-      ========================= */
       const risk = calculateRisk({
         bucket: loans[0]?.bucket ?? undefined,
         amountDue: totalDue,
@@ -68,11 +56,8 @@ export async function GET(
         aiSignalsScore: 50,
       });
 
-      /* =========================
-         AI SAFE WRAPPER 🔥
-      ========================= */
-      let aiResult: any = null;
-      let script: any = null;
+      let aiResult: AIResult | null = null;
+      let script: Awaited<ReturnType<typeof generateCallScript>> | null = null;
 
       try {
         const aiInput = {
@@ -94,22 +79,7 @@ export async function GET(
         script = null;
       }
 
-      /* =========================
-         DECISION ENGINE
-      ========================= */
-      const aiSafe = aiResult || {
-        behaviorPrediction: "unknown",
-        paymentProbability: 0,
-        strategy: "fallback",
-        tone: "balanced",
-        nextAction: "CALL",
-        summary: "No AI summary",
-        confidence: 0,
-        redFlags: [],
-        strengths: [],
-        riskBoost: 0,
-        urgency: 0,
-      };
+      const aiSafe = aiResult || FALLBACK_AI;
 
       const decision = decideAction({
         risk,
@@ -132,18 +102,12 @@ export async function GET(
         riskScore: risk.score,
       });
 
-      /* =========================
-         LOG
-      ========================= */
       await logAction(user.id, "VIEW_CLIENT", {
         clientId,
         risk: risk.label,
         nextAction: decision.action,
       });
 
-      /* =========================
-         RESPONSE
-      ========================= */
       return NextResponse.json({
         success: true,
         data: {
@@ -161,15 +125,8 @@ export async function GET(
           totalDue,
         },
       });
-    } catch (error: any) {
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: error.message || "Internal Server Error",
-        },
-        { status: 500 }
-      );
+    } catch (error) {
+      return handleApiError(error);
     }
   });
 }

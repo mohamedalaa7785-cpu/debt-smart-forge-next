@@ -52,6 +52,21 @@ export const CreateClientBodySchema = z.object({
 });
 
 
+
+export const UpdateClientBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(160).optional(),
+    email: z.string().trim().email().optional().nullable(),
+    company: z.string().trim().max(160).optional().nullable(),
+    notes: z.string().trim().max(4000).optional().nullable(),
+    referral: z.string().trim().max(200).optional().nullable(),
+    branch: z.string().trim().max(120).optional().nullable(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field must be provided",
+  });
+
 export const AssignClientsBodySchema = z.object({
   ids: z.array(z.string().uuid()).min(1),
   ownerId: z.string().uuid(),
@@ -104,3 +119,14 @@ export const WhatsAppBodySchema = z.object({
   phone: z.string().trim().min(6).max(32),
   message: z.string().trim().min(1).max(2000),
 });
+
+
+export const ClientIdBodySchema = z.object({
+  clientId: z.string().uuid(),
+});
+
+export const OsintHistoryQuerySchema = z.object({
+  clientId: z.string().uuid(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(10),
+});
+

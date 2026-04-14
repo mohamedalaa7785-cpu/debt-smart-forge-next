@@ -6,6 +6,7 @@ import { inArray } from "drizzle-orm";
 import { logAction } from "@/server/services/log.service";
 import { BulkIdsBodySchema } from "@/lib/validators/api";
 import { canDeleteClients } from "@/server/lib/role";
+import { ForbiddenError, ValidationError, handleApiError } from "@/server/core/error.handler";
 
 export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
@@ -14,11 +15,13 @@ export async function POST(req: NextRequest) {
       const parsed = BulkIdsBodySchema.safeParse(body);
 
       if (!parsed.success) {
-        return NextResponse.json({ success: false, error: "Invalid delete payload" }, { status: 400 });
+        throw new ValidationError("Invalid delete payload", {
+          issues: parsed.error.issues.map((issue) => issue.message),
+        });
       }
 
       if (!canDeleteClients(user.role)) {
-        return NextResponse.json({ success: false, error: "Forbidden" }, { status: 403 });
+        throw new ForbiddenError();
       }
 
       const { ids } = parsed.data;
@@ -26,8 +29,8 @@ export async function POST(req: NextRequest) {
 
       await logAction(user.id, "BULK_DELETE_CLIENTS", { count: ids.length });
       return NextResponse.json({ success: true, deleted: ids.length });
-    } catch (error: any) {
-      return NextResponse.json({ success: false, error: error.message || "Delete failed" }, { status: 500 });
+    } catch (error) {
+      return handleApiError(error);
     }
   });
 }

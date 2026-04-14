@@ -1,25 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { simulateSettlement } from "@/server/services/financial.service";
-import { requireUser } from "@/server/lib/auth";
+import { withAuth } from "@/server/lib/auth";
 import { SettlementBodySchema } from "@/lib/validators/api";
+import { ValidationError, handleApiError } from "@/server/core/error.handler";
 
 export async function POST(req: NextRequest) {
-  try {
-    await requireUser();
-    const rawBody = await req.json();
+  return withAuth(async () => {
+    try {
+      const rawBody = await req.json();
 
-    const parsed = SettlementBodySchema.safeParse({
-      originalBalance: Number(rawBody?.originalBalance),
-      haircutPercentage: Number(rawBody?.haircutPercentage),
-    });
+      const parsed = SettlementBodySchema.safeParse({
+        originalBalance: Number(rawBody?.originalBalance),
+        haircutPercentage: Number(rawBody?.haircutPercentage),
+      });
 
-    if (!parsed.success) {
-      return NextResponse.json({ success: false, error: "Invalid settlement payload" }, { status: 400 });
+      if (!parsed.success) {
+        throw new ValidationError("Invalid settlement payload", {
+          issues: parsed.error.issues.map((issue) => issue.message),
+        });
+      }
+
+      const result = simulateSettlement(parsed.data);
+      return NextResponse.json({ success: true, data: result });
+    } catch (error) {
+      return handleApiError(error);
     }
-
-    const result = simulateSettlement(parsed.data);
-    return NextResponse.json({ success: true, data: result });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error?.message || "Failed to simulate settlement" }, { status: 500 });
-  }
+  });
 }

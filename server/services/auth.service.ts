@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
+import { logger } from "@/server/core/logger";
 
 /* =========================
    GET USER FROM SUPABASE 🔐
@@ -48,7 +49,7 @@ export async function getUserFromToken(token?: string) {
       name: dbUser.name,
     };
   } catch (error) {
-    console.error("getUserFromToken error:", error);
+    logger.error("get_user_from_token_failed", { error: String((error as Error)?.message || error) });
     return null;
   }
 }

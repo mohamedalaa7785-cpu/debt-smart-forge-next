@@ -1,21 +1,15 @@
 import { db } from "@/server/db";
 import { logs } from "@/server/db/schema";
+import { logger } from "@/server/core/logger";
 
-/* =========================
-   LOG ACTION
-========================= */
-export async function logAction(
-  userId: string,
-  action: string,
-  meta?: any
-) {
+export async function logAction(userId: string, action: string, meta?: Record<string, unknown>) {
   try {
     await db.insert(logs).values({
       userId,
       action,
       meta: meta || {},
     });
-  } catch (error) {
-    console.error("LOG ERROR:", error);
+  } catch {
+    logger.warn("audit_log_insert_failed", { userId, action });
   }
 }

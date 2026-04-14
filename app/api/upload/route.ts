@@ -5,7 +5,7 @@ import { UploadBodySchema } from "@/lib/validators/api";
 
 const MAX_SIZE_MB = 5;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const ALLOWED_FOLDERS = new Set(["debt-smart/clients", "debt-smart/imports"]);
+const ALLOWED_FOLDERS = new Set(["debt-smart/clients", "debt-smart/imports", "debt-smart/referrals"]);
 
 function validateBase64(file: string) {
   if (!file.startsWith("data:image")) {

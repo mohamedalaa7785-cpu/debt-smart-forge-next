@@ -12,6 +12,14 @@ import ClientAutoRefresh from "@/components/ClientAutoRefresh";
 
 export const dynamic = "force-dynamic";
 
+function isImageUrl(value: string) {
+  const normalized = value.toLowerCase();
+  return (
+    normalized.startsWith("http://") ||
+    normalized.startsWith("https://")
+  ) && /\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/.test(normalized);
+}
+
 export default async function ClientPage({ params }: { params: { id: string } }) {
   const user = await requireUser();
   const data = await getClientById(params.id, user.id, user.role);
@@ -90,7 +98,17 @@ export default async function ClientPage({ params }: { params: { id: string } })
         {data.referral && (
           <div className="mt-4 p-4 rounded-xl border border-amber-200 bg-amber-50">
             <p className="text-xs font-bold text-amber-700 uppercase tracking-widest">Referral</p>
-            <p className="text-sm text-amber-900 whitespace-pre-wrap mt-1">{data.referral}</p>
+            {isImageUrl(data.referral) ? (
+              <a href={data.referral} target="_blank" rel="noreferrer" className="block mt-2">
+                <img
+                  src={data.referral}
+                  alt="Referral attachment"
+                  className="max-h-64 rounded-lg border border-amber-200"
+                />
+              </a>
+            ) : (
+              <p className="text-sm text-amber-900 whitespace-pre-wrap mt-1">{data.referral}</p>
+            )}
           </div>
         )}
       </div>

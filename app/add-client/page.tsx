@@ -23,6 +23,7 @@ export default function AddClientPage() {
   const [company, setCompany] = useState("");
   const [notes, setNotes] = useState("");
   const [referral, setReferral] = useState("");
+  const [referralImageUrl, setReferralImageUrl] = useState("");
 
   const [portfolioType, setPortfolioType] = useState("ACTIVE");
   const [domainType, setDomainType] = useState("FIRST");
@@ -108,6 +109,31 @@ export default function AddClientPage() {
     setBankImageUrl(json.data.url);
   }
 
+
+  async function uploadReferralImage(file?: File | null) {
+    if (!file) return;
+
+    const reader = new FileReader();
+    const base64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ file: base64, folder: "debt-smart/referrals" }),
+    });
+
+    const json = await res.json();
+    if (!res.ok || !json.success) {
+      throw new Error(json.error || "Failed to upload referral image");
+    }
+
+    setReferralImageUrl(json.data.url);
+  }
+
   async function previewBankImport() {
     setBankImporting(true);
     setError("");
@@ -174,7 +200,7 @@ export default function AddClientPage() {
           company: company || null,
           branch: branch || null,
           notes: notes || null,
-          referral: referral || null,
+          referral: referralImageUrl || referral || null,
           portfolioType,
           domainType,
           phones: phones.filter(Boolean),
@@ -266,7 +292,22 @@ export default function AddClientPage() {
         <input className="w-full border rounded-xl p-3" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
         <input className="w-full border rounded-xl p-3" placeholder="Branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
         <input className="w-full border rounded-xl p-3 md:col-span-2" placeholder="Company / Employer" value={company} onChange={(e) => setCompany(e.target.value)} />
-        <textarea className="w-full border rounded-xl p-3 md:col-span-2 min-h-20" placeholder="Referral (history / previous attempts / supporting details)" value={referral} onChange={(e) => setReferral(e.target.value)} />
+        <div className="w-full md:col-span-2 space-y-2 rounded-xl border p-3 bg-amber-50">
+          <p className="text-sm font-semibold text-amber-900">Referral attachment (image)</p>
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => uploadReferralImage(e.target.files?.[0]).catch((err) => setError(err.message || "Referral image upload failed"))}
+            className="w-full border rounded-xl p-2 bg-white"
+          />
+          {referralImageUrl && (
+            <div className="space-y-2">
+              <img src={referralImageUrl} alt="Referral attachment" className="max-h-44 rounded-lg border" />
+              <p className="text-xs text-green-700 break-all">{referralImageUrl}</p>
+            </div>
+          )}
+          <textarea className="w-full border rounded-xl p-3 min-h-20 bg-white" placeholder="Referral notes (optional)" value={referral} onChange={(e) => setReferral(e.target.value)} />
+        </div>
         <textarea className="w-full border rounded-xl p-3 md:col-span-2 min-h-24" placeholder="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
       </div>
 

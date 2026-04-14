@@ -1,11 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/server/lib/auth";
+import { handleApiError } from "@/server/core/error.handler";
 
-/* =========================
-   GET CURRENT USER
-========================= */
-export async function GET(req: Request) {
+export async function GET(_req: Request) {
   try {
     const user = await requireUser();
 
@@ -13,10 +11,7 @@ export async function GET(req: Request) {
       success: true,
       data: user,
     });
-  } catch (error: any) {
-    return NextResponse.json(
-      { success: false, error: error.message },
-      { status: 401 }
-    );
+  } catch (error) {
+    return handleApiError(error);
   }
 }

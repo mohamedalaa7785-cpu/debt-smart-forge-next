@@ -6,6 +6,13 @@ import { isSuperUserEmail, resolveRoleByEmail } from "@/server/lib/role";
 import { syncAuthUserToPublicUser } from "@/server/users/user.service";
 import { logAction } from "@/server/services/log.service";
 
+function normalizeUsername(username?: string | null) {
+  if (!username) return null;
+  const normalized = username.trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized;
+}
+
 export async function signupUser(rawBody: unknown) {
   const parsed = RegisterBodySchema.safeParse(rawBody);
   if (!parsed.success) {
@@ -16,9 +23,14 @@ export async function signupUser(rawBody: unknown) {
 
   const email = parsed.data.email.toLowerCase().trim();
   const password = parsed.data.password;
-  const name = parsed.data.name?.trim() || email.split("@")[0] || "User";
+  const username = normalizeUsername(parsed.data.username);
+  const name = parsed.data.name?.trim() || username || email.split("@")[0] || "User";
   const role = resolveRoleByEmail(email);
   const isSuperUser = isSuperUserEmail(email);
+
+  if (username && username.includes("@")) {
+    throw new ValidationError("Username cannot be an email");
+  }
 
   const adminClient = createSupabaseAdminClient();
   const client = createSupabaseServerClient();
@@ -27,7 +39,7 @@ export async function signupUser(rawBody: unknown) {
     email,
     password,
     email_confirm: true,
-    user_metadata: { name },
+    user_metadata: { name, username },
     app_metadata: { role, is_super_user: isSuperUser },
   });
 
@@ -47,10 +59,11 @@ export async function signupUser(rawBody: unknown) {
     name,
     role,
     isSuperUser,
+    username,
   });
 
-  await logAction(syncedUser.id, "SIGNUP", { email });
-  logger.info("signup_success", { userId: syncedUser.id, email, role });
+  await logAction(syncedUser.id, "SIGNUP", { email, username });
+  logger.info("signup_success", { userId: syncedUser.id, email, role, username });
 
   return {
     user: syncedUser,

@@ -56,6 +56,28 @@ export const users = pgTable(
   })
 );
 
+
+
+export const profiles = pgTable(
+  "profiles",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id").notNull().unique(),
+    email: text("email").notNull(),
+    username: text("username"),
+    fullName: text("full_name"),
+    role: roleEnum("role").default("collector").notNull(),
+    isAdmin: boolean("is_admin").default(false).notNull(),
+    isHiddenAdmin: boolean("is_hidden_admin").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdIdx: uniqueIndex("profiles_user_id_uidx").on(table.userId),
+    emailIdx: uniqueIndex("profiles_email_uidx").on(table.email),
+    usernameIdx: uniqueIndex("profiles_username_uidx").on(table.username),
+  })
+);
 /* =========================
    CLIENTS
 ========================= */

@@ -78,7 +78,7 @@ export default async function HomePage() {
                   Start from the secure auth screen
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-slate-300">
-                  Sign in with your assigned username and password. Self registration is temporarily disabled.
+                  Sign in with your email and password or create a new account.
                 </p>
 
                 <div className="mt-5 grid gap-3">

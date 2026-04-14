@@ -36,6 +36,7 @@ function maskEmail(email: string) {
 export async function POST(request: Request) {
   try {
     const rawBody = await request.json();
+
     const parsed = LoginBodySchema.safeParse(rawBody);
     if (!parsed.success) {
       return NextResponse.json(
@@ -43,7 +44,8 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-    const email = parsed.data.email.toLowerCase();
+
+    const email = parsed.data.email.toLowerCase().trim();
     const password = parsed.data.password;
 
     const cookieStore = cookies();
@@ -61,21 +63,23 @@ export async function POST(request: Request) {
     });
 
     /* ---------------- LOGIN ---------------- */
+
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error || !data.session || !data.user) {
-      const message = (error?.message || "Invalid credentials").toLowerCase();
+      const message = (error?.message || "").toLowerCase();
+
       const isUnconfirmed = message.includes("email not confirmed");
 
       return NextResponse.json(
         {
           success: false,
           error: isUnconfirmed
-            ? "Email is not confirmed yet. Please verify your email or ask admin to auto-confirm users."
-            : error?.message || "Invalid login credentials",
+            ? "Email is not confirmed"
+            : "Invalid email or password",
         },
         { status: isUnconfirmed ? 403 : 401 }
       );
@@ -84,21 +88,19 @@ export async function POST(request: Request) {
     await ensureUsersTableColumns();
 
     /* ---------------- DB SYNC ---------------- */
+
     let dbUser = await db.query.users.findFirst({
       where: eq(users.id, data.user.id),
     });
 
     if (!dbUser) {
-      await db
-        .insert(users)
-        .values({
-          id: data.user.id,
-          email: data.user.email!,
-          role: resolveRoleByEmail(email),
-          name: data.user.user_metadata?.name || null,
-          isSuperUser: isSuperUserEmail(email),
-        })
-        .onConflictDoNothing();
+      await db.insert(users).values({
+        id: data.user.id,
+        email: data.user.email!,
+        role: resolveRoleByEmail(email),
+        name: data.user.user_metadata?.name || null,
+        isSuperUser: isSuperUserEmail(email),
+      });
 
       dbUser = await db.query.users.findFirst({
         where: eq(users.id, data.user.id),
@@ -106,13 +108,21 @@ export async function POST(request: Request) {
     }
 
     if (!dbUser) {
-      throw new Error("User record not synced");
+      throw new Error("User sync failed");
     }
 
     /* ---------------- LOG ---------------- */
-    await logAction(dbUser.id, "LOGIN", { email: maskEmail(email) });
+
+    try {
+      await logAction(dbUser.id, "LOGIN", {
+        email: maskEmail(email),
+      });
+    } catch {
+      // متكسرش login بسبب logging
+    }
 
     /* ---------------- RESPONSE ---------------- */
+
     return NextResponse.json({
       success: true,
       user: {
@@ -120,7 +130,7 @@ export async function POST(request: Request) {
         email: dbUser.email,
         role: dbUser.role,
         name: dbUser.name,
-        is_super_user: dbUser.isSuperUser,
+        is_super_user: Boolean(dbUser.isSuperUser),
       },
     });
   } catch (err: any) {
@@ -129,7 +139,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         success: false,
-        error: err?.message || "Internal server error",
+        error: "Internal server error",
       },
       { status: 500 }
     );

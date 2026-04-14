@@ -37,7 +37,8 @@ export const users = pgTable(
   {
     id: uuid("id").primaryKey().notNull(),
 
-    email: text("email").notNull(),
+    email: text("email"),
+
     name: text("name"),
 
     role: roleEnum("role").default("collector").notNull(),
@@ -286,7 +287,7 @@ export const followups = pgTable(
 );
 
 /* =========================
-   OSINT RESULTS 🔥
+   OSINT RESULTS
 ========================= */
 
 export const osintResults = pgTable(
@@ -331,7 +332,7 @@ export const osintResults = pgTable(
 );
 
 /* =========================
-   OSINT HISTORY 🔥
+   OSINT HISTORY
 ========================= */
 
 export const osintHistory = pgTable(
@@ -357,7 +358,7 @@ export const osintHistory = pgTable(
 );
 
 /* =========================
-   FRAUD ANALYSIS 🔥
+   FRAUD ANALYSIS
 ========================= */
 
 export const fraudAnalysis = pgTable(

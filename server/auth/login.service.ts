@@ -17,7 +17,7 @@ export async function loginUser(rawBody: unknown) {
   const email = parsed.data.email.trim().toLowerCase();
   const password = parsed.data.password;
 
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error || !data.session || !data.user) {

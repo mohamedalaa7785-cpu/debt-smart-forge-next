@@ -8,10 +8,11 @@ import { logAction } from "@/server/services/log.service";
 import { handleApiError, ForbiddenError, ValidationError } from "@/server/core/error.handler";
 import { UpdateClientBodySchema } from "@/lib/validators/api";
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return withAuth(async (user) => {
     try {
-      const client = await getClientById(params.id, user.id, user.role);
+      const { id } = await params;
+      const client = await getClientById(id, user.id, user.role);
 
       if (!client) {
         return NextResponse.json({ success: false, error: "Not found" }, { status: 404 });
@@ -24,9 +25,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return withAuth(async (user) => {
     try {
+      const { id } = await params;
       const rawBody = await req.json();
       const parsed = UpdateClientBodySchema.safeParse(rawBody);
       if (!parsed.success) {
@@ -35,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         });
       }
 
-      const existing = await db.query.clients.findFirst({ where: eq(clients.id, params.id) });
+      const existing = await db.query.clients.findFirst({ where: eq(clients.id, id) });
 
       if (!existing) {
         return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
@@ -51,11 +53,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           ...parsed.data,
           updatedAt: new Date(),
         })
-        .where(eq(clients.id, params.id))
+        .where(eq(clients.id, id))
         .returning();
 
       await logAction(user.id, "UPDATE_CLIENT", {
-        clientId: params.id,
+        clientId: id,
       });
 
       return NextResponse.json({ success: true, data: updated });
@@ -65,10 +67,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   return withAuth(async (user) => {
     try {
-      const existing = await db.query.clients.findFirst({ where: eq(clients.id, params.id) });
+      const { id } = await params;
+      const existing = await db.query.clients.findFirst({ where: eq(clients.id, id) });
 
       if (!existing) {
         return NextResponse.json({ success: false, error: "Client not found" }, { status: 404 });
@@ -78,10 +81,10 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
         throw new ForbiddenError();
       }
 
-      await db.delete(clients).where(eq(clients.id, params.id));
+      await db.delete(clients).where(eq(clients.id, id));
 
       await logAction(user.id, "DELETE_CLIENT", {
-        clientId: params.id,
+        clientId: id,
       });
 
       return NextResponse.json({ success: true });

@@ -33,7 +33,7 @@ export async function signupUser(rawBody: unknown) {
   }
 
   const adminClient = createSupabaseAdminClient();
-  const client = createSupabaseServerClient();
+  const client = await createSupabaseServerClient();
 
   const { data, error } = await adminClient.auth.admin.createUser({
     email,

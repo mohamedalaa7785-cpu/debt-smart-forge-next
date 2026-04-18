@@ -13,7 +13,7 @@ export async function getUserFromToken(token?: string) {
   try {
     if (!hasSupabaseEnv()) return null;
 
-    const cookieStore = cookies();
+    const cookieStore = await cookies();
     const { url, anonKey } = getSupabaseEnv();
     const supabase = createServerClient(
       url,
@@ -66,7 +66,7 @@ export async function login(email: string, password: string) {
 export async function logout() {
   if (!hasSupabaseEnv()) return;
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const { url, anonKey } = getSupabaseEnv();
   const supabase = createServerClient(
     url,

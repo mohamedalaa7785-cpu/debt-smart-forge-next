@@ -20,9 +20,10 @@ function isImageUrl(value: string) {
   ) && /\.(png|jpe?g|webp|gif|bmp|svg)(\?.*)?$/.test(normalized);
 }
 
-export default async function ClientPage({ params }: { params: { id: string } }) {
+export default async function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
-  const data = await getClientById(params.id, user.id, user.role);
+  const { id } = await params;
+  const data = await getClientById(id, user.id, user.role);
 
   if (!data) return <div className="p-8 text-center">Client not found</div>;
 
@@ -89,7 +90,7 @@ export default async function ClientPage({ params }: { params: { id: string } })
         
         <div className="mt-8 pt-8 border-t border-gray-50">
           <ActionButtons 
-            clientId={params.id} 
+            clientId={id} 
             phones={phones.map(p => p.phone)} 
             script={script}
           />

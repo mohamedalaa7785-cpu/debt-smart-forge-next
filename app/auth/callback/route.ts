@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent("Missing OAuth code")}`, url.origin));
   }
 
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const env = getSupabaseEnv();
 
   const supabase = createServerClient(env.url, env.anonKey, {

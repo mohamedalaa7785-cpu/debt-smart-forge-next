@@ -24,10 +24,11 @@ const FALLBACK_AI: AIResult = {
   urgency: 0,
 };
 
-export async function GET(_req: NextRequest, context: { params: { id: string } }) {
+export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   return withAuth(async (user) => {
     try {
-      const clientId = context.params?.id;
+      const params = await context.params;
+      const clientId = params?.id;
       if (!clientId) {
         throw new ValidationError("Client ID missing");
       }

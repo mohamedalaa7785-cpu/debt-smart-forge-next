@@ -19,7 +19,7 @@ export interface AuthUser {
 }
 
 export async function requireUser(): Promise<AuthUser> {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
   const {
     data: { user },
     error,

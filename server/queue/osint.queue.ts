@@ -1,22 +1,27 @@
-import { Queue, Worker, Job } from "bullmq";
+import { Queue, Worker, type Job } from "bullmq";
 import IORedis from "ioredis";
 import { runOSINT } from "@/server/services/osint.service";
 import { logger } from "@/server/lib/logger";
 
-/* =========================
-   REDIS CONNECTION
-========================= */
+type OSINTJobPayload = {
+  clientId?: string;
+  name: string;
+  phone?: string;
+  company?: string;
+  city?: string;
+  imageUrl?: string;
+};
 
-const connection = new IORedis(process.env.REDIS_URL || "redis://127.0.0.1:6379");
+const REDIS_QUEUE_URL = process.env.REDIS_URL?.trim() || "redis://127.0.0.1:6379";
+const connection = new IORedis(REDIS_QUEUE_URL, {
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
+});
 
-/* =========================
-   QUEUE
-========================= */
-
-export const osintQueue = new Queue("osint-queue", {
+export const osintQueue = new Queue<OSINTJobPayload>("osint-queue", {
   connection,
   defaultJobOptions: {
-    attempts: 3, // retry
+    attempts: 3,
     backoff: {
       type: "exponential",
       delay: 3000,
@@ -26,59 +31,38 @@ export const osintQueue = new Queue("osint-queue", {
   },
 });
 
-/* =========================
-   ADD JOB
-========================= */
-
-export async function addOSINTJob(data: {
-  clientId?: string;
-  name: string;
-  phone?: string;
-  company?: string;
-  city?: string;
-  imageUrl?: string;
-}) {
+export async function addOSINTJob(data: OSINTJobPayload) {
   return osintQueue.add("osint-job", data, {
-    priority: data.clientId ? 1 : 5, // client jobs أهم
+    priority: data.clientId ? 1 : 5,
   });
 }
 
-/* =========================
-   WORKER 🔥
-========================= */
-
-export const osintWorker = new Worker(
+export const osintWorker = new Worker<OSINTJobPayload>(
   "osint-queue",
-  async (job: Job) => {
+  async (job: Job<OSINTJobPayload>) => {
     logger.info("OSINT_JOB_STARTED", { jobId: job.id });
 
     try {
       const result = await runOSINT(job.data);
-
       logger.info("OSINT_JOB_SUCCESS", {
         jobId: job.id,
         clientId: job.data.clientId,
       });
-
       return result;
-    } catch (error: any) {
+    } catch (error) {
       logger.error("OSINT_JOB_FAILED", {
         jobId: job.id,
         error,
       });
 
-      throw error; // مهم علشان retry
+      throw error;
     }
   },
   {
     connection,
-    concurrency: 5, // parallel jobs
+    concurrency: 5,
   }
 );
-
-/* =========================
-   EVENTS
-========================= */
 
 osintWorker.on("completed", (job) => {
   logger.info("OSINT_JOB_COMPLETED", {

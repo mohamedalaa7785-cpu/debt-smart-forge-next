@@ -3,47 +3,58 @@
 import { useEffect, useState } from "react";
 import CallCard from "@/components/CallCard";
 
-/* =========================
-   AI CALL MODE PAGE 🔥
-========================= */
+type CallClient = {
+  id: string;
+  [key: string]: unknown;
+};
+
 export default function CallModePage() {
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<CallClient[]>([]);
   const [loading, setLoading] = useState(true);
-
-  async function fetchData() {
-    try {
-      const res = await fetch("/api/call-mode");
-      const data = await res.json();
-
-      setClients(data.data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchData();
+    async function fetchData() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch("/api/call-mode", { cache: "no-store" });
+        const data = await res.json();
+
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || "Failed to load call mode clients");
+        }
+
+        setClients(Array.isArray(data.data) ? data.data : []);
+      } catch (fetchError) {
+        setClients([]);
+        setError(fetchError instanceof Error ? fetchError.message : "Failed to load call mode clients");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void fetchData();
   }, []);
 
-  if (loading)
-    return (
-      <div className="p-4 text-center">
-        Loading Call Mode...
-      </div>
-    );
+  if (loading) {
+    return <div className="p-4 text-center">Loading Call Mode...</div>;
+  }
+
+  if (error) {
+    return <div className="p-4 text-center text-red-600">{error}</div>;
+  }
 
   return (
-    <div className="p-4 space-y-3 max-w-xl mx-auto">
+    <div className="mx-auto max-w-xl space-y-3 p-4">
+      <h1 className="text-lg font-bold">🔥 Smart Call Mode</h1>
 
-      <h1 className="text-lg font-bold">
-        🔥 Smart Call Mode
-      </h1>
-
-      {clients.map((c) => (
-        <CallCard key={c.id} client={c} />
-      ))}
+      {clients.length === 0 ? (
+        <p className="text-sm text-gray-500">No clients available for call mode.</p>
+      ) : (
+        clients.map((client) => <CallCard key={client.id} client={client} />)
+      )}
     </div>
   );
-      }
+}

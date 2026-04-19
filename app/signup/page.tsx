@@ -15,6 +15,7 @@ export default function SignUpPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const googleOauthEnabled = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_OAUTH !== "false";
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -48,6 +49,11 @@ export default function SignUpPage() {
   }
 
   async function signupWithGoogle() {
+    if (!googleOauthEnabled) {
+      setError("Google Sign-Up is temporarily disabled for this environment.");
+      return;
+    }
+
     setGoogleLoading(true);
     setError("");
 
@@ -74,11 +80,16 @@ export default function SignUpPage() {
         <button
           type="button"
           onClick={signupWithGoogle}
-          disabled={googleLoading}
+          disabled={googleLoading || !googleOauthEnabled}
           className="mt-4 w-full rounded-lg border border-white/20 bg-white/10 p-2 text-sm font-semibold disabled:opacity-60"
         >
           {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
         </button>
+        {!googleOauthEnabled ? (
+          <p className="mt-2 text-xs text-amber-300">
+            Google Sign-Up is disabled. Use email/password until OAuth client setup is completed.
+          </p>
+        ) : null}
 
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">

@@ -1,138 +1,163 @@
+import OpenAI from "openai";
 import { db } from "@/server/db";
 import { clientPhones, clients, osintResults } from "@/server/db/schema";
-import { eq, like } from "drizzle-orm";
-import axios from "axios";
+import { eq, ilike, sql } from "drizzle-orm";
+import { normalizePhone } from "@/lib/utils";
 
-export interface PhoneIntelligenceResult {
+export interface PhoneLookupResult {
   phone: string;
   normalized: string;
-  linkedClient?: {
-    id: string;
-    name: string;
-    customerId: string;
-  };
-  osint?: any;
-  whatsappAvailable: boolean;
-  telegramAvailable: boolean;
-  riskFlag: boolean;
-  socialProfiles: string[];
-  nameDetection?: string;
-  externalSource?: {
-    provider: string;
-    name?: string;
-    confidence?: number;
-    raw?: any;
-  };
+  name: string | null;
+  risk_score: number;
+  spam: boolean;
+  notes: string;
+  source: "internal" | "external" | "mixed";
 }
 
-async function lookupExternalPhoneProvider(normalized: string) {
-  const providerUrl = process.env.TRUECALLER_LOOKUP_URL;
-  const providerKey = process.env.TRUECALLER_API_KEY;
+let openaiClient: OpenAI | null = null;
+function getOpenAI() {
+  if (!openaiClient) {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) return null;
+    openaiClient = new OpenAI({ apiKey });
+  }
+  return openaiClient;
+}
 
-  if (!providerUrl || !providerKey) return undefined;
+async function lookupSerpApi(phone: string) {
+  const key = process.env.SERPAPI_API_KEY?.trim();
+  if (!key) return null;
+
+  const url = new URL("https://serpapi.com/search.json");
+  url.searchParams.set("engine", "google");
+  url.searchParams.set("q", `\"${phone}\" spam caller name`);
+  url.searchParams.set("api_key", key);
 
   try {
-    const res = await axios.get(providerUrl, {
-      params: { phone: normalized },
-      headers: { Authorization: `Bearer ${providerKey}` },
-      timeout: 8000,
-    });
+    const res = await fetch(url.toString(), { cache: "no-store" });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    const organic = Array.isArray(data?.organic_results) ? data.organic_results.slice(0, 5) : [];
+    const snippets = organic
+      .map((r: any) => `${r?.title || ""}. ${r?.snippet || ""}`.trim())
+      .filter(Boolean)
+      .join("\n");
 
     return {
-      provider: "truecaller-compatible",
-      name: res.data?.name || undefined,
-      confidence: Number(res.data?.confidence || 0),
-      raw: res.data || null,
+      snippets,
+      raw: organic,
     };
   } catch {
-    return undefined;
+    return null;
   }
 }
 
-function normalizePhone(phone: string): string {
-  return phone.replace(/\D/g, "");
+async function analyzePhone(params: {
+  phone: string;
+  internalName?: string | null;
+  hasInternalRecord: boolean;
+  externalSnippets?: string;
+  osintSummary?: string | null;
+}) {
+  const fallbackRisk = params.hasInternalRecord ? 30 : 70;
+  const fallbackSpam = !params.hasInternalRecord;
+
+  const openai = getOpenAI();
+  if (!openai) {
+    return {
+      name: params.internalName || null,
+      risk_score: fallbackRisk,
+      spam: fallbackSpam,
+      notes: params.hasInternalRecord ? "Found in internal records" : "No internal record",
+    };
+  }
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "Analyze a phone profile. Return strict JSON keys: name,risk_score,spam,notes. risk_score must be 0..100. notes max 160 chars.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify(params),
+        },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content || "{}";
+    const parsed = JSON.parse(content);
+
+    return {
+      name: typeof parsed?.name === "string" ? parsed.name : params.internalName || null,
+      risk_score: Math.max(0, Math.min(100, Number(parsed?.risk_score ?? fallbackRisk))),
+      spam: Boolean(parsed?.spam),
+      notes: typeof parsed?.notes === "string" ? parsed.notes.slice(0, 160) : "AI-assisted phone risk analysis",
+    };
+  } catch {
+    return {
+      name: params.internalName || null,
+      risk_score: fallbackRisk,
+      spam: fallbackSpam,
+      notes: "Fallback risk analysis used",
+    };
+  }
 }
 
-export async function trackPhoneNumber(phone: string): Promise<PhoneIntelligenceResult> {
-  // 1. Normalize number (remove non-digits, handle country code)
+export async function phoneLookup(phone: string): Promise<PhoneLookupResult> {
   const normalized = normalizePhone(phone);
-  if (normalized.length < 7) {
+  if (!normalized || normalized.length < 7) {
     return {
       phone,
       normalized,
-      whatsappAvailable: false,
-      telegramAvailable: false,
-      riskFlag: true,
-      socialProfiles: [],
-      nameDetection: "Invalid phone format",
+      name: null,
+      risk_score: 95,
+      spam: true,
+      notes: "Invalid phone format",
+      source: "external",
     };
   }
 
-  const suffix10 = normalized.slice(-10);
+  const phonePattern = `%${normalized.slice(-10)}%`;
 
-  // 2. Search DB for linked client
-  const phoneRecord = await db
-    .select()
+  const internal = await db
+    .select({
+      clientId: clientPhones.clientId,
+      clientName: clients.name,
+      osintSummary: osintResults.summary,
+    })
     .from(clientPhones)
-    .where(
-      like(clientPhones.phone, `%${normalized}%`)
-    )
+    .leftJoin(clients, eq(clients.id, clientPhones.clientId))
+    .leftJoin(osintResults, eq(osintResults.clientId, clientPhones.clientId))
+    .where(ilike(clientPhones.phone, phonePattern))
     .limit(1)
-    .then((res) => res[0]);
+    .then((rows) => rows[0] || null);
 
-  const fallbackPhoneRecord =
-    !phoneRecord && suffix10.length === 10
-      ? await db
-          .select()
-          .from(clientPhones)
-          .where(like(clientPhones.phone, `%${suffix10}%`))
-          .limit(1)
-          .then((res) => res[0])
-      : null;
+  const external = await lookupSerpApi(normalized);
 
-  const selectedPhoneRecord = phoneRecord || fallbackPhoneRecord;
+  const analyzed = await analyzePhone({
+    phone: normalized,
+    internalName: internal?.clientName ?? null,
+    hasInternalRecord: Boolean(internal),
+    externalSnippets: external?.snippets,
+    osintSummary: internal?.osintSummary ?? null,
+  });
 
-  let linkedClient = undefined;
-  if (selectedPhoneRecord?.clientId) {
-    const client = await db
-      .select()
-      .from(clients)
-      .where(eq(clients.id, selectedPhoneRecord.clientId))
-      .limit(1)
-      .then((res) => res[0]);
-
-    if (client) {
-      linkedClient = {
-        id: client.id,
-        name: client.name || "Unknown",
-        customerId: client.customerId || "N/A"
-      };
-    }
-  }
-
-  // 3. Search OSINT (Mocked for now, in real app would call SerpAPI/Truecaller API)
-  const osintRecord = selectedPhoneRecord?.clientId
-    ? await db
-        .select()
-        .from(osintResults)
-        .where(eq(osintResults.clientId, selectedPhoneRecord.clientId))
-        .limit(1)
-        .then((res) => res[0])
-    : null;
-
-  // 4. Return combined intelligence
-  const externalSource = await lookupExternalPhoneProvider(normalized);
+  const source: PhoneLookupResult["source"] = internal && external ? "mixed" : internal ? "internal" : "external";
 
   return {
     phone,
     normalized,
-    linkedClient,
-    osint: osintRecord,
-    whatsappAvailable: Boolean(externalSource || linkedClient), // more realistic signal
-    telegramAvailable: false,
-    riskFlag: linkedClient ? false : true, // Flag if not in DB
-    socialProfiles: Array.isArray(osintRecord?.social) ? (osintRecord.social as string[]) : [],
-    nameDetection: externalSource?.name || linkedClient?.name || "Unknown Caller",
-    externalSource,
+    name: analyzed.name,
+    risk_score: analyzed.risk_score,
+    spam: analyzed.spam,
+    notes: analyzed.notes,
+    source,
   };
 }

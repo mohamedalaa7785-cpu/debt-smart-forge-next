@@ -1,3 +1,7 @@
+ codex/remove-debug-text-from-login-ui-qogfas
+export const runtime = "nodejs";
+
+ main
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getRequestIp } from "@/server/lib/request";
@@ -15,15 +19,21 @@ export async function GET(req: NextRequest) {
       const parsedQuery = PhoneLookupQuerySchema.safeParse({
         phone: req.nextUrl.searchParams.get("phone") || "",
       });
+ codex/remove-debug-text-from-login-ui-qogfas
+      if (!parsedQuery.success) throw new ValidationError("phone query parameter is required");
 
       if (!parsedQuery.success) {
         throw new ValidationError("phone query parameter is required");
       }
 
+main
       const phone = parsedQuery.data.phone;
 
       const cacheKey = `phone-lookup:${user.id}:${phone}`;
       const cached = await cacheGet<Awaited<ReturnType<typeof phoneLookup>>>(cacheKey);
+ codex/remove-debug-text-from-login-ui-qogfas
+      if (cached) {
+        return NextResponse.json({ success: true, cached: true, data: cached });
 
       if (cached) {
         return NextResponse.json({
@@ -31,6 +41,7 @@ export async function GET(req: NextRequest) {
           cached: true,
           data: cached,
         });
+ main
       }
 
       const data = await phoneLookup(phone);
@@ -41,4 +52,8 @@ export async function GET(req: NextRequest) {
       return handleApiError(error);
     }
   });
+< codex/remove-debug-text-from-login-ui-qogfas
 }
+
+}
+main

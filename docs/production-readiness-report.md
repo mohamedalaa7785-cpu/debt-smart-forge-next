@@ -41,3 +41,10 @@
   2. اختبار RLS عمليًا على Supabase project (integration tests).
   3. توحيد ESLint على إعداد stable بدون fallback warning mode.
   4. تنفيذ E2E flows (auth + clients + osint + admin) قبل go-live.
+ codex/remove-debug-text-from-login-ui-qogfas
+
+
+## 8) Health APIs
+- `GET /api/health`: basic service heartbeat.
+- `GET /api/health/secure`: admin-only deep checks (DB + required env signals).
+ main

@@ -1,3 +1,7 @@
+codex/remove-debug-text-from-login-ui-qogfas
+export const runtime = "nodejs";
+
+ main
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getRequestIp } from "@/server/lib/request";
@@ -26,6 +30,13 @@ export async function GET(req: NextRequest) {
         });
       }
 
+codex/remove-debug-text-from-login-ui-qogfas
+      const { q, limit } = parsedQuery.data;
+      const normalized = normalizePhone(q);
+      const cacheKey = `search-clients:${user.id}:${q}:${limit}`;
+      const cached = await cacheGet<Array<Record<string, unknown>>>(cacheKey);
+      if (cached) return NextResponse.json({ success: true, cached: true, count: cached.length, data: cached });
+
       let { q, limit } = parsedQuery.data;
 
       q = q.trim();
@@ -47,6 +58,7 @@ export async function GET(req: NextRequest) {
           data: cached,
         });
       }
+main
 
       const scopeCondition =
         user.role === "hidden_admin" || user.role === "admin"
@@ -58,6 +70,17 @@ export async function GET(req: NextRequest) {
           id: clients.id,
           name: clients.name,
           phone: clientPhones.phone,
+ codex/remove-debug-text-from-login-ui-qogfas
+          rank: sql<number>`greatest(similarity(${clients.name}, ${q}), similarity(coalesce(${clientPhones.phone}, ''), ${normalized || q}))`,
+        })
+        .from(clients)
+        .leftJoin(clientPhones, eq(clients.id, clientPhones.clientId))
+        .where(sql`${scopeCondition} and (
+            ${clients.name} % ${q}
+            or ${clients.name} ilike ${`%${q}%`}
+            or coalesce(${clientPhones.phone}, '') ilike ${`%${normalized || q}%`}
+          )`)
+        .orderBy(sql`greatest(similarity(${clients.name}, ${q}), similarity(coalesce(${clientPhones.phone}, ''), ${normalized || q})) desc`)
           rank: sql<number>`greatest(
             similarity(${clients.name}, ${q}),
             similarity(coalesce(${clientPhones.phone}, ''), ${normalized || q})
@@ -74,6 +97,7 @@ export async function GET(req: NextRequest) {
             similarity(${clients.name}, ${q}),
             similarity(coalesce(${clientPhones.phone}, ''), ${normalized || q})
           ) DESC`)
+main
         .limit(limit);
 
       const data = rows.map((r) => ({
@@ -83,13 +107,19 @@ export async function GET(req: NextRequest) {
 
       await cacheSet(cacheKey, data, 120);
 
+ codex/remove-debug-text-from-login-ui-qogfas
+      return NextResponse.json({ success: true, count: data.length, data });
       return NextResponse.json({
         success: true,
         count: data.length,
         data,
       });
+ main
     } catch (error) {
       return handleApiError(error);
     }
   });
+ codex/remove-debug-text-from-login-ui-qogfas
 }
+}
+ main

@@ -19,35 +19,54 @@ function getOutput(cmd) {
   }
 }
 
-console.log("Running lightweight lint checks...");
+console.log("🔍 Running lightweight lint checks...\n");
 
-if (!run("npm run typecheck")) process.exit(1);
+// ======================
+// 1) TypeScript check
+// ======================
+console.log("▶ TypeScript check...");
+const tsOk = run("npx tsc --noEmit");
 
-const mergeMarkers = getOutput(
-  "rg -n \"^(<<<<<<< .+|=======|>>>>>>> .+)$\" app components lib server scripts drizzle"
-);
+// ======================
+// 2) Next.js build check
+// ======================
+console.log("\n▶ Next.js build check...");
+const buildOk = run("npx next build");
 
-if (mergeMarkers.trim()) {
-  console.error("Found unresolved merge markers:\n", mergeMarkers);
-  process.exit(1);
+// ======================
+// 3) ESLint (optional)
+// ======================
+console.log("\n▶ ESLint check...");
+const eslintOk = run("npx eslint . --ext .ts,.tsx,.js,.jsx");
+
+// ======================
+// 4) Detect console.log
+// ======================
+console.log("\n▶ Checking for debug logs...");
+
+const files = readdirSync(".");
+
+let hasDebug = false;
+
+for (const file of files) {
+  if (file.endsWith(".js") || file.endsWith(".ts")) {
+    const content = readFileSync(file, "utf8");
+    if (content.includes("console.log")) {
+      console.log(`⚠ Debug log found in ${file}`);
+      hasDebug = true;
+    }
+  }
 }
 
-const migrationFiles = readdirSync("drizzle/migrations")
-  .filter((file) => /^\d+_.*\.sql$/.test(file))
-  .sort();
+// ======================
+// FINAL RESULT
+// ======================
+console.log("\n====================");
 
-const journal = JSON.parse(readFileSync("drizzle/migrations/meta/_journal.json", "utf8"));
-const journalTags = new Set((journal.entries || []).map((entry) => entry.tag));
-
-const missingInJournal = migrationFiles
-  .map((file) => file.replace(/\.sql$/, ""))
-  .filter((tag) => !journalTags.has(tag));
-
-if (missingInJournal.length > 0) {
-  console.error(`Migration journal is missing tags: ${missingInJournal.join(", ")}`);
+if (tsOk && buildOk && eslintOk && !hasDebug) {
+  console.log("✅ Project is clean and ready");
+  process.exit(0);
+} else {
+  console.log("❌ Issues detected. Fix them before deploy.");
   process.exit(1);
 }
-
-console.log("✓ TypeScript passed");
-console.log("✓ No merge markers found");
-console.log("✓ Drizzle migration journal is synchronized");

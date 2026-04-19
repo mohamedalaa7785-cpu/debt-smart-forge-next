@@ -4,6 +4,7 @@ import { getRequestIp } from "@/server/lib/request";
 import { enforceRateLimit } from "@/server/core/distributed-cache";
 import { uploadImageAndIndex } from "@/server/services/image-intelligence.service";
 import { handleApiError, ValidationError } from "@/server/core/error.handler";
+import { UploadImageBodySchema } from "@/lib/validators/api";
 
 export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
@@ -11,20 +12,21 @@ export async function POST(req: NextRequest) {
       const ip = getRequestIp(req);
       await enforceRateLimit(`upload-image:${user.id}:${ip}`, 20, 60);
 
-      const body = await req.json().catch(() => ({}));
-      const imageBase64 = typeof body?.imageBase64 === "string" ? body.imageBase64 : "";
-      const clientId = typeof body?.clientId === "string" ? body.clientId : null;
-      const title = typeof body?.title === "string" ? body.title : null;
+      const parsed = UploadImageBodySchema.safeParse(
+        await req.json().catch(() => ({}))
+      );
 
-      if (!imageBase64) {
-        throw new ValidationError("imageBase64 is required");
+      if (!parsed.success) {
+        throw new ValidationError("Invalid upload-image payload", {
+          issues: parsed.error.issues.map((i) => i.message),
+        });
       }
 
       const data = await uploadImageAndIndex({
         ownerUserId: user.id,
-        clientId,
-        fileBase64: imageBase64,
-        title,
+        clientId: parsed.data.clientId ?? null,
+        fileBase64: parsed.data.imageBase64,
+        title: parsed.data.title ?? null,
       });
 
       return NextResponse.json({ success: true, data });

@@ -52,6 +52,7 @@ export async function syncAuthUserToPublicUser(payload: {
     await db
       .insert(profiles)
       .values({
+        id: payload.id,
         userId: payload.id,
         email: normalizedEmail,
         fullName: payload.name,
@@ -63,6 +64,7 @@ export async function syncAuthUserToPublicUser(payload: {
       .onConflictDoUpdate({
         target: profiles.userId,
         set: {
+          id: payload.id,
           email: normalizedEmail,
           fullName: payload.name,
           username,

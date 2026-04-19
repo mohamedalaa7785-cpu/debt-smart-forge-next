@@ -49,7 +49,7 @@ async function getDbRole(
   const { data } = await supabase
     .from("profiles")
     .select("role,is_hidden_admin")
-    .eq("id", userId)
+     .eq("user_id", userId)
     .maybeSingle<UserRoleRow>();
 
   return {

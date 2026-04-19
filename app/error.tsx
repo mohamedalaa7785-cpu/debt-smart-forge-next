@@ -1,65 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
-
-export default function Error({
-  error,
-  reset,
-}: {
-  error: Error;
-  reset: () => void;
-}) {
-  /* =========================
-     LOG ERROR (DEV ONLY)
-  ========================= */
-  useEffect(() => {
-    console.error("APP ERROR:", error);
-  }, [error]);
-
+export default function Error({ reset }: { error: Error; reset: () => void }) {
   return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6 space-y-4">
-
-      {/* ICON */}
-      <div className="text-4xl">
+    <div className="min-h-[60vh] flex flex-col items-center justify-center space-y-4 p-6 text-center">
+      <div className="text-4xl" aria-hidden>
         ⚠️
       </div>
-
-      {/* TITLE */}
-      <h2 className="text-lg font-semibold">
-        Something went wrong
-      </h2>
-
-      {/* MESSAGE */}
-      <p className="text-sm text-gray-500 max-w-xs">
+      <h2 className="text-lg font-semibold">Something went wrong</h2>
+      <p className="max-w-xs text-sm text-gray-500">
         An unexpected error occurred. Please try again.
       </p>
-
-      {/* ACTIONS */}
       <div className="flex gap-2">
-
-        {/* RETRY */}
-        <button
-          onClick={() => reset()}
-          className="px-4 py-2 text-sm bg-black text-white rounded"
-        >
+        <button onClick={() => reset()} className="rounded bg-black px-4 py-2 text-sm text-white">
           Try Again
         </button>
-
-        {/* RELOAD */}
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 text-sm border rounded"
-        >
+        <button onClick={() => window.location.reload()} className="rounded border px-4 py-2 text-sm">
           Reload
         </button>
       </div>
-
-      {/* DEBUG (DEV ONLY) */}
-      {process.env.NODE_ENV === "development" && (
-        <pre className="text-xs text-red-400 mt-4 max-w-xs overflow-auto">
-          {error.message}
-        </pre>
-      )}
     </div>
   );
-          }
+}

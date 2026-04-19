@@ -2,10 +2,16 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ["res.cloudinary.com", "lh3.googleusercontent.com"],
-  },
-  eslint: {
-    ignoreDuringBuilds: false,
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+      },
+      {
+        protocol: "https",
+        hostname: "lh3.googleusercontent.com",
+      },
+    ],
   },
   typescript: {
     ignoreBuildErrors: false,
@@ -24,7 +30,7 @@ const nextConfig = {
           {
             key: "Content-Security-Policy",
             value:
-              "default-src 'self'; img-src 'self' data: https://res.cloudinary.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+              "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https://res.cloudinary.com https://lh3.googleusercontent.com https://maps.gstatic.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' https://*.supabase.co https://api.cloudinary.com https://maps.googleapis.com https://maps.gstatic.com https://api.openai.com https://serpapi.com; font-src 'self' data:",
           },
         ],
       },

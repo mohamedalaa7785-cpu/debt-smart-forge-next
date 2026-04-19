@@ -50,7 +50,7 @@ export default async function RootLayout({
               <div className="flex items-center gap-2 md:gap-4 text-xs font-black uppercase tracking-widest">
                 {user ? (
                   <>
-                    <Link href="/" className="px-3 py-1 rounded-lg hover:bg-blue-50 text-gray-600 transition">
+                    <Link href="/dashboard" className="px-3 py-1 rounded-lg hover:bg-blue-50 text-gray-600 transition">
                       Dashboard
                     </Link>
                     <Link href="/call-mode" className="px-3 py-1 rounded-lg bg-blue-600 text-white shadow-lg shadow-blue-100 transition">
@@ -74,7 +74,7 @@ export default async function RootLayout({
           </main>
 
           <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-t border-gray-100 p-3 flex justify-around md:hidden">
-            <Link href="/" className="text-[10px] font-black uppercase tracking-widest text-center flex flex-col items-center gap-1 text-gray-400 hover:text-blue-600 transition">
+            <Link href="/dashboard" className="text-[10px] font-black uppercase tracking-widest text-center flex flex-col items-center gap-1 text-gray-400 hover:text-blue-600 transition">
               <span className="text-lg">📊</span>
               <span>Home</span>
             </Link>

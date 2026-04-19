@@ -131,3 +131,32 @@ export const OsintHistoryQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).optional().default(10),
 });
 
+
+
+export const SearchClientsQuerySchema = z.object({
+  q: z.string().trim().min(2).max(160),
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+});
+
+export const PhoneLookupQuerySchema = z.object({
+  phone: z.string().trim().min(6).max(32),
+});
+
+export const UploadImageBodySchema = z.object({
+  imageBase64: z.string().min(64),
+  clientId: z.string().uuid().optional().nullable(),
+  title: z.string().trim().max(160).optional().nullable(),
+});
+
+export const SearchByImageBodySchema = z.object({
+  imageBase64: z.string().min(64).optional(),
+  imageUrl: z.string().url().optional(),
+  limit: z.coerce.number().int().min(1).max(20).optional().default(5),
+}).refine((data) => Boolean(data.imageBase64 || data.imageUrl), {
+  message: "imageBase64 or imageUrl is required",
+});
+
+export const FaceMatchBodySchema = z.object({
+  imageBase64A: z.string().min(64),
+  imageBase64B: z.string().min(64),
+});

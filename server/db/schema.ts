@@ -466,3 +466,158 @@ export const logs = pgTable(
     createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt),
   })
 );
+
+/* =========================
+   SAAS DOMAIN TABLES
+========================= */
+
+export const debts = pgTable(
+  "debts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    principalAmount: decimal("principal_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+    outstandingAmount: decimal("outstanding_amount", { precision: 12, scale: 2 }).default("0").notNull(),
+    currency: text("currency").default("EGP").notNull(),
+    status: text("status").default("open").notNull(),
+    dueDate: timestamp("due_date", { withTimezone: false, mode: "date" }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("debts_owner_idx").on(table.ownerUserId),
+    clientIdx: index("debts_client_idx").on(table.clientId),
+  })
+);
+
+export const payments = pgTable(
+  "payments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    debtId: uuid("debt_id").notNull().references(() => debts.id, { onDelete: "cascade" }),
+    amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+    paymentDate: timestamp("payment_date", { withTimezone: false, mode: "date" }).notNull(),
+    paymentMethod: text("payment_method"),
+    reference: text("reference"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("payments_owner_idx").on(table.ownerUserId),
+    debtIdx: index("payments_debt_idx").on(table.debtId),
+  })
+);
+
+export const collections = pgTable(
+  "collections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    debtId: uuid("debt_id").notNull().references(() => debts.id, { onDelete: "cascade" }),
+    assignedTo: uuid("assigned_to").references(() => users.id, { onDelete: "set null" }),
+    stage: text("stage").default("new").notNull(),
+    priority: integer("priority").default(3).notNull(),
+    nextActionAt: timestamp("next_action_at", { withTimezone: true }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("collections_owner_idx").on(table.ownerUserId),
+    debtIdx: index("collections_debt_idx").on(table.debtId),
+  })
+);
+
+export const adminUsers = pgTable(
+  "admin_users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    role: roleEnum("role").default("admin").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: uniqueIndex("admin_users_user_id_uidx").on(table.userId),
+  })
+);
+
+export const intelligence = pgTable(
+  "intelligence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    score: decimal("score", { precision: 5, scale: 2 }),
+    summary: text("summary"),
+    signals: jsonb("signals").$type<Array<Record<string, unknown> | string>>().default([]).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("intelligence_owner_idx").on(table.ownerUserId),
+    clientIdx: index("intelligence_client_idx").on(table.clientId),
+  })
+);
+
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    storagePath: text("storage_path").notNull(),
+    mimeType: text("mime_type"),
+    title: text("title"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("documents_owner_idx").on(table.ownerUserId),
+    clientIdx: index("documents_client_idx").on(table.clientId),
+  })
+);
+
+export const locations = pgTable(
+  "locations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "set null" }),
+    lat: decimal("lat", { precision: 10, scale: 6 }),
+    lng: decimal("lng", { precision: 10, scale: 6 }),
+    address: text("address"),
+    city: text("city"),
+    area: text("area"),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("locations_owner_idx").on(table.ownerUserId),
+    clientIdx: index("locations_client_idx").on(table.clientId),
+  })
+);
+
+export const settings = pgTable(
+  "settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: jsonb("value").$type<Record<string, unknown>>().default({}).notNull(),
+    isSecret: boolean("is_secret").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("settings_owner_idx").on(table.ownerUserId),
+    ownerKeyUnique: uniqueIndex("settings_owner_key_uidx").on(table.ownerUserId, table.key),
+  })
+);

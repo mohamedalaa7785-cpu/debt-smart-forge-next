@@ -8,7 +8,8 @@ import { normalizeRole, isSuperUserEmail } from "@/server/lib/role";
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") || "/dashboard";
+  const requestedNext = url.searchParams.get("next") || "/dashboard";
+  const next = requestedNext.startsWith("/") ? requestedNext : "/dashboard";
 
   if (!code) {
     return NextResponse.redirect(new URL(`/login?error=${encodeURIComponent("Missing OAuth code")}`, url.origin));
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
 
   if (user?.email) {
     const email = user.email.toLowerCase().trim();
-    const hidden = isSuperUserEmail(email) || email === "mohamed.alaa7785@gmail.com";
+    const hidden = isSuperUserEmail(email);
     await syncAuthUserToPublicUser({
       id: user.id,
       email,

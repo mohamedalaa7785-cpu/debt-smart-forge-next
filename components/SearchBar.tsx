@@ -21,6 +21,7 @@ export default function SearchBar() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [sort, setSort] = useState<SortOption>("newest");
   const [portfolio, setPortfolio] = useState<"" | "ACTIVE" | "WRITEOFF">("");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,6 +58,7 @@ export default function SearchBar() {
     try {
       setLoading(true);
       setShowResults(true);
+      setRequestError(null);
 
       const params = new URLSearchParams({ q: value, sort, limit: "20" });
       if (portfolio) params.set("portfolio", portfolio);
@@ -70,9 +72,9 @@ export default function SearchBar() {
       }
 
       setResults(Array.isArray(json.data) ? json.data : []);
-    } catch (error) {
-      console.error("Search error:", error);
+    } catch {
       setResults([]);
+      setRequestError("Search is temporarily unavailable. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -129,7 +131,13 @@ export default function SearchBar() {
             </div>
           ) : null}
 
-          {!loading && results.length === 0 ? (
+          {requestError ? (
+            <div className="px-6 py-4 text-center text-xs font-black uppercase tracking-widest text-red-500">
+              {requestError}
+            </div>
+          ) : null}
+
+          {!loading && results.length === 0 && !requestError ? (
             <div className="px-6 py-4 text-center text-xs font-black uppercase tracking-widest text-gray-400">
               No matching clients found.
             </div>

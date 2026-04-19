@@ -9,12 +9,14 @@ Set these values in local `.env.local` and deployment providers (Vercel / Supaba
 - `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
+- `CLOUDINARY_URL` (optional unified Cloudinary URL)
 
 ## Auth / app routing
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_IMAGE_BUCKET` (optional, defaults to `client-documents`)
 - `NEXT_PUBLIC_SUPABASE_AUTH_REDIRECT_URL`
 - `NEXT_PUBLIC_APP_URL`
 - `HIDDEN_ADMIN_EMAILS`
@@ -24,6 +26,7 @@ Set these values in local `.env.local` and deployment providers (Vercel / Supaba
 - `SERPAPI_API_KEY`
 - `TRUECALLER_API_KEY`
 - `TRUECALLER_LOOKUP_URL`
+- `TRUECALLER_API_BASE` (optional base URL override)
 - `GOOGLE_MAPS_API_KEY`
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
 

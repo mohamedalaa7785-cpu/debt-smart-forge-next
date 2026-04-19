@@ -1,5 +1,7 @@
+ codex/remove-debug-text-from-login-ui-qogfas
 export const runtime = "nodejs";
 
+ main
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getRequestIp } from "@/server/lib/request";

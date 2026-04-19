@@ -2,10 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    domains: ["res.cloudinary.com", "lh3.googleusercontent.com"],
-  },
-  eslint: {
-    ignoreDuringBuilds: false,
+    remotePatterns: [
+      { protocol: "https", hostname: "res.cloudinary.com" },
+      { protocol: "https", hostname: "lh3.googleusercontent.com" },
+    ],
   },
   typescript: {
     ignoreBuildErrors: false,

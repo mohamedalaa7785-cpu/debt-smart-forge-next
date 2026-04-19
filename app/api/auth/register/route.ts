@@ -1,13 +1,19 @@
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { RegisterBodySchema } from "@/lib/validators/api";
 import { signupUser } from "@/server/auth/signup.service";
-import { handleApiError } from "@/server/core/error.handler";
+import { handleApiError, ValidationError } from "@/server/core/error.handler";
+import { enforceRateLimit } from "@/server/core/request-security";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const rawBody = await request.json().catch(() => ({}));
+    enforceRateLimit(request, "auth:register", 5);
+
+    const rawBody = await request.json().catch(() => {
+      throw new ValidationError("Invalid JSON payload");
+    });
+
     const parsed = RegisterBodySchema.safeParse(rawBody);
 
     if (!parsed.success) {

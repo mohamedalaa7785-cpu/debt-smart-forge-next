@@ -1,12 +1,18 @@
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { loginUser } from "@/server/auth/login.service";
-import { handleApiError } from "@/server/core/error.handler";
+import { handleApiError, ValidationError } from "@/server/core/error.handler";
+import { enforceRateLimit } from "@/server/core/request-security";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   try {
-    const rawBody = await request.json();
+    enforceRateLimit(request, "auth:login", 10);
+
+    const rawBody = await request.json().catch(() => {
+      throw new ValidationError("Invalid JSON payload");
+    });
+
     const user = await loginUser(rawBody);
 
     return NextResponse.json({

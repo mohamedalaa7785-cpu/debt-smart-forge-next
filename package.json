@@ -9,7 +9,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke-validators.mjs",
     "test": "npm run typecheck && npm run smoke",

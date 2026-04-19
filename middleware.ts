@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { normalizeRole } from "@/server/lib/role";
+import { logger } from "@/server/core/logger";
 
 type UserRoleRow = {
   role: string | null;
@@ -53,7 +54,7 @@ async function getDbRole(
     .maybeSingle<UserRoleRow>();
 
   if (error) {
-    console.error("Role fetch error:", error);
+    logger.warn("middleware_role_fetch_error", { userId, message: error.message });
     return { role: "user", isSuperUser: false };
   }
 

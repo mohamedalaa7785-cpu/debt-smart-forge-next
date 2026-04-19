@@ -12,7 +12,10 @@ export async function POST(req: NextRequest) {
       const ip = getRequestIp(req);
       await enforceRateLimit(`upload-image:${user.id}:${ip}`, 20, 60);
 
-      const parsed = UploadImageBodySchema.safeParse(await req.json().catch(() => ({})));
+      const parsed = UploadImageBodySchema.safeParse(
+        await req.json().catch(() => ({}))
+      );
+
       if (!parsed.success) {
         throw new ValidationError("Invalid upload-image payload", {
           issues: parsed.error.issues.map((i) => i.message),

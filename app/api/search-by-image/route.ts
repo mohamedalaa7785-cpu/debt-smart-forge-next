@@ -12,7 +12,10 @@ export async function POST(req: NextRequest) {
       const ip = getRequestIp(req);
       await enforceRateLimit(`search-by-image:${user.id}:${ip}`, 20, 60);
 
-      const parsed = SearchByImageBodySchema.safeParse(await req.json().catch(() => ({})));
+      const parsed = SearchByImageBodySchema.safeParse(
+        await req.json().catch(() => ({}))
+      );
+
       if (!parsed.success) {
         throw new ValidationError("Invalid search-by-image payload", {
           issues: parsed.error.issues.map((i) => i.message),

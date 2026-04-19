@@ -15,13 +15,22 @@ export async function GET(req: NextRequest) {
       const parsedQuery = PhoneLookupQuerySchema.safeParse({
         phone: req.nextUrl.searchParams.get("phone") || "",
       });
-      if (!parsedQuery.success) throw new ValidationError("phone query parameter is required");
+
+      if (!parsedQuery.success) {
+        throw new ValidationError("phone query parameter is required");
+      }
+
       const phone = parsedQuery.data.phone;
 
       const cacheKey = `phone-lookup:${user.id}:${phone}`;
       const cached = await cacheGet<Awaited<ReturnType<typeof phoneLookup>>>(cacheKey);
+
       if (cached) {
-        return NextResponse.json({ success: true, cached: true, data: cached });
+        return NextResponse.json({
+          success: true,
+          cached: true,
+          data: cached,
+        });
       }
 
       const data = await phoneLookup(phone);

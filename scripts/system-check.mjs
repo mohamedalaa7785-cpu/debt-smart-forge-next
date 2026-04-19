@@ -26,7 +26,7 @@ function assert(name, condition, details = '') {
 
 console.log('Running Debt Smart OS system check...');
 
-const bypassScan = run('rg -n "AUTH_BYPASS" app server lib middleware.ts');
+const bypassScan = run('rg -n "AUTH_BYPASS" app server lib proxy.ts');
 assert('No AUTH_BYPASS references remain', !bypassScan.ok || !bypassScan.out.trim(), bypassScan.out);
 
 const tokenScan = run('rg -n "localStorage\\.(getItem|setItem)\\(\\\"token\\\"" lib app');

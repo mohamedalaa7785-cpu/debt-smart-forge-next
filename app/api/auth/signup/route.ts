@@ -1,13 +1,20 @@
 export const dynamic = "force-dynamic";
 
 import { NextResponse } from "next/server";
+import { RegisterBodySchema } from "@/lib/validators/api";
 import { signupUser } from "@/server/auth/signup.service";
 import { handleApiError } from "@/server/core/error.handler";
 
 export async function POST(request: Request) {
   try {
-    const rawBody = await request.json();
-    const result = await signupUser(rawBody);
+    const rawBody = await request.json().catch(() => ({}));
+    const parsed = RegisterBodySchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: "Invalid signup payload" }, { status: 400 });
+    }
+
+    const result = await signupUser(parsed.data);
 
     return NextResponse.json({
       success: true,

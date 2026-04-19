@@ -1,7 +1,5 @@
-codex/remove-debug-text-from-login-ui-qogfas
 export const runtime = "nodejs";
 
-main
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth } from "@/server/lib/auth";
 import { getRequestIp } from "@/server/lib/request";
@@ -16,13 +14,10 @@ export async function POST(req: NextRequest) {
       const ip = getRequestIp(req);
       await enforceRateLimit(`search-by-image:${user.id}:${ip}`, 20, 60);
 
- codex/remove-debug-text-from-login-ui-qogfas
-      const parsed = SearchByImageBodySchema.safeParse(await req.json().catch(() => ({})));
       const parsed = SearchByImageBodySchema.safeParse(
         await req.json().catch(() => ({}))
       );
 
- main
       if (!parsed.success) {
         throw new ValidationError("Invalid search-by-image payload", {
           issues: parsed.error.issues.map((i) => i.message),
@@ -41,7 +36,4 @@ export async function POST(req: NextRequest) {
       return handleApiError(error);
     }
   });
- codex/remove-debug-text-from-login-ui-qogfas
 }
-}
- main

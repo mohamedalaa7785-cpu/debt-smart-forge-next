@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState("");
+  const googleOauthEnabled = process.env.NEXT_PUBLIC_ENABLE_GOOGLE_OAUTH !== "false";
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -47,6 +48,11 @@ export default function LoginPage() {
   }
 
   async function loginWithGoogle() {
+    if (!googleOauthEnabled) {
+      setError("Google Sign-In is temporarily disabled for this environment.");
+      return;
+    }
+
     setGoogleLoading(true);
     setError("");
 
@@ -80,10 +86,15 @@ export default function LoginPage() {
           type="button"
           className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 font-semibold text-gray-800 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
           onClick={loginWithGoogle}
-          disabled={googleLoading}
+          disabled={googleLoading || !googleOauthEnabled}
         >
           {googleLoading ? "Redirecting to Google..." : "Continue with Google"}
         </button>
+        {!googleOauthEnabled ? (
+          <p className="text-center text-xs text-amber-700">
+            Google Sign-In is disabled. Use email/password until OAuth client setup is completed.
+          </p>
+        ) : null}
 
         <div className="relative">
           <div className="absolute inset-0 flex items-center">

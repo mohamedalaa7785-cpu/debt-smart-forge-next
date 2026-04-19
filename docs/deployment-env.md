@@ -9,6 +9,7 @@ Set these values in local `.env.local` and deployment providers (Vercel / Supaba
 - `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`
 - `CLOUDINARY_API_KEY`
 - `CLOUDINARY_API_SECRET`
+- `CLOUDINARY_URL` (optional unified Cloudinary URL)
 
 ## Auth / app routing
 
@@ -24,6 +25,7 @@ Set these values in local `.env.local` and deployment providers (Vercel / Supaba
 - `SERPAPI_API_KEY`
 - `TRUECALLER_API_KEY`
 - `TRUECALLER_LOOKUP_URL`
+- `TRUECALLER_API_BASE` (optional base URL override)
 - `GOOGLE_MAPS_API_KEY`
 - `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`
 

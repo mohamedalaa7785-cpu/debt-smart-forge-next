@@ -11,6 +11,9 @@ import {
 } from "@/server/db/schema";
 import { normalizePhone } from "@/lib/utils";
 import { SearchQuerySchema, type SearchQuery } from "@/lib/validators/search";
+import { enforceRateLimit } from "@/server/core/distributed-cache";
+import { getRequestIp } from "@/server/lib/request";
+import { handleApiError } from "@/server/core/error.handler";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +39,7 @@ type SearchRow = {
 
 const cache = new Map<string, CachedSearch>();
 const TTL_MS = 1000 * 60 * 3;
+const MAX_CACHE_ENTRIES = 250;
 
 function getScopeCondition(userId: string, role: AuthRole) {
   if (role === "hidden_admin") return undefined;
@@ -43,6 +47,23 @@ function getScopeCondition(userId: string, role: AuthRole) {
   if (role === "supervisor") return eq(clients.portfolioType, "WRITEOFF");
   if (role === "team_leader") return eq(clients.teamLeaderId, userId);
   return eq(clients.ownerId, userId);
+}
+
+
+function pruneCache() {
+  if (cache.size < MAX_CACHE_ENTRIES) return;
+
+  const now = Date.now();
+  for (const [key, item] of cache.entries()) {
+    if (item.expiry <= now) cache.delete(key);
+  }
+
+  if (cache.size < MAX_CACHE_ENTRIES) return;
+
+  const sorted = [...cache.entries()].sort((a, b) => a[1].expiry - b[1].expiry);
+  for (const [key] of sorted.slice(0, cache.size - MAX_CACHE_ENTRIES + 1)) {
+    cache.delete(key);
+  }
 }
 
 function getSort(sort: SearchSort) {
@@ -62,6 +83,9 @@ function getSort(sort: SearchSort) {
 export async function GET(req: NextRequest) {
   return withAuth(async (user) => {
     try {
+      const ip = getRequestIp(req);
+      await enforceRateLimit(`search:${user.id}:${ip}`, 45, 60);
+
       const { searchParams } = new URL(req.url);
       const parsed = SearchQuerySchema.safeParse({
         q: searchParams.get("q") ?? "",
@@ -160,10 +184,11 @@ export async function GET(req: NextRequest) {
       }));
       const response = { success: true, count: data.length, data, empty: data.length === 0 };
 
+      pruneCache();
       cache.set(cacheKey, { data, count: data.length, expiry: Date.now() + TTL_MS });
       return NextResponse.json(response);
     } catch (error) {
-      return NextResponse.json({ success: false, error: "Search failed" }, { status: 500 });
+      return handleApiError(error);
     }
   });
 }

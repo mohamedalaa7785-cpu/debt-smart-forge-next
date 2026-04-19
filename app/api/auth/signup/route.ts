@@ -4,9 +4,14 @@ import { NextResponse } from "next/server";
 import { RegisterBodySchema } from "@/lib/validators/api";
 import { signupUser } from "@/server/auth/signup.service";
 import { handleApiError } from "@/server/core/error.handler";
+import { enforceRateLimit } from "@/server/core/distributed-cache";
+import { getRequestIp } from "@/server/lib/request";
 
 export async function POST(request: Request) {
   try {
+    const ip = getRequestIp(request);
+    await enforceRateLimit(`auth:signup:${ip}`, 6, 60);
+
     const rawBody = await request.json().catch(() => ({}));
     const parsed = RegisterBodySchema.safeParse(rawBody);
 

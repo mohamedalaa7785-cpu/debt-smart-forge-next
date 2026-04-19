@@ -19,12 +19,14 @@ export default function ActionButtons({ clientId, phones, script }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [activePhone, setActivePhone] = useState(phones[0] || "");
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (!phones.length) return null;
 
   async function logAction(type: string, note?: string) {
     try {
       setLoading(true);
+      setActionError(null);
       await fetch("/api/actions", {
         method: "POST",
         body: JSON.stringify({
@@ -34,8 +36,8 @@ export default function ActionButtons({ clientId, phones, script }: Props) {
         }),
       });
       router.refresh();
-    } catch (err) {
-      console.error("Action log error:", err);
+    } catch {
+      setActionError("Could not save action right now.");
     } finally {
       setLoading(false);
     }
@@ -84,6 +86,8 @@ export default function ActionButtons({ clientId, phones, script }: Props) {
           </button>
         </div>
       </div>
+
+      {actionError ? <p className="text-xs font-semibold text-red-600">{actionError}</p> : null}
 
       <div className="flex gap-2 overflow-x-auto pb-2">
         <button 

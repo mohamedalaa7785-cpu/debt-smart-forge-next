@@ -41,7 +41,7 @@ export async function requireUser(): Promise<AuthUser> {
   if (!dbUser) {
     const email = user.email.toLowerCase().trim();
     const role = normalizeRole(user.app_metadata?.role);
-    const hiddenFromAllowlist = isSuperUserEmail(email) || email === "mohamed.alaa7785@gmail.com";
+    const hiddenFromAllowlist = isSuperUserEmail(email);
 
     await syncAuthUserToPublicUser({
       id: user.id,

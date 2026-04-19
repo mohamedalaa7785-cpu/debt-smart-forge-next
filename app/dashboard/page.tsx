@@ -4,6 +4,7 @@ import Link from "next/link";
 import RiskBadge from "@/components/RiskBadge";
 import { formatCurrency } from "@/lib/utils";
 import { useEffect, useState } from "react";
+import ClientIntelligencePanel from "@/components/ClientIntelligencePanel";
 
 /* =========================
    TYPES
@@ -125,6 +126,8 @@ export default function DashboardPage() {
       <h1 className="text-2xl font-bold">
         🧠 AI Portfolio Dashboard
       </h1>
+
+      <ClientIntelligencePanel />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

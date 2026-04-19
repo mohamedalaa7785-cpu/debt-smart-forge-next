@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Supabase admin env is not configured" }, { status: 500 });
     }
 
-    const rawBody = await req.json();
+    const rawBody = await req.json().catch(() => ({}));
     const parsed = AdminCreateUserSchema.safeParse(rawBody);
 
     if (!parsed.success) {
@@ -98,7 +98,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Supabase admin env is not configured" }, { status: 500 });
     }
 
-    const rawBody = await req.json();
+    const rawBody = await req.json().catch(() => ({}));
     const parsed = AdminUpdateUserSchema.safeParse(rawBody);
 
     if (!parsed.success) {
@@ -119,7 +119,7 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const updateData: any = {
+    const updateData: Record<string, unknown> = {
       user_metadata: {
         ...(name !== undefined ? { name } : {}),
         ...(role ? { role } : {}),
@@ -152,7 +152,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ success: false, error: "Supabase admin env is not configured" }, { status: 500 });
     }
 
-    const rawBody = await req.json();
+    const rawBody = await req.json().catch(() => ({}));
     const parsed = AdminDeleteUserSchema.safeParse(rawBody);
 
     if (!parsed.success) {

@@ -1,22 +1,32 @@
 const REQUIRED_ENV_VARS = [
   "DATABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
+  "OPENAI_API_KEY",
   "NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME",
   "CLOUDINARY_API_KEY",
   "CLOUDINARY_API_SECRET",
-  "OPENAI_API_KEY",
-  "SERPAPI_API_KEY",
-  "GOOGLE_MAPS_API_KEY",
+] as const;
+
+const OPTIONAL_ENV_VARS = [
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "NEXT_PUBLIC_SUPABASE_AUTH_REDIRECT_URL",
   "NEXT_PUBLIC_APP_URL",
+  "GOOGLE_MAPS_API_KEY",
+  "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY",
+  "SERPAPI_API_KEY",
+  "TRUECALLER_API_KEY",
+  "TRUECALLER_LOOKUP_URL",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
+  "REDIS_URL",
+  "HIDDEN_ADMIN_EMAILS",
 ] as const;
 
 export type RequiredEnvVar = (typeof REQUIRED_ENV_VARS)[number];
+export type OptionalEnvVar = (typeof OPTIONAL_ENV_VARS)[number];
 
-const checked = new Set<RequiredEnvVar>();
+const checked = new Set<string>();
 
 export function getRequiredEnv(name: RequiredEnvVar): string {
   const value = process.env[name];
@@ -46,6 +56,7 @@ export function assertAllRequiredEnv(): void {
 export function getEnvHealth() {
   return {
     required: [...REQUIRED_ENV_VARS],
+    optional: [...OPTIONAL_ENV_VARS],
     checked: [...checked],
   };
 }

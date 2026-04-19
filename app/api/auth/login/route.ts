@@ -3,9 +3,14 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { loginUser } from "@/server/auth/login.service";
 import { handleApiError } from "@/server/core/error.handler";
+import { enforceRateLimit } from "@/server/core/distributed-cache";
+import { getRequestIp } from "@/server/lib/request";
 
 export async function POST(request: Request) {
   try {
+    const ip = getRequestIp(request);
+    await enforceRateLimit(`auth:login:${ip}`, 10, 60);
+
     const rawBody = await request.json();
     const user = await loginUser(rawBody);
 

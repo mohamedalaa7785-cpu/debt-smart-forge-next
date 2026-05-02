@@ -31,6 +31,7 @@ export default function DashboardLayout({
   const baseMenu = [
     { name: "Dashboard", href: "/dashboard" },
     { name: "Clients", href: "/dashboard/clients" },
+    { name: "Add Client", href: "/add-client" },
     { name: "OSINT", href: "/dashboard/osint" },
     { name: "Map", href: "/dashboard/map" },
     { name: "AI Intelligence", href: "/dashboard/intelligence" },

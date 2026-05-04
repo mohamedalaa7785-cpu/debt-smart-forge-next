@@ -1,37 +1,7 @@
 export const dynamic = "force-dynamic";
 
-import { NextResponse } from "next/server";
-import { RegisterBodySchema } from "@/lib/validators/api";
-import { signupUser } from "@/server/auth/signup.service";
-import { handleApiError } from "@/server/core/error.handler";
-import { enforceRateLimit } from "@/server/core/distributed-cache";
-import { getRequestIp } from "@/server/lib/request";
+import { handleSignupRequest } from "@/server/services/auth/signup-http.service";
 
 export async function POST(request: Request) {
-  try {
-    const ip = getRequestIp(request);
-    await enforceRateLimit(`auth:signup:${ip}`, 6, 60);
-
-    const rawBody = await request.json().catch(() => ({}));
-    const parsed = RegisterBodySchema.safeParse(rawBody);
-
-    if (!parsed.success) {
-      return NextResponse.json({ success: false, error: "Invalid signup payload" }, { status: 400 });
-    }
-
-    const result = await signupUser(parsed.data);
-
-    return NextResponse.json({
-      success: true,
-      user: {
-        id: result.user.id,
-        email: result.user.email,
-        role: result.user.role,
-        name: result.user.name,
-      },
-      emailConfirmationRequired: result.emailConfirmationRequired,
-    });
-  } catch (error) {
-    return handleApiError(error);
-  }
+  return handleSignupRequest(request, "Invalid signup payload");
 }

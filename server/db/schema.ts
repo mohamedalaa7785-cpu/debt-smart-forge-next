@@ -134,6 +134,24 @@ export const clients = pgTable(
 );
 
 /* =========================
+   DOCUMENTS
+========================= */
+
+export const documents = pgTable("documents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  intelligenceId: uuid("intelligence_id"),
+  storagePath: text("storage_path").notNull(),
+  title: text("title"),
+  mimeType: text("mime_type"),
+  sizeBytes: integer("size_bytes"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/* =========================
    CLIENT PHONES
 ========================= */
 
@@ -425,7 +443,3 @@ export const auditLogs = pgTable(
     createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt),
   })
 );
-
-// Note: Additional SaaS tables (debts, payments, etc.) from original file are omitted for brevity 
-// but should be preserved if they exist in the actual file. 
-// I'm assuming we're focusing on the CRM core.

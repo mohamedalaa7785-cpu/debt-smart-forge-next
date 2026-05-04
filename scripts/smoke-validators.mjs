@@ -37,7 +37,10 @@ const loginSrc = read("app/api/auth/login/route.ts");
 assert("login route wired to auth service", loginSrc.includes("loginUser") || loginSrc.includes("LoginBodySchema"));
 
 const registerSrc = read("app/api/auth/register/route.ts");
-assert("register route wired to validator", registerSrc.includes("RegisterBodySchema"));
+assert(
+  "register route wired to signup service",
+  registerSrc.includes("handleSignupRequest") || registerSrc.includes("RegisterBodySchema"),
+);
 
 const clientsSrc = read("app/api/clients/route.ts");
 assert("clients route wired to validator", clientsSrc.includes("CreateClientBodySchema"));

@@ -1,0 +1,35 @@
+import { NextResponse } from "next/server";
+import { RegisterBodySchema } from "@/lib/validators/api";
+import { signupUser } from "@/server/auth/signup.service";
+import { handleApiError } from "@/server/core/error.handler";
+import { enforceRateLimit } from "@/server/core/distributed-cache";
+import { getRequestIp } from "@/server/lib/request";
+
+export async function handleSignupRequest(request: Request, invalidPayloadMessage: string) {
+  try {
+    const ip = getRequestIp(request);
+    await enforceRateLimit(`auth:signup:${ip}`, 6, 60);
+
+    const rawBody = await request.json().catch(() => ({}));
+    const parsed = RegisterBodySchema.safeParse(rawBody);
+
+    if (!parsed.success) {
+      return NextResponse.json({ success: false, error: invalidPayloadMessage }, { status: 400 });
+    }
+
+    const result = await signupUser(parsed.data);
+
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        role: result.user.role,
+        name: result.user.name,
+      },
+      emailConfirmationRequired: result.emailConfirmationRequired,
+    });
+  } catch (error) {
+    return handleApiError(error);
+  }
+}

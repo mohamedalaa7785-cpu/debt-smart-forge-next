@@ -467,6 +467,28 @@ export const fraudAnalysis = pgTable(
 );
 
 /* =========================
+   LEGAL CASES
+========================= */
+
+export const legalCases = pgTable(
+  "legal_cases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+    caseNumber: text("case_number"),
+    caseType: text("case_type"),
+    status: text("status").default("pending"),
+    lastUpdate: text("last_update"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("legal_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
    AUDIT LOGS
 ========================= */
 

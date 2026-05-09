@@ -13,7 +13,10 @@ type AssignMode = "single_owner" | "round_robin";
 const ImportPayloadSchema = z
   .object({
     rawText: z.string().trim().optional().default(""),
-    imageUrl: z.string().url().optional().default(""),
+    imageUrl: z.preprocess(
+      (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+      z.string().url().optional()
+    ),
     dryRun: z.boolean().optional().default(true),
     assignMode: z.enum(["single_owner", "round_robin"]).optional().default("round_robin"),
     ownerId: z.string().uuid().optional().nullable(),
@@ -60,7 +63,8 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const { rawText, imageUrl, dryRun, assignMode, ownerId: targetOwnerId } = parsedBody.data;
+      const { rawText, dryRun, assignMode, ownerId: targetOwnerId } = parsedBody.data;
+      const imageUrl = parsedBody.data.imageUrl || "";
 
       if (!rawText && !imageUrl) {
         throw new ValidationError("rawText or imageUrl is required");

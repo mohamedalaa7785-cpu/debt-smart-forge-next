@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { parseNumber, safeJsonParse } from "@/lib/utils";
 import { calculateFinancials } from "@/server/services/financial.service";
+import { ValidationError } from "@/server/core/error.handler";
 
 export type ImportedLoan = {
   loanType: string;
@@ -245,7 +246,7 @@ export async function parseBankImportInput(params: { rawText?: string; imageUrl?
 
   if (!openai) {
     if (!params.rawText) {
-      throw new Error("OPENAI_API_KEY is required for image parsing");
+      throw new ValidationError("Image OCR is not configured. Add OPENAI_API_KEY or paste the bank text instead.");
     }
     return parseBankTextFallback(params.rawText);
   }
@@ -259,17 +260,29 @@ export async function parseBankImportInput(params: { rawText?: string; imageUrl?
     });
   }
 
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: "You extract structured banking collection data accurately." },
-      { role: "user", content: userContent },
-    ],
-  });
+  let content = "";
 
-  const content = completion.choices[0]?.message?.content || "";
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: "You extract structured banking collection data accurately." },
+        { role: "user", content: userContent },
+      ],
+    });
+
+    content = completion.choices[0]?.message?.content || "";
+  } catch (error) {
+    console.error("Bank import OCR error:", error);
+
+    if (params.rawText) {
+      return parseBankTextFallback(params.rawText);
+    }
+
+    throw new ValidationError("Bank OCR failed. Please try again or paste the bank text manually.");
+  }
   const parsed = safeJsonParse<{ clients?: any[] } | null>(content, null);
 
   const clients = Array.isArray(parsed?.clients) ? parsed!.clients : [];

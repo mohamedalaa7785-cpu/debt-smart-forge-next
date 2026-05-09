@@ -422,6 +422,51 @@ export const osintResults = pgTable(
 );
 
 /* =========================
+   OSINT HISTORY
+========================= */
+
+export const osintHistory = pgTable(
+  "osint_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull(),
+    type: text("type").notNull(),
+    query: text("query"),
+    result: jsonb("result").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("osint_history_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
+   FRAUD ANALYSIS
+========================= */
+
+export const fraudAnalysis = pgTable(
+  "fraud_analysis",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .references(() => clients.id, { onDelete: "cascade" })
+      .notNull()
+      .unique(),
+    score: integer("score").notNull(),
+    level: text("level").notNull(),
+    signals: jsonb("signals").$type<string[]>().default([]),
+    aiSummary: text("ai_summary"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("fraud_client_idx").on(table.clientId),
+  })
+);
+
+/* =========================
    AUDIT LOGS
 ========================= */
 

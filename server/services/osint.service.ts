@@ -381,9 +381,10 @@ export async function runOSINT(input: OSINTInput): Promise<OSINTResult> {
         });
 
       await db.insert(osintHistory).values({
-        clientId: input.clientId,
+        clientId: input.clientId!,
+        type: "FULL_SCAN",
+        query: input.name || "unknown",
         result,
-        confidence: result.confidence,
       });
     } catch (err) {
       console.error("OSINT SAVE ERROR:", err);

@@ -492,7 +492,7 @@ export const legalCases = pgTable(
    AUDIT LOGS
 ========================= */
 
-export const auditLogs = pgTable(
+export const logs = pgTable(
   "audit_logs",
   {
     id: uuid("id").primaryKey().defaultRandom(),

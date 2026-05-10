@@ -5,6 +5,9 @@ export const TOP_LEVEL_SQL_PATTERN = /^\d{4}_.+\.sql$/;
 export const SUPABASE_MIGRATION_PATTERN = /^\d{14}_.+\.sql$/;
 
 const FULL_RESET_SQL = '0018_full_reset_current_schema.sql';
+codex/fix-this-problem
+const CORE_BASELINE_MIGRATION = '20260502095000_core_app_schema.sql';
+main
 const EXPECTED_PROJECT_ID = 'qjcrvgbgmumwhzxdbgad';
 
 const REQUIRED_TABLES = [
@@ -197,6 +200,22 @@ export function validateSupabaseSetup(projectRoot = process.cwd()) {
 
   validateFullResetSql({ supabaseDir, fail, pass });
 
+codex/fix-this-problem
+  if (fs.existsSync(migrationsDir)) {
+    const baselineMigrationPath = path.join(migrationsDir, CORE_BASELINE_MIGRATION);
+    if (!fs.existsSync(baselineMigrationPath)) {
+      fail(`Missing core baseline migration before RLS: supabase/migrations/${CORE_BASELINE_MIGRATION}`);
+    } else {
+      const baselineSql = fs.readFileSync(baselineMigrationPath, 'utf8');
+      if (!baselineSql.includes('CREATE TABLE IF NOT EXISTS public.clients')) {
+        fail(`${CORE_BASELINE_MIGRATION} must create public.clients before RLS migrations run`);
+      } else {
+        pass(`Found core baseline migration before RLS: supabase/migrations/${CORE_BASELINE_MIGRATION}`);
+      }
+    }
+  }
+
+ main
   if (fs.existsSync(migrationsDir)) {
     const allMigrationEntries = fs.readdirSync(migrationsDir).sort();
     const migrationFiles = allMigrationEntries

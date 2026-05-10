@@ -115,7 +115,7 @@ BEGIN
         role = EXCLUDED.role,
         is_admin = EXCLUDED.is_admin,
         is_hidden_admin = EXCLUDED.is_hidden_admin,
-        updatedAt = now();
+        updated_at = now();
 
   RETURN NEW;
 END;

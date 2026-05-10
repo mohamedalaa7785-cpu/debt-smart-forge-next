@@ -1,6 +1,6 @@
 import "server-only";
 
-import { drizzle } from "drizzle-orm/postgres-js";
+import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 import { getRequiredEnv } from "@/lib/env";
@@ -8,6 +8,8 @@ import { getRequiredEnv } from "@/lib/env";
 declare global {
   // eslint-disable-next-line no-var
   var __dbClient: postgres.Sql | undefined;
+  // eslint-disable-next-line no-var
+  var __dbInstance: PostgresJsDatabase<typeof schema> | undefined;
 }
 
 function createClient() {
@@ -26,17 +28,33 @@ function createClient() {
   });
 }
 
-const sql = globalThis.__dbClient ?? createClient();
+function getSql() {
+  if (!globalThis.__dbClient) {
+    globalThis.__dbClient = createClient();
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  globalThis.__dbClient = sql;
+  return globalThis.__dbClient;
 }
 
-export const db = drizzle(sql, { schema });
+function getDb() {
+  if (!globalThis.__dbInstance) {
+    globalThis.__dbInstance = drizzle(getSql(), { schema });
+  }
+
+  return globalThis.__dbInstance;
+}
+
+export const db = new Proxy({} as PostgresJsDatabase<typeof schema>, {
+  get(_target, prop) {
+    const instance = getDb() as any;
+    const value = instance[prop];
+    return typeof value === "function" ? value.bind(instance) : value;
+  },
+});
 
 export async function checkDb() {
   try {
-    await sql`SELECT 1`;
+    await getSql()`SELECT 1`;
     return true;
   } catch (error) {
     console.error("DB ERROR:", error);

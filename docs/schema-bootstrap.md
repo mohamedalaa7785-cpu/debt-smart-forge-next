@@ -2,11 +2,14 @@
 
 This project expects application tables in `public` in addition to `auth.*` and `storage.*`.
 
-If your Supabase project has only `auth` and `storage`, bootstrap schema from repo migrations:
+If you are deleting/rebuilding Supabase tables from scratch, use the consolidated reset SQL first:
 
-1. Apply Drizzle migrations in order (`drizzle/migrations/*.sql`).
-2. Ensure `drizzle/migrations/meta/_journal.json` includes all migration tags.
-3. Run seed/import scripts only after schema creation (`insert_dataset.sql` is optional sample data).
+1. Open Supabase Dashboard -> SQL Editor.
+2. Paste and run `supabase/0018_full_reset_current_schema.sql`.
+3. Keep `auth.users` unless you intentionally delete Auth users separately; the reset script backfills existing Auth users into `public.users` and `public.profiles`.
+4. Run seed/import scripts only after schema creation (`insert_dataset.sql` is optional sample data).
+
+For incremental environments, apply Drizzle/Supabase migrations in order instead of the destructive reset script.
 
 ## Canonical migration source
 
@@ -18,6 +21,7 @@ If your Supabase project has only `auth` and `storage`, bootstrap schema from re
 - `drizzle/migrations/0005_align_schema_and_security.sql`
 - `drizzle/migrations/0006_auth_sync_hardening.sql`
 - `drizzle/migrations/0007_round4_security_perf_indexes.sql`
+- `supabase/0018_full_reset_current_schema.sql` (destructive consolidated reset for clean Supabase rebuilds)
 
 ## Notes
 

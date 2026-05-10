@@ -88,6 +88,15 @@ export default function AddClientPage() {
   async function uploadBankImage(file?: File | null) {
     if (!file) return;
 
+    if (!file.type.startsWith("image/")) {
+      throw new Error("Please choose an image file for bank import");
+    }
+
+    const maxSizeBytes = 5 * 1024 * 1024;
+    if (file.size > maxSizeBytes) {
+      throw new Error("Bank image is too large (max 5MB)");
+    }
+
     const reader = new FileReader();
     const base64 = await new Promise<string>((resolve, reject) => {
       reader.onload = () => resolve(String(reader.result || ""));
@@ -95,18 +104,8 @@ export default function AddClientPage() {
       reader.readAsDataURL(file);
     });
 
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ file: base64, folder: "debt-smart/imports" }),
-    });
-
-    const json = await res.json();
-    if (!res.ok || !json.success) {
-      throw new Error(json.error || "Failed to upload image");
-    }
-
-    setBankImageUrl(json.data.url);
+    setBankImageUrl(base64);
+    setImportSummary(null);
   }
 
 
@@ -267,7 +266,7 @@ export default function AddClientPage() {
           onChange={(e) => setBankText(e.target.value)}
         />
 
-        {bankImageUrl && <p className="text-xs text-green-700 break-all">Image uploaded: {bankImageUrl}</p>}
+        {bankImageUrl && <p className="text-xs text-green-700">Image ready for OCR</p>}
 
         <div className="flex gap-2">
           <button onClick={previewBankImport} disabled={bankImporting} className="px-4 py-2 rounded-xl bg-gray-900 text-white text-sm font-bold disabled:bg-gray-400">Preview extraction</button>

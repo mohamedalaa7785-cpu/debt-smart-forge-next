@@ -17,9 +17,11 @@ Use `.` as the working directory in Supabase GitHub integration for this reposit
 4. Re-login in the app so profile/user sync is refreshed.
 5. Run `npm run check:supabase` before deployment; it verifies the project id plus required reset SQL tables, columns, auth sync, RLS, and storage setup.
 
+codex/fix-this-problem
 ## If you see `relation "public.clients" does not exist`
 That means an RLS/guardrail migration ran before the core app tables existed. The timestamp migration `migrations/20260502095000_core_app_schema.sql` creates the required app tables before later RLS migrations. Pull the latest migrations and run them in timestamp order, or run `0018_full_reset_current_schema.sql` for a clean rebuild.
 
+ main
 ## Recommended safe workflow
 1. Link the remote project once:
    - `supabase link --project-ref <PROJECT_REF>`

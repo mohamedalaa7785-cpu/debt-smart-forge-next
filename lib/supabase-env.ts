@@ -1,11 +1,13 @@
 export type SupabaseEnv = {
   url: string;
   anonKey: string;
+  serviceRoleKey?: string;
 };
 
 export function getSupabaseEnv(): SupabaseEnv {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
   if (!url || !anonKey) {
     throw new Error(
@@ -13,7 +15,7 @@ export function getSupabaseEnv(): SupabaseEnv {
     );
   }
 
-  return { url, anonKey };
+  return { url, anonKey, serviceRoleKey };
 }
 
 export function hasSupabaseEnv(): boolean {

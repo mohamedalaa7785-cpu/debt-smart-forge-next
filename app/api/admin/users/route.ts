@@ -12,15 +12,14 @@ import {
   AdminUpdateUserSchema,
 } from "@/lib/validators/api";
 
-function getSupabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+import { createSupabaseAdminClient } from "@/server/auth/session.service";
 
-  if (!url || !serviceRoleKey) {
+function getSupabaseAdmin() {
+  try {
+    return createSupabaseAdminClient();
+  } catch {
     return null;
   }
-
-  return createClient(url, serviceRoleKey);
 }
 
 async function hiddenAdminCount() {

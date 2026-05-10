@@ -84,6 +84,7 @@ export async function enforceRateLimit(key: string, limit: number, windowSeconds
   ]);
 
   if (!response) {
+    // Upstash not configured or failed, use local counters only
     return;
   }
 

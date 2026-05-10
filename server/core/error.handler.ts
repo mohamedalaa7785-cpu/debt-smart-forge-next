@@ -55,6 +55,13 @@ export function handleApiError(error: unknown) {
     );
   }
 
+  // Log unexpected errors for debugging
+  if (error instanceof Error) {
+    console.error("[API Error]", error.message, error.stack);
+  } else {
+    console.error("[API Error]", error);
+  }
+
   return NextResponse.json(
     {
       success: false,

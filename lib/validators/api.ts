@@ -1,13 +1,42 @@
 import { z } from "zod";
 
+const emptyStringToNull = (value: unknown) => (typeof value === "string" && value.trim() === "" ? null : value);
+const emptyStringToUndefined = (value: unknown) => (typeof value === "string" && value.trim() === "" ? undefined : value);
+
+const OptionalTextSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().optional().nullable()
+);
+
+const OptionalEmailSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().trim().email().optional().nullable()
+);
+
+const OptionalUuidSchema = z.preprocess(
+  emptyStringToNull,
+  z.string().uuid().optional().nullable()
+);
+
+const OptionalLimitedTextSchema = (max: number) =>
+  z.preprocess(emptyStringToNull, z.string().trim().max(max).optional().nullable());
+
+const OptionalUrlSchema = z.preprocess(
+  emptyStringToUndefined,
+  z.string().url().optional()
+);
+
 export const LoginBodySchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(1),
 });
 
 export const RegisterBodySchema = z.object({
-  name: z.string().trim().min(1).max(120).optional(),
-  username: z.string().trim().min(3).max(50).regex(/^[a-z0-9._-]+$/i, "Username must be letters, numbers, dot, underscore, or dash").optional(),
+  name: OptionalLimitedTextSchema(120),
+  username: z.preprocess(
+    emptyStringToNull,
+    z.string().trim().min(3).max(50).regex(/^[a-z0-9._-]+$/i, "Username must be letters, numbers, dot, underscore, or dash").optional().nullable()
+  ),
   email: z.string().trim().email(),
   password: z.string().min(8).max(128),
 });
@@ -17,11 +46,11 @@ export const ClientsListQuerySchema = z.object({
 });
 const LoanInputSchema = z.object({
   loanType: z.string().trim().min(1),
-  loanNumber: z.string().trim().optional().nullable(),
+  loanNumber: OptionalTextSchema,
   cycle: z.union([z.string(), z.number()]).optional().nullable(),
   emi: z.union([z.string(), z.number()]).optional().nullable(),
   balance: z.union([z.string(), z.number()]).optional().nullable(),
-  organization: z.string().trim().optional().nullable(),
+  organization: OptionalTextSchema,
   willLegal: z.boolean().optional(),
   referralDate: z.string().optional().nullable(),
   collectorPercentage: z.union([z.string(), z.number()]).optional().nullable(),
@@ -32,27 +61,27 @@ const LoanInputSchema = z.object({
 
 const AddressInputSchema = z.object({
   address: z.string().trim().min(1),
-  city: z.string().trim().optional().nullable(),
-  area: z.string().trim().optional().nullable(),
+  city: OptionalTextSchema,
+  area: OptionalTextSchema,
 });
 
 export const CreateClientBodySchema = z.object({
   name: z.string().trim().min(1),
-  email: z.string().trim().email().optional().nullable(),
-  company: z.string().trim().optional().nullable(),
-  branch: z.string().trim().optional().nullable(),
-  notes: z.string().trim().optional().nullable(),
-  referral: z.string().trim().optional().nullable(),
-  referralText: z.string().trim().optional().nullable(),
-  referralImageUrl: z.string().trim().optional().nullable(),
-  status: z.string().trim().optional().nullable(),
+  email: OptionalEmailSchema,
+  company: OptionalTextSchema,
+  branch: OptionalTextSchema,
+  notes: OptionalTextSchema,
+  referral: OptionalTextSchema,
+  referralText: OptionalTextSchema,
+  referralImageUrl: OptionalTextSchema,
+  status: OptionalTextSchema,
   portfolioType: z.enum(["ACTIVE", "WRITEOFF"]).optional(),
   domainType: z.enum(["FIRST", "THIRD", "WRITEOFF"]).optional(),
   phones: z.array(z.string().trim().min(3)).min(1),
   addresses: z.array(AddressInputSchema).optional(),
   loans: z.array(LoanInputSchema).min(1),
-  ownerId: z.string().uuid().optional().nullable(),
-  teamLeaderId: z.string().uuid().optional().nullable(),
+  ownerId: OptionalUuidSchema,
+  teamLeaderId: OptionalUuidSchema,
 });
 
 
@@ -60,11 +89,11 @@ export const CreateClientBodySchema = z.object({
 export const UpdateClientBodySchema = z
   .object({
     name: z.string().trim().min(1).max(160).optional(),
-    email: z.string().trim().email().optional().nullable(),
-    company: z.string().trim().max(160).optional().nullable(),
-    notes: z.string().trim().max(4000).optional().nullable(),
-    referral: z.string().trim().max(200).optional().nullable(),
-    branch: z.string().trim().max(120).optional().nullable(),
+    email: OptionalEmailSchema,
+    company: OptionalLimitedTextSchema(160),
+    notes: OptionalLimitedTextSchema(4000),
+    referral: OptionalLimitedTextSchema(200),
+    branch: OptionalLimitedTextSchema(120),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
@@ -93,14 +122,14 @@ export const UploadBodySchema = z.object({
 export const AdminCreateUserSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8).max(128),
-  name: z.string().trim().max(120).optional().nullable(),
+  name: OptionalLimitedTextSchema(120),
   role: z.enum(["admin", "supervisor", "team_leader", "collector", "hidden_admin"]),
 });
 
 export const AdminUpdateUserSchema = z.object({
   userId: z.string().uuid(),
   role: z.enum(["admin", "supervisor", "team_leader", "collector", "hidden_admin"]).optional(),
-  name: z.string().trim().max(120).optional().nullable(),
+  name: OptionalLimitedTextSchema(120),
   password: z.string().min(8).max(128).optional(),
 });
 
@@ -112,10 +141,10 @@ export const AdminDeleteUserSchema = z.object({
 export const CreateActionBodySchema = z.object({
   clientId: z.string().uuid(),
   actionType: z.string().trim().min(1).max(50),
-  note: z.string().trim().max(4000).optional().nullable(),
-  result: z.string().trim().max(2000).optional().nullable(),
+  note: OptionalLimitedTextSchema(4000),
+  result: OptionalLimitedTextSchema(2000),
   amountPaid: z.union([z.string(), z.number()]).optional().nullable(),
-  nextActionDate: z.string().optional().nullable(),
+  nextActionDate: OptionalTextSchema,
 });
 
 export const WhatsAppBodySchema = z.object({
@@ -147,13 +176,13 @@ export const PhoneLookupQuerySchema = z.object({
 
 export const UploadImageBodySchema = z.object({
   imageBase64: z.string().min(64),
-  clientId: z.string().uuid().optional().nullable(),
-  title: z.string().trim().max(160).optional().nullable(),
+  clientId: OptionalUuidSchema,
+  title: OptionalLimitedTextSchema(160),
 });
 
 export const SearchByImageBodySchema = z.object({
   imageBase64: z.string().min(64).optional(),
-  imageUrl: z.string().url().optional(),
+  imageUrl: OptionalUrlSchema,
   limit: z.coerce.number().int().min(1).max(20).optional().default(5),
 }).refine((data) => Boolean(data.imageBase64 || data.imageUrl), {
   message: "imageBase64 or imageUrl is required",

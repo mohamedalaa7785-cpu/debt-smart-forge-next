@@ -13,6 +13,8 @@ Set these values in local `.env.local` and deployment providers (Vercel / Supaba
 
 ## Auth / app routing
 
+Project ref: `qjcrvgbgmumwhzxdbgad` (`https://qjcrvgbgmumwhzxdbgad.supabase.co`).
+
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`

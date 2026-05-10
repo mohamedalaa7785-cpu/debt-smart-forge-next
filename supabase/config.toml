@@ -2,7 +2,7 @@
 # This file is required so Supabase CLI/GitHub integration can detect this directory as a Supabase project.
 # Update `project_id` after running: supabase link --project-ref <PROJECT_REF>
 
-project_id = ""
+project_id = "qjcrvgbgmumwhzxdbgad"
 
 [api]
 enabled = true

@@ -1,15 +1,33 @@
 import "./globals.css";
-import type { Metadata } from "next";
+
 import Link from "next/link";
 import LogoutButton from "@/components/LogoutButton";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
+import { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Debt Smart OS",
   description: "AI-powered Debt Collection Intelligence System",
+  openGraph: {
+    title: "Debt Smart OS",
+    description: "AI-powered Debt Collection Intelligence System",
+    images: [{
+      url: "/og-image.png",
+      width: 1200,
+      height: 630,
+      alt: "Debt Smart OS - AI-powered Debt Collection Intelligence System",
+    }],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Debt Smart OS",
+    description: "AI-powered Debt Collection Intelligence System",
+    images: ["/og-image.png"],
+  },
 };
 
 export default async function RootLayout({

@@ -109,7 +109,7 @@ export async function createClientFull(data: any, creatorId: string) {
         domainType: data.domainType || "FIRST",
         branch: data.branch || null,
         createdBy: creatorId,
-        cycleStartDate: data.cycleStartDate ? new Date(data.cycleStartDate).toISOString() : new Date().toISOString(),
+        cycleStartDate: data.cycleStartDate ? new Date(data.cycleStartDate) : new Date(),
         cycleEndDate: data.cycleEndDate || null,
       })
       .returning();

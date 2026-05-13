@@ -29,7 +29,7 @@ export async function getClientTimeline(clientId: string): Promise<TimelineEvent
   const actionEvents: TimelineEvent[] = actions.map((a) => ({
     id: a.id,
     type: "action",
-    at: a.createdAt.toISOString(),
+    at: a.createdAt ? new Date(a.createdAt).toISOString() : new Date().toISOString(),
     note: a.note || a.result,
     actorId: a.userId || null,
   }));
@@ -37,7 +37,7 @@ export async function getClientTimeline(clientId: string): Promise<TimelineEvent
   const callEvents: TimelineEvent[] = calls.map((c) => ({
     id: c.id,
     type: "call",
-    at: c.createdAt.toISOString(),
+    at: c.createdAt ? new Date(c.createdAt).toISOString() : new Date().toISOString(),
     note: c.note,
     actorId: c.userId || null,
   }));

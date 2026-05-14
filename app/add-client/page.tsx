@@ -346,7 +346,14 @@ export default function AddClientPage() {
         {loans.map((l, i) => (
           <div key={i} className="grid md:grid-cols-2 gap-3 border rounded-xl p-3">
             <input className="border rounded-xl p-3" placeholder="Loan Number" value={l.loanNumber} onChange={(e) => updateLoan(i, "loanNumber", e.target.value)} />
-            <input className="border rounded-xl p-3" placeholder="Loan type" value={l.loanType} onChange={(e) => updateLoan(i, "loanType", e.target.value)} />
+            <select className="border rounded-xl p-3" value={l.loanType} onChange={(e) => updateLoan(i, "loanType", e.target.value)}>
+              <option value="PIL">PIL (Personal Loan)</option>
+              <option value="CC">CC (Credit Card)</option>
+              <option value="AUTO">AUTO (Auto Loan)</option>
+              <option value="VSBL">VSBL (Visible)</option>
+              <option value="MC">MC (Mortgage)</option>
+              <option value="OTHER">OTHER</option>
+            </select>
             <input className="border rounded-xl p-3" placeholder="EMI" value={l.emi} onChange={(e) => updateLoan(i, "emi", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="BKT Day (1-31)" value={l.cycle} onChange={(e) => updateLoan(i, "cycle", e.target.value)} />
             <input className="border rounded-xl p-3" placeholder="Balance" value={l.balance} onChange={(e) => updateLoan(i, "balance", e.target.value)} />

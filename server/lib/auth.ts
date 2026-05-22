@@ -98,6 +98,16 @@ export async function withAuth(handler: AuthHandler): Promise<NextResponse> {
     const user = await requireUser();
     return await handler(user);
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
     return handleApiError(error);
   }
 }

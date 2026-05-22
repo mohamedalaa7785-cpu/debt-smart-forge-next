@@ -6,9 +6,7 @@ import { db } from "@/server/db";
 import { clients, users } from "@/server/db/schema";
 import { parseBankImportInput } from "@/server/services/bank-import.service";
 import { createClientFull } from "@/server/services/client.service";
-import { ForbiddenError, ValidationError, handleApiError } from "@/server/core/error.handler";
-
-type AssignMode = "single_owner" | "round_robin";
+import { ValidationError, handleApiError } from "@/server/core/error.handler";
 
 const ImportPayloadSchema = z
   .object({
@@ -50,14 +48,55 @@ function summarize(client: any) {
   };
 }
 
+function toBool(value: FormDataEntryValue | null, fallback: boolean) {
+  if (typeof value !== "string") return fallback;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return fallback;
+}
+
+function toNullableString(value: FormDataEntryValue | null) {
+  if (typeof value !== "string") return null;
+  const cleaned = value.trim();
+  return cleaned ? cleaned : null;
+}
+
+async function parseImportRequest(req: NextRequest) {
+  const contentType = req.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const form = await req.formData();
+
+    let imageUrl = typeof form.get("imageUrl") === "string" ? (form.get("imageUrl") as string).trim() : "";
+    const imageFile = form.get("image");
+
+    if (!imageUrl && imageFile instanceof File && imageFile.size > 0) {
+      const buffer = Buffer.from(await imageFile.arrayBuffer());
+      imageUrl = `data:${imageFile.type || "application/octet-stream"};base64,${buffer.toString("base64")}`;
+    }
+
+    return {
+      rawText: typeof form.get("rawText") === "string" ? ((form.get("rawText") as string).trim() || "") : "",
+      imageUrl,
+      dryRun: toBool(form.get("dryRun"), true),
+      assignMode: form.get("assignMode") === "single_owner" ? "single_owner" : "round_robin",
+      ownerId: toNullableString(form.get("ownerId")),
+      portfolioType: form.get("portfolioType") === "WRITEOFF" ? "WRITEOFF" : "ACTIVE",
+      domainType: ["FIRST", "THIRD", "WRITEOFF"].includes(String(form.get("domainType")))
+        ? (form.get("domainType") as "FIRST" | "THIRD" | "WRITEOFF")
+        : "FIRST",
+    };
+  }
+
+  return await req.json();
+}
+
 export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
     try {
-      if (user.role !== "admin" && user.role !== "hidden_admin") {
-        throw new ForbiddenError();
-      }
+      console.log("AUTH USER", user?.id);
 
-      const rawBody = await req.json();
+      const rawBody = await parseImportRequest(req);
       const parsedBody = ImportPayloadSchema.safeParse(rawBody);
       if (!parsedBody.success) {
         throw new ValidationError("Invalid import payload", {

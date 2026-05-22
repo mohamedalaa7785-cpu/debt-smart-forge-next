@@ -107,14 +107,14 @@ function isRecommendationAction(value: unknown): value is RecommendationResult["
 /* ================= AI (STRUCTURED) ================= */
 
 async function aiDecision(input: RecommendationInput) {
-  const key = process.env.OPENAI_API_KEY;
+  const key = process.env.GROQ_API_KEY;
   if (!key) return null;
 
   try {
     const res = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "gpt-4o-mini",
+        model: "llama-3.3-70b-versatile",
         messages: [
           {
             role: "system",

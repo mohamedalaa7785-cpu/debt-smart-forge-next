@@ -21,7 +21,7 @@ export async function GET() {
           database: dbOk,
           supabaseAuthEnv: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
           supabaseServiceRoleEnv: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
-          openaiEnv: Boolean(process.env.OPENAI_API_KEY),
+          groqEnv: Boolean(process.env.GROQ_API_KEY),
           serpApiEnv: Boolean(process.env.SERPAPI_API_KEY),
           imageBucket: process.env.SUPABASE_IMAGE_BUCKET || "client-documents",
         },

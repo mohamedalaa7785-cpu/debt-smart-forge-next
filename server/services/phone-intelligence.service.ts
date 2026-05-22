@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { getGroqClient, getGroqModel } from "@/server/lib/groq-client";
 import { db } from "@/server/db";
 import { clientPhones, clients, osintResults } from "@/server/db/schema";
 import { eq, ilike, sql } from "drizzle-orm";
@@ -12,16 +12,6 @@ export interface PhoneLookupResult {
   spam: boolean;
   notes: string;
   source: "internal" | "external" | "mixed";
-}
-
-let openaiClient: OpenAI | null = null;
-function getOpenAI() {
-  if (!openaiClient) {
-    const apiKey = process.env.OPENAI_API_KEY?.trim();
-    if (!apiKey) return null;
-    openaiClient = new OpenAI({ apiKey });
-  }
-  return openaiClient;
 }
 
 async function lookupSerpApi(phone: string) {
@@ -63,7 +53,7 @@ async function analyzePhone(params: {
   const fallbackRisk = params.hasInternalRecord ? 30 : 70;
   const fallbackSpam = !params.hasInternalRecord;
 
-  const openai = getOpenAI();
+  const openai = getGroqClient();
   if (!openai) {
     return {
       name: params.internalName || null,
@@ -75,7 +65,7 @@ async function analyzePhone(params: {
 
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: getGroqModel(),
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [

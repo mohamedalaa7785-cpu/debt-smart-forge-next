@@ -7,8 +7,13 @@ import { cookies } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { Metadata } from "next";
+import { validateRuntimeEnv } from "@/lib/env";
+
+const publicAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
+const metadataBase = publicAppUrl ? new URL(publicAppUrl) : undefined;
 
 export const metadata: Metadata = {
+  metadataBase,
   title: "Debt Smart OS",
   description: "AI-powered Debt Collection Intelligence System",
   openGraph: {
@@ -35,6 +40,7 @@ export default async function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  validateRuntimeEnv("app");
   const cookieStore = await cookies();
   let user: { id: string } | null = null;
 

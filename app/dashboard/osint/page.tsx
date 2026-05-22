@@ -34,9 +34,17 @@ export default function OSINTPage() {
         body: JSON.stringify({ name: query.trim() }),
       });
 
-      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
 
-      if (!res.ok || !json.success) throw new Error(json.error || "OSINT request failed");
+      const text = await res.text();
+      if (!text || text.trim() === "") {
+        throw new Error("Empty API response");
+      }
+
+      const json = JSON.parse(text);
+      if (!json.success) throw new Error(json.error || "OSINT request failed");
 
       setData(json.data);
     } catch (err: any) {

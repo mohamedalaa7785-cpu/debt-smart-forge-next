@@ -20,6 +20,10 @@ const OsintRequestSchema = z
 
 export async function POST(req: NextRequest) {
   try {
+    console.log("[osint] request received");
+    if (!process.env.REDIS_URL) {
+      return NextResponse.json({ success: false, data: [], error: "REDIS_URL is missing" }, { status: 503 });
+    }
     const user = await requireUser();
     const ip = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
     await enforceRateLimit(`osint:${user.id}:${ip}:${req.nextUrl.pathname}`, 15, 60);
@@ -54,10 +58,14 @@ export async function POST(req: NextRequest) {
       imageUrl: clean.imageUrl || undefined,
     });
 
-    if (!job) return NextResponse.json({ success: false, error: "Queue unavailable" }, { status: 503 });
+    console.log("[osint] queue add status", { queued: Boolean(job), jobId: job?.id ?? null });
 
-    return NextResponse.json({ success: true, queued: true, jobId: job.id });
+    if (!job) return NextResponse.json({ success: false, data: [], error: "Queue unavailable" }, { status: 503 });
+
+    return NextResponse.json({ success: true, data: { queued: true, jobId: job.id }, error: null });
   } catch (error) {
-    return handleApiError(error);
+    console.error("[osint] error", error);
+    const fallback = handleApiError(error);
+    return NextResponse.json({ success: false, data: [], error: error instanceof Error ? error.message : "Unknown error" }, { status: fallback.status || 500 });
   }
 }

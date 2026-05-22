@@ -19,11 +19,16 @@ export type OsintJobPayload = {
 let queueInstance: Queue<OsintJobPayload> | null = null;
 
 export async function getOsintQueue() {
+  logger.info("OSINT_QUEUE_REDIS_STATUS", { hasRedisConfig });
   if (!hasRedisConfig) return null;
   if (queueInstance) return queueInstance;
 
   const connection = await getRedisClient();
-  if (!connection) return null;
+  if (!connection) {
+    logger.warn("OSINT_QUEUE_REDIS_CONNECTION_FAILED");
+    return null;
+  }
+  logger.info("OSINT_QUEUE_REDIS_CONNECTED");
 
   queueInstance = new Queue<OsintJobPayload>(OSINT_QUEUE_NAME, {
     connection,
@@ -45,9 +50,11 @@ export async function enqueueOsintJob(payload: OsintJobPayload) {
     return null;
   }
 
-  return queue.add(payload.type, payload, {
+  const job = await queue.add(payload.type, payload, {
     jobId: `${payload.type}:${payload.clientId}:${payload.phone || payload.name || Date.now()}`,
   });
+  logger.info("OSINT_QUEUE_JOB_ADDED", { type: payload.type, clientId: payload.clientId, jobId: job.id });
+  return job;
 }
 
 

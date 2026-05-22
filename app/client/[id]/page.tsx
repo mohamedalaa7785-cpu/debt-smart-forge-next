@@ -9,6 +9,7 @@ import ActionButtons from "@/components/ActionButtons";
 import Timeline from "@/components/Timeline";
 import OSINTPanel from "@/components/OSINTPanel";
 import ClientAutoRefresh from "@/components/ClientAutoRefresh";
+import ClientIntelligenceTabs from "@/components/ClientIntelligenceTabs";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
   return (
     <div className="max-w-4xl mx-auto py-8 px-4 space-y-8">
       <ClientAutoRefresh intervalSec={20} />
+      <ClientIntelligenceTabs clientId={id} clientName={data.name || "Unknown"} primaryPhone={phones[0]?.phone || ""} />
 
       {/* Header Card */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 md:p-8">

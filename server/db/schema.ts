@@ -442,6 +442,83 @@ export const osintHistory = pgTable(
   })
 );
 
+export const phoneIntelligence = pgTable(
+  "phone_intelligence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    phone: text("phone").notNull(),
+    fullName: text("full_name"),
+    country: text("country"),
+    carrier: text("carrier"),
+    whatsappAvailable: boolean("whatsapp_available").default(false).notNull(),
+    telegramAvailable: boolean("telegram_available").default(false).notNull(),
+    spamScore: integer("spam_score").default(0).notNull(),
+    confidenceScore: integer("confidence_score").default(0).notNull(),
+    possibleAliases: jsonb("possible_aliases").$type<string[]>().default([]),
+    tags: jsonb("tags").$type<string[]>().default([]),
+    profileImage: text("profile_image"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("phone_intelligence_client_idx").on(table.clientId),
+    phoneIdx: index("phone_intelligence_phone_idx").on(table.phone),
+  })
+);
+
+export const socialProfiles = pgTable(
+  "social_profiles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    platform: text("platform").notNull(),
+    profileUrl: text("profile_url").notNull(),
+    title: text("title"),
+    snippet: text("snippet"),
+    confidenceScore: integer("confidence_score").default(0).notNull(),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("social_profiles_client_idx").on(table.clientId),
+  })
+);
+
+export const osintSearchLogs = pgTable(
+  "osint_search_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    searchType: text("search_type").notNull(),
+    query: text("query").notNull(),
+    status: text("status").default("ok").notNull(),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("osint_search_logs_client_idx").on(table.clientId),
+  })
+);
+
+export const riskAnalysis = pgTable(
+  "risk_analysis",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    riskScore: integer("risk_score").notNull(),
+    confidenceScore: integer("confidence_score").notNull(),
+    fraudIndicators: jsonb("fraud_indicators").$type<string[]>().default([]),
+    customerSummary: text("customer_summary"),
+    identityMatchProbability: integer("identity_match_probability").default(0).notNull(),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("risk_analysis_client_idx").on(table.clientId),
+  })
+);
+
 /* =========================
    FRAUD ANALYSIS
 ========================= */

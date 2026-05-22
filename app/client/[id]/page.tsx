@@ -10,6 +10,7 @@ import Timeline from "@/components/Timeline";
 import OSINTPanel from "@/components/OSINTPanel";
 import ClientAutoRefresh from "@/components/ClientAutoRefresh";
 import ClientIntelligenceTabs from "@/components/ClientIntelligenceTabs";
+import IdentityIntelligencePanel from "@/components/IdentityIntelligencePanel";
 
 export const dynamic = "force-dynamic";
 
@@ -210,6 +211,7 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
 
           {/* OSINT Panel */}
           <OSINTPanel osint={osint} />
+          <IdentityIntelligencePanel clientId={id} />
 
           {/* Contact Info */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">

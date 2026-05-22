@@ -32,8 +32,10 @@ export const osintQueue = new Queue<OSINTJobPayload>("osint-queue", {
 });
 
 export async function addOSINTJob(data: OSINTJobPayload) {
+  const dedupeKey = `${data.clientId || "anon"}:${data.name}:${data.phone || ""}:${data.city || ""}`;
   return osintQueue.add("osint-job", data, {
     priority: data.clientId ? 1 : 5,
+    jobId: dedupeKey,
   });
 }
 

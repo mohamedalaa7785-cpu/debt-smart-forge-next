@@ -7,6 +7,7 @@ import { db } from "@/server/db";
 import { clients, osintSearchLogs, phoneIntelligence, socialProfiles } from "@/server/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "@/server/lib/logger";
+import { validateRuntimeEnv } from "@/lib/env";
 
 async function processSocialSearch(data: OsintJobPayload) {
   const key = process.env.SERPAPI_API_KEY?.trim();
@@ -82,6 +83,7 @@ async function handleJob(job: Job<OsintJobPayload>) {
 }
 
 async function bootstrap() {
+  validateRuntimeEnv("worker");
   const connection = await getRedisClient();
   if (!connection) throw new Error("REDIS_URL is required for worker");
 
@@ -92,6 +94,16 @@ async function bootstrap() {
 
   worker.on("completed", (job) => logger.info("OSINT_WORKER_COMPLETED", { id: job.id, name: job.name }));
   worker.on("failed", (job, error) => logger.error("OSINT_WORKER_FAILED", { id: job?.id, name: job?.name, error: error.message }));
+
+  worker.on("error", (error) => logger.error("OSINT_WORKER_ERROR", { error: error.message }));
+
+  const shutdown = async (signal: string) => {
+    logger.warn("OSINT_WORKER_SHUTDOWN", { signal });
+    process.exit(0);
+  };
+
+  process.on("SIGINT", () => void shutdown("SIGINT"));
+  process.on("SIGTERM", () => void shutdown("SIGTERM"));
 
   logger.info("OSINT_WORKER_READY", { queue: OSINT_QUEUE_NAME });
 }

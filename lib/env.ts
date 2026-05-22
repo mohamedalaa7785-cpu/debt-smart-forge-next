@@ -60,3 +60,25 @@ export function getEnvHealth() {
     checked: [...checked],
   };
 }
+
+
+const RUNTIME_WARN_ONLY_VARS = [
+  "REDIS_URL",
+  "OPENAI_API_KEY",
+  "SERPAPI_API_KEY",
+  "NEXT_PUBLIC_SUPABASE_URL",
+  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+] as const;
+
+export function validateRuntimeEnv(source: "app" | "worker" = "app") {
+  const missing = RUNTIME_WARN_ONLY_VARS.filter((name) => !process.env[name]?.trim());
+
+  if (missing.length > 0) {
+    console.warn(`[ENV_VALIDATION_WARNING] ${source} missing: ${missing.join(", ")}`);
+  }
+
+  return {
+    ok: missing.length === 0,
+    missing,
+  };
+}

@@ -236,9 +236,9 @@ ${rawText}` : ""}`;
 }
 
 export async function parseBankImportInput(params: { rawText?: string; imageUrl?: string }) {
-  const openai = getGroqClient();
+  const groqClient = getGroqClient();
 
-  if (!openai) {
+  if (!groqClient) {
     if (!params.rawText) {
       throw new ValidationError("Image OCR is not configured. Add GROQ_API_KEY or paste the bank text instead.");
     }
@@ -257,7 +257,7 @@ export async function parseBankImportInput(params: { rawText?: string; imageUrl?
   let content = "";
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await groqClient.chat.completions.create({
       model: getGroqModel(),
       temperature: 0,
       response_format: { type: "json_object" },

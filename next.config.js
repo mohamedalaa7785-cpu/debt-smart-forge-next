@@ -1,6 +1,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  turbopack: {
+    resolveAlias: {
+      "@vercel/analytics/react": "./lib/vendor/vercel-analytics-react.tsx",
+    },
+  },
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      "@vercel/analytics/react": require("path").resolve(__dirname, "lib/vendor/vercel-analytics-react.tsx"),
+    };
+    return config;
+  },
   images: {
     remotePatterns: [
       {

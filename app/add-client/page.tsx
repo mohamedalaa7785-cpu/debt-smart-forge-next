@@ -144,6 +144,8 @@ export default function AddClientPage() {
           rawText: bankText,
           imageUrl: bankImageUrl,
           dryRun: true,
+          portfolioType,
+          domainType,
         }),
       });
       const json = await res.json();
@@ -168,6 +170,8 @@ export default function AddClientPage() {
           imageUrl: bankImageUrl,
           dryRun: false,
           assignMode: "round_robin",
+          portfolioType,
+          domainType,
         }),
       });
       const json = await res.json();

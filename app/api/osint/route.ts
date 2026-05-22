@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { runOSINT } from "@/server/services/osint.service";
-import { db } from "@/server/db";
-import { osintResults } from "@/server/db/schema";
-import { eq } from "drizzle-orm";
 import { requireUser } from "@/server/lib/auth";
 import { getClientById } from "@/server/services/client.service";
-import { logger } from "@/server/lib/logger";
 import { enforceRateLimit } from "@/server/core/distributed-cache";
 import { handleApiError, ForbiddenError, ValidationError } from "@/server/core/error.handler";
+import { enqueueOsintJob } from "@/server/queue/osint.queue";
 
 const OsintRequestSchema = z
   .object({
@@ -22,28 +18,6 @@ const OsintRequestSchema = z
   .strict()
   .refine((v) => Boolean(v.name || v.phone || v.clientId), "Name or phone or clientId required");
 
-async function getCached(clientId: string, allowStale = false) {
-  const existing = await db.query.osintResults.findFirst({ where: eq(osintResults.clientId, clientId) });
-
-  if (!existing) return null;
-
-  const age = Date.now() - new Date(existing.lastAnalyzedAt || 0).getTime();
-  const isFresh = age < 1000 * 60 * 60;
-  if (!isFresh && !allowStale) return null;
-
-  return {
-    socialLinks: existing.social || [],
-    webResults: existing.webResults || [],
-    workplace: existing.workplace || [],
-    imageMatches: existing.imageResults || [],
-    mapsResults: existing.mapsResults || [],
-    summary: existing.summary,
-    confidence: existing.confidenceScore,
-    fraudFlags: existing.fraudFlags || [],
-    riskLevel: existing.riskLevel || "low",
-  };
-}
-
 export async function POST(req: NextRequest) {
   try {
     const user = await requireUser();
@@ -53,9 +27,7 @@ export async function POST(req: NextRequest) {
     const rawBody = await req.json();
     const parsed = OsintRequestSchema.safeParse(rawBody);
     if (!parsed.success) {
-      throw new ValidationError("Invalid OSINT payload", {
-        issues: parsed.error.issues.map((issue) => issue.message),
-      });
+      throw new ValidationError("Invalid OSINT payload", { issues: parsed.error.issues.map((issue) => issue.message) });
     }
 
     const clean = {
@@ -69,55 +41,22 @@ export async function POST(req: NextRequest) {
 
     if (clean.clientId) {
       const client = await getClientById(clean.clientId, user.id, user.role);
-
-      if (!client || !client.id) {
-        throw new ForbiddenError();
-      }
-
-      const cached = await getCached(clean.clientId);
-      if (cached) {
-        return NextResponse.json({ success: true, data: cached, meta: { cached: true } });
-      }
+      if (!client || !client.id) throw new ForbiddenError();
     }
 
-    let result: any = null;
-
-    try {
-      result = await Promise.race([
-        runOSINT({
-          clientId: clean.clientId || undefined,
-          name: clean.name || "",
-          phone: clean.phone || undefined,
-          company: clean.company || undefined,
-          city: clean.city || undefined,
-          imageUrl: clean.imageUrl || undefined,
-        }),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 15000)),
-      ]);
-    } catch (err) {
-      logger.error("OSINT_ENGINE_ERROR", { reason: String((err as Error)?.message || "unknown") });
-    }
-
-    if (!result && clean.clientId) {
-      const stale = await getCached(clean.clientId, true);
-      if (stale) {
-        return NextResponse.json({ success: true, data: stale, meta: { stale: true } });
-      }
-    }
-
-    if (!result) {
-      return NextResponse.json({ success: false, error: "OSINT unavailable" }, { status: 503 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...result,
-        fraudFlags: result.fraudFlags || [],
-        riskLevel: result.riskLevel || "low",
-      },
-      meta: { hasImage: !!clean.imageUrl, processedAt: new Date() },
+    const job = await enqueueOsintJob({
+      type: "osint",
+      clientId: clean.clientId || user.id,
+      name: clean.name || undefined,
+      phone: clean.phone || undefined,
+      company: clean.company || undefined,
+      city: clean.city || undefined,
+      imageUrl: clean.imageUrl || undefined,
     });
+
+    if (!job) return NextResponse.json({ success: false, error: "Queue unavailable" }, { status: 503 });
+
+    return NextResponse.json({ success: true, queued: true, jobId: job.id });
   } catch (error) {
     return handleApiError(error);
   }

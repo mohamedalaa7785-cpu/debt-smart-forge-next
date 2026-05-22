@@ -501,6 +501,28 @@ export const osintSearchLogs = pgTable(
   })
 );
 
+
+
+export const identityMatches = pgTable(
+  "identity_matches",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    platform: text("platform").notNull(),
+    profileUrl: text("profile_url").notNull(),
+    confidenceScore: integer("confidence_score").default(0).notNull(),
+    identityProbability: integer("identity_probability").default(0).notNull(),
+    fraudIndicators: jsonb("fraud_indicators").$type<string[]>().default([]),
+    matchedFields: jsonb("matched_fields").$type<string[]>().default([]),
+    reasoning: jsonb("reasoning").$type<string[]>().default([]),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    clientIdx: index("identity_matches_client_idx").on(table.clientId),
+  })
+);
+
 export const riskAnalysis = pgTable(
   "risk_analysis",
   {

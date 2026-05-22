@@ -22,5 +22,6 @@ declare module "bullmq" {
 declare module "ioredis" {
   export default class IORedis {
     constructor(url?: string, opts?: any);
+    on(event: string, listener: (...args: any[]) => void): this;
   }
 }

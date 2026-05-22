@@ -3,7 +3,7 @@ import { getClientById } from "@/server/services/client.service";
 import { calculateRisk } from "@/server/services/risk.service";
 import { analyzeClient, generateCallScript } from "@/server/services/ai.service";
 import { decideAction } from "@/server/core/decision.engine";
-import { formatCurrency, buildWhatsAppLink } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import RiskBadge from "@/components/RiskBadge";
 import ActionButtons from "@/components/ActionButtons";
 import Timeline from "@/components/Timeline";
@@ -93,6 +93,11 @@ export default async function ClientPage({ params }: { params: Promise<{ id: str
             clientId={id} 
             phones={phones.map(p => p.phone)} 
             script={script}
+            clientName={data.name || "العميل"}
+            bankName={data.company || "البنك"}
+            collectorName={user.name || user.email || "المحصل"}
+            amount={formatCurrency(totalDue)}
+            dueDate={loans[0]?.referralDate ? new Date(loans[0].referralDate).toLocaleDateString() : "اليوم"}
           />
         </div>
 

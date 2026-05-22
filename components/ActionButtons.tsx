@@ -1,12 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import WhatsAppTemplatesDrawer from "@/components/WhatsAppTemplatesDrawer";
 import { buildWhatsAppLink } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 
 interface Props {
   clientId: string;
   phones: string[];
+  clientName: string;
+  bankName: string;
+  collectorName: string;
+  amount: string;
+  dueDate: string;
   script?: {
     opening: string;
     mainBody: string;
@@ -15,11 +21,12 @@ interface Props {
   };
 }
 
-export default function ActionButtons({ clientId, phones, script }: Props) {
+export default function ActionButtons({ clientId, phones, script, clientName, bankName, collectorName, amount, dueDate }: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [activePhone, setActivePhone] = useState(phones[0] || "");
   const [actionError, setActionError] = useState<string | null>(null);
+  const [showTemplates, setShowTemplates] = useState(false);
 
   if (!phones.length) return null;
 
@@ -90,6 +97,13 @@ export default function ActionButtons({ clientId, phones, script }: Props) {
       {actionError ? <p className="text-xs font-semibold text-red-600">{actionError}</p> : null}
 
       <div className="flex gap-2 overflow-x-auto pb-2">
+        <button
+          onClick={() => setShowTemplates(true)}
+          className="whitespace-nowrap px-4 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-sm font-bold border border-emerald-100 hover:bg-emerald-100 transition"
+        >
+          💬 WhatsApp Templates
+        </button>
+
         <button 
           onClick={() => logAction("VISIT", "Field visit planned")}
           className="whitespace-nowrap px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-bold border border-indigo-100 hover:bg-indigo-100 transition"
@@ -109,6 +123,19 @@ export default function ActionButtons({ clientId, phones, script }: Props) {
           ⚖️ Legal Escalation
         </button>
       </div>
+
+      <WhatsAppTemplatesDrawer
+        open={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        phone={activePhone}
+        vars={{
+          client_name: clientName,
+          bank_name: bankName,
+          collector_name: collectorName,
+          amount,
+          due_date: dueDate,
+        }}
+      />
     </div>
   );
 }

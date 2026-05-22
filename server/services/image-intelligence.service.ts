@@ -29,10 +29,10 @@ function sanitizePathPart(value: string) {
 }
 
 async function describeImageForEmbedding(imageUrl: string) {
-  const openai = getGroqClient();
-  if (!openai) return "image document for client risk indexing";
+  const groqClient = getGroqClient();
+  if (!groqClient) return "image document for client risk indexing";
 
-  const completion = await openai.chat.completions.create({
+  const completion = await groqClient.chat.completions.create({
     model: getGroqModel(),
     temperature: 0,
     messages: [
@@ -59,10 +59,10 @@ async function describeImageForEmbedding(imageUrl: string) {
 }
 
 async function toEmbeddingVector(text: string) {
-  const openai = getGroqClient();
-  if (openai) {
+  const groqClient = getGroqClient();
+  if (groqClient) {
     try {
-      const res = await openai.embeddings.create({
+      const res = await groqClient.embeddings.create({
         model: "text-embedding-3-small",
         input: text,
         dimensions: EMBEDDING_DIMENSIONS,

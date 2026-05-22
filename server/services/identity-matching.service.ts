@@ -119,8 +119,8 @@ export function calculateConfidence(input: IdentityInput, candidate: SocialCandi
 }
 
 export async function generateIdentitySummary(input: IdentityInput, results: Array<IdentityMatchResult & { platform: string; profileUrl: string }>) {
-  const openai = getGroqClient();
-  if (!openai) {
+  const groqClient = getGroqClient();
+  if (!groqClient) {
     return {
       probability_real_identity: results[0]?.confidence_score || 0,
       suspicious_accounts: results.filter((r) => r.risk_level === "high").map((r) => r.profileUrl),
@@ -130,7 +130,7 @@ export async function generateIdentitySummary(input: IdentityInput, results: Arr
     };
   }
 
-  const completion = await openai.chat.completions.create({
+  const completion = await groqClient.chat.completions.create({
     model: getGroqModel(),
     temperature: 0.1,
     response_format: { type: "json_object" },

@@ -53,8 +53,8 @@ async function analyzePhone(params: {
   const fallbackRisk = params.hasInternalRecord ? 30 : 70;
   const fallbackSpam = !params.hasInternalRecord;
 
-  const openai = getGroqClient();
-  if (!openai) {
+  const groqClient = getGroqClient();
+  if (!groqClient) {
     return {
       name: params.internalName || null,
       risk_score: fallbackRisk,
@@ -64,7 +64,7 @@ async function analyzePhone(params: {
   }
 
   try {
-    const response = await openai.chat.completions.create({
+    const response = await groqClient.chat.completions.create({
       model: getGroqModel(),
       temperature: 0,
       response_format: { type: "json_object" },

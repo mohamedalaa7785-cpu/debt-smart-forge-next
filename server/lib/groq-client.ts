@@ -2,36 +2,59 @@ import OpenAI from "openai";
 
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const GROQ_MODEL = "llama-3.3-70b-versatile";
-const AI_PROVIDER = "groq";
+const OPENAI_BASE_URL = "https://api.openai.com/v1";
+const OPENAI_MODEL = "gpt-4.1-mini";
 
 let groqClient: OpenAI | null = null;
 
-function requireGroqApiKey() {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
-  if (!apiKey) {
-    throw new Error("[ai] Missing GROQ_API_KEY. Set process.env.GROQ_API_KEY before starting the app.");
+type AIConfig = {
+  apiKey: string;
+  provider: "groq" | "openai";
+  model: string;
+  baseURL: string;
+};
+
+function resolveAIConfiguration(): AIConfig | null {
+  const groqApiKey = process.env.GROQ_API_KEY?.trim();
+  if (groqApiKey) {
+    return { apiKey: groqApiKey, provider: "groq", model: GROQ_MODEL, baseURL: GROQ_BASE_URL };
   }
-  return apiKey;
+
+  const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+  if (openAiApiKey) {
+    return { apiKey: openAiApiKey, provider: "openai", model: OPENAI_MODEL, baseURL: OPENAI_BASE_URL };
+  }
+
+  return null;
 }
 
 export function validateGroqConfiguration() {
-  const apiKey = requireGroqApiKey();
-  console.info(`[ai] provider selected: ${AI_PROVIDER}`);
-  console.info(`[ai] model selected: ${GROQ_MODEL}`);
-  console.info(`[ai] API initialization status: ready (baseURL=${GROQ_BASE_URL})`);
-  return { apiKey, provider: AI_PROVIDER, model: GROQ_MODEL, baseURL: GROQ_BASE_URL };
+  const config = resolveAIConfiguration();
+  if (!config) {
+    console.warn("[ai] AI disabled: no provider key found (expected GROQ_API_KEY or OPENAI_API_KEY).");
+    return null;
+  }
+
+  console.info(`[ai] provider selected: ${config.provider}`);
+  console.info(`[ai] model selected: ${config.model}`);
+  console.info(`[ai] API initialization status: ready (baseURL=${config.baseURL})`);
+  return config;
 }
 
 export function getGroqModel() {
-  return GROQ_MODEL;
+  return validateGroqConfiguration()?.model ?? GROQ_MODEL;
 }
 
 export function getGroqClient() {
   if (groqClient) return groqClient;
-  const { apiKey } = validateGroqConfiguration();
+  const config = validateGroqConfiguration();
+  if (!config) {
+    return null;
+  }
+
   groqClient = new OpenAI({
-    apiKey,
-    baseURL: GROQ_BASE_URL,
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
   });
   return groqClient;
 }

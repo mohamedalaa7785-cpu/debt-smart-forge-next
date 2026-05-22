@@ -1,6 +1,5 @@
 const REQUIRED_ENV_VARS = [
   "DATABASE_URL",
-  "OPENAI_API_KEY",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "SUPABASE_SERVICE_ROLE_KEY",
@@ -64,14 +63,19 @@ export function getEnvHealth() {
 
 const RUNTIME_WARN_ONLY_VARS = [
   "REDIS_URL",
-  "OPENAI_API_KEY",
   "SERPAPI_API_KEY",
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
 ] as const;
 
 export function validateRuntimeEnv(source: "app" | "worker" = "app") {
-  const missing = RUNTIME_WARN_ONLY_VARS.filter((name) => !process.env[name]?.trim());
+  const missing: string[] = RUNTIME_WARN_ONLY_VARS.filter((name) => !process.env[name]?.trim());
+  const hasGroq = Boolean(process.env.GROQ_API_KEY?.trim());
+  const hasOpenAi = Boolean(process.env.OPENAI_API_KEY?.trim());
+
+  if (!hasGroq && !hasOpenAi) {
+    missing.push("AI_PROVIDER_API_KEY");
+  }
 
   if (missing.length > 0) {
     console.warn(`[ENV_VALIDATION_WARNING] ${source} missing: ${missing.join(", ")}`);

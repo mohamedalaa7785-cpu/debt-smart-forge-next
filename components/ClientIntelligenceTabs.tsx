@@ -43,8 +43,8 @@ export default function ClientIntelligenceTabs({ clientId, clientName, primaryPh
       const res = await fetch("/api/truecaller-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clientId, phone: target }) });
       const data = await res.json();
       if (res.ok) {
-        setPhoneResult(data.result);
-        setHistory(data.history || []);
+        setPhoneResult(data?.data?.result || null);
+        setHistory(data?.data?.history || []);
       }
     } catch (e: any) { setError(e?.message || "Lookup failed"); } finally { setLoading(false); }
   }

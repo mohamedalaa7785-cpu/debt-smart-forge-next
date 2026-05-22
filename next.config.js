@@ -1,3 +1,23 @@
+const path = require("node:path");
+
+function resolveAnalyticsAlias() {
+  const configDir = typeof __dirname === "string" ? __dirname : process.cwd();
+  const relativeAliasPath = "lib/vendor/vercel-analytics-react.tsx";
+
+  console.log("CONFIG next.resolveAlias", {
+    configDir,
+    hasDirname: typeof __dirname === "string",
+    cwd: process.cwd(),
+    relativeAliasPath,
+  });
+
+  if (!configDir || typeof configDir !== "string") {
+    throw new Error("Invalid path configuration: next.config base directory is not a string");
+  }
+
+  return path.resolve(configDir, relativeAliasPath);
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -9,7 +29,7 @@ const nextConfig = {
   webpack: (config) => {
     config.resolve.alias = {
       ...(config.resolve.alias || {}),
-      "@vercel/analytics/react": require("path").resolve(__dirname, "lib/vendor/vercel-analytics-react.tsx"),
+      "@vercel/analytics/react": resolveAnalyticsAlias(),
     };
     return config;
   },

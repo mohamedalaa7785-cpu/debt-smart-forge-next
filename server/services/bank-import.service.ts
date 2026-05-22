@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { getGroqClient, getGroqModel } from "@/server/lib/groq-client";
 import { parseNumber, safeJsonParse } from "@/lib/utils";
 import { calculateFinancials } from "@/server/services/financial.service";
 import { ValidationError } from "@/server/core/error.handler";
@@ -31,12 +31,6 @@ export type ImportedClient = {
   addresses: Array<{ address: string; city?: string | null; area?: string | null }>;
   loans: ImportedLoan[];
 };
-
-function getOpenAI() {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-  return new OpenAI({ apiKey });
-}
 
 function parseNumeric(value: unknown) {
   if (typeof value === "string") {
@@ -242,11 +236,11 @@ ${rawText}` : ""}`;
 }
 
 export async function parseBankImportInput(params: { rawText?: string; imageUrl?: string }) {
-  const openai = getOpenAI();
+  const openai = getGroqClient();
 
   if (!openai) {
     if (!params.rawText) {
-      throw new ValidationError("Image OCR is not configured. Add OPENAI_API_KEY or paste the bank text instead.");
+      throw new ValidationError("Image OCR is not configured. Add GROQ_API_KEY or paste the bank text instead.");
     }
     return parseBankTextFallback(params.rawText);
   }
@@ -264,7 +258,7 @@ export async function parseBankImportInput(params: { rawText?: string; imageUrl?
 
   try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: getGroqModel(),
       temperature: 0,
       response_format: { type: "json_object" },
       messages: [

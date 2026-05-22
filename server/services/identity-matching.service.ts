@@ -1,4 +1,4 @@
-import OpenAI from "openai";
+import { getGroqClient, getGroqModel } from "@/server/lib/groq-client";
 
 export type IdentityInput = {
   name?: string;
@@ -32,9 +32,6 @@ export type IdentityMatchResult = {
   fraud_indicators: string[];
 };
 
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
 
 function normalize(v?: string) {
   return String(v || "").trim().toLowerCase();
@@ -122,6 +119,7 @@ export function calculateConfidence(input: IdentityInput, candidate: SocialCandi
 }
 
 export async function generateIdentitySummary(input: IdentityInput, results: Array<IdentityMatchResult & { platform: string; profileUrl: string }>) {
+  const openai = getGroqClient();
   if (!openai) {
     return {
       probability_real_identity: results[0]?.confidence_score || 0,
@@ -133,7 +131,7 @@ export async function generateIdentitySummary(input: IdentityInput, results: Arr
   }
 
   const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
+    model: getGroqModel(),
     temperature: 0.1,
     response_format: { type: "json_object" },
     messages: [

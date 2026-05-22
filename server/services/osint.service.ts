@@ -43,7 +43,7 @@ export interface OSINTResult {
 /* ================= KEYS ================= */
 
 const SERP_KEY = process.env.SERPAPI_API_KEY?.trim() || null;
-const OPENAI_KEY = process.env.OPENAI_API_KEY?.trim() || null;
+const OPENAI_KEY = process.env.GROQ_API_KEY?.trim() || null;
 const MAPS_KEY =
   process.env.GOOGLE_MAPS_API_KEY ||
   process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -210,9 +210,9 @@ async function analyzeAI(payload: any) {
 
   try {
     const res = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "gpt-4o-mini",
+        model: "llama-3.3-70b-versatile",
         messages: [
           {
             role: "system",

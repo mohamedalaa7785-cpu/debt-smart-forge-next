@@ -1,16 +1,6 @@
-import OpenAI from "openai";
+import { getGroqClient, getGroqModel } from "@/server/lib/groq-client";
 import { safeJsonParse, parseNumber } from "@/lib/utils";
-import { getRequiredEnv } from "@/lib/env";
 import { z } from "zod";
-
-let openai: OpenAI | null = null;
-
-function getOpenAI() {
-  if (!openai) {
-    openai = new OpenAI({ apiKey: getRequiredEnv("OPENAI_API_KEY") });
-  }
-  return openai;
-}
 
 export type Tone = "soft" | "balanced" | "firm" | "aggressive";
 
@@ -141,7 +131,7 @@ function fallbackAI(input: AIInput): AIResult {
 }
 
 async function runAI(input: AIInput): Promise<AIResult | null> {
-  const client = getOpenAI();
+  const client = getGroqClient();
   if (!client) return null;
 
   const prompt = `You are an expert debt collection decision engine. Return ONLY valid JSON with keys behaviorPrediction,paymentProbability,strategy,tone,nextAction,summary,confidence,redFlags,strengths,riskBoost,urgency.`;
@@ -149,7 +139,7 @@ async function runAI(input: AIInput): Promise<AIResult | null> {
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const response = await client.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: getGroqModel(),
         temperature: 0.2,
         response_format: { type: "json_object" },
         messages: [
@@ -189,12 +179,12 @@ export async function generateCallScript(input: AIInput, aiResult: AIResult): Pr
     whatsappMessage: `الأستاذ/ة ${input.clientName}، نرجو التواصل فورًا بخصوص المديونية ${input.totalAmountDue} لتسوية الموقف في أسرع وقت.`,
   };
 
-  const client = getOpenAI();
+  const client = getGroqClient();
   if (!client) return fallback;
 
   try {
     const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: getGroqModel(),
       temperature: 0.7,
       response_format: { type: "json_object" },
       messages: [

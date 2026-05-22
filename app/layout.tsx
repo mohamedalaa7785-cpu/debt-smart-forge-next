@@ -5,7 +5,7 @@ import LogoutButton from "@/components/LogoutButton";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { Analytics } from "@vercel/analytics/next";
+import { Analytics } from "@vercel/analytics/react";
 import { getSupabaseEnv, hasSupabaseEnv } from "@/lib/supabase-env";
 import { Metadata } from "next";
 import { validateRuntimeEnv } from "@/lib/env";

@@ -20,6 +20,8 @@ const ImportPayloadSchema = z
     dryRun: z.boolean().optional().default(true),
     assignMode: z.enum(["single_owner", "round_robin"]).optional().default("round_robin"),
     ownerId: z.string().uuid().optional().nullable(),
+    portfolioType: z.enum(["ACTIVE", "WRITEOFF"]).optional().default("ACTIVE"),
+    domainType: z.enum(["FIRST", "THIRD", "WRITEOFF"]).optional().default("FIRST"),
   })
   .strict();
 
@@ -63,7 +65,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const { rawText, dryRun, assignMode, ownerId: targetOwnerId } = parsedBody.data;
+      const { rawText, dryRun, assignMode, ownerId: targetOwnerId, portfolioType, domainType } = parsedBody.data;
       const imageUrl = parsedBody.data.imageUrl || "";
 
       if (!rawText && !imageUrl) {
@@ -125,8 +127,8 @@ export async function POST(req: NextRequest) {
           ...clientData,
           ownerId: owner.id,
           teamLeaderId: owner.role === "team_leader" ? owner.id : null,
-          portfolioType: "ACTIVE",
-          domainType: "FIRST",
+          portfolioType,
+          domainType,
         };
 
         const inserted = await createClientFull(payload, user.id);

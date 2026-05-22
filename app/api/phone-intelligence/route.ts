@@ -3,7 +3,7 @@ import { requireUser } from "@/server/lib/auth";
 import { db } from "@/server/db";
 import { phoneIntelligence } from "@/server/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { enqueueOsintJob } from "@/server/queue/osint.queue";
+import { phoneLookup } from "@/server/services/phone-intelligence.service";
 
 export async function POST(req: Request) {
   try {
@@ -12,20 +12,31 @@ export async function POST(req: Request) {
     const { clientId, phone } = await req.json();
     if (!phone || !clientId) return NextResponse.json({ success: false, data: null, error: "clientId and phone required" }, { status: 400 });
 
-    const job = await enqueueOsintJob({ type: "phone-intelligence", clientId, phone });
-    console.log("[phone-intelligence] queue add status", { queued: Boolean(job), jobId: job?.id ?? null });
-    if (!job) return NextResponse.json({ success: false, data: [], error: "Queue unavailable" }, { status: 503 });
+    const lookup = await phoneLookup(String(phone));
+    const [inserted] = await db.insert(phoneIntelligence).values({
+      clientId,
+      phone: lookup.normalized,
+      fullName: lookup.name,
+      country: lookup.country,
+      carrier: lookup.carrier,
+      whatsappAvailable: lookup.whatsappAvailable,
+      telegramAvailable: lookup.telegramAvailable,
+      spamScore: lookup.risk_score,
+      confidenceScore: lookup.confidenceScore,
+      possibleAliases: [],
+      tags: lookup.tags,
+      profileImage: null,
+    }).returning();
 
-    return NextResponse.json({ success: true, data: { queued: true, jobId: job.id }, error: null });
+    return NextResponse.json({ success: true, data: { result: inserted, provider: lookup.provider }, error: null });
   } catch (error) {
     console.error("[phone-intelligence] POST error", error);
-    return NextResponse.json({ success: false, data: [], error: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json({ success: false, data: null, error: error instanceof Error ? error.message : "Unknown error" }, { status: 502 });
   }
 }
 
 export async function GET(req: Request) {
   try {
-    console.log("[phone-intelligence] history request received");
     await requireUser();
     const { searchParams } = new URL(req.url);
     const clientId = searchParams.get("clientId");

@@ -1,4 +1,26 @@
-import { NextResponse } from "next/server"; import { requireUser } from "@/server/lib/auth"; import { db } from "@/server/db"; import { osintSearchLogs, socialProfiles } from "@/server/db/schema"; import { eq } from "drizzle-orm";
-const platforms = [{ platform: "Facebook", query: (name: string) => `site:facebook.com \"${name}\"` }, { platform: "LinkedIn", query: (name: string) => `site:linkedin.com/in \"${name}\"` }, { platform: "Instagram", query: (name: string) => `site:instagram.com \"${name}\"` }, { platform: "TikTok", query: (name: string) => `site:tiktok.com \"${name}\"` }, { platform: "Twitter/X", query: (name: string) => `site:x.com \"${name}\" OR site:twitter.com \"${name}\"` }];
-export async function POST(req: Request) { await requireUser(); const { clientId, name, phone } = await req.json(); if (!clientId || !name) return NextResponse.json({ error: "clientId and name required" }, { status: 400 }); const key = process.env.SERPAPI_API_KEY?.trim(); if (!key) return NextResponse.json({ error: "SERPAPI_API_KEY missing" }, { status: 500 }); const results: any[] = []; for (const p of platforms) { const q = `${p.query(name)} \"${phone || ""}\"`; const url = new URL("https://serpapi.com/search.json"); url.searchParams.set("engine", "google"); url.searchParams.set("q", q); url.searchParams.set("api_key", key); const res = await fetch(url.toString(), { cache: "no-store" }); const data = await res.json(); const hit = data?.organic_results?.[0]; if (!hit?.link) continue; const item = { clientId, platform: p.platform, profileUrl: hit.link, title: hit.title || "", snippet: hit.snippet || "", confidenceScore: 70 }; results.push({ platform: p.platform, link: hit.link, title: hit.title || "", snippet: hit.snippet || "", confidence: 70 }); await db.insert(socialProfiles).values(item); await db.insert(osintSearchLogs).values({ clientId, searchType: "social_search", query: q, status: "ok", metadata: { topLink: hit.link } }); } return NextResponse.json({ results }); }
-export async function GET(req: Request) { await requireUser(); const { searchParams } = new URL(req.url); const clientId = searchParams.get("clientId"); if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 }); const profiles = await db.select().from(socialProfiles).where(eq(socialProfiles.clientId, clientId)); return NextResponse.json({ profiles }); }
+import { NextResponse } from "next/server";
+import { requireUser } from "@/server/lib/auth";
+import { db } from "@/server/db";
+import { socialProfiles } from "@/server/db/schema";
+import { eq } from "drizzle-orm";
+import { enqueueOsintJob } from "@/server/queue/osint.queue";
+
+export async function POST(req: Request) {
+  await requireUser();
+  const { clientId, name, phone } = await req.json();
+  if (!clientId || !name) return NextResponse.json({ error: "clientId and name required" }, { status: 400 });
+
+  const job = await enqueueOsintJob({ type: "social-search", clientId, name, phone });
+  if (!job) return NextResponse.json({ error: "queue unavailable" }, { status: 503 });
+
+  return NextResponse.json({ queued: true, jobId: job.id });
+}
+
+export async function GET(req: Request) {
+  await requireUser();
+  const { searchParams } = new URL(req.url);
+  const clientId = searchParams.get("clientId");
+  if (!clientId) return NextResponse.json({ error: "clientId required" }, { status: 400 });
+  const profiles = await db.select().from(socialProfiles).where(eq(socialProfiles.clientId, clientId));
+  return NextResponse.json({ profiles });
+}

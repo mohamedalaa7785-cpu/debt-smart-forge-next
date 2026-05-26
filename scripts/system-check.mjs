@@ -32,16 +32,16 @@ assert('No AUTH_BYPASS references remain', !bypassScan.ok || !bypassScan.out.tri
 const tokenScan = run('rg -n "localStorage\\.(getItem|setItem)\\(\\\"token\\\"" lib app');
 assert('No localStorage token persistence remains', !tokenScan.ok || !tokenScan.out.trim(), tokenScan.out);
 
-const typecheck = run('npm run typecheck');
+const typecheck = run('pnpm typecheck');
 assert('Typecheck passes', typecheck.ok, typecheck.out);
 
-const smoke = run('npm run smoke');
+const smoke = run('pnpm smoke');
 assert('Smoke validators pass', smoke.ok, smoke.out);
 
-const build = run('npm run build');
+const build = run('pnpm build');
 assert('Production build passes', build.ok, build.out);
 
-const lint = run('npm run lint');
+const lint = run('pnpm lint');
 if (!lint.ok) {
   console.log('! Lint check did not pass in this environment (known dependency limitation).');
   console.log(lint.out.trim());

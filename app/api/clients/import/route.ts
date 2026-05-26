@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
+import { createSupabaseServerClient } from "@/server/auth/session.service";
 import { withAuth } from "@/server/lib/auth";
 import { db } from "@/server/db";
 import { clients, users } from "@/server/db/schema";
@@ -94,7 +95,14 @@ async function parseImportRequest(req: NextRequest) {
 export async function POST(req: NextRequest) {
   return withAuth(async (user) => {
     try {
-      console.log("AUTH USER", user?.id);
+      const supabase = await createSupabaseServerClient();
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      console.log("[clients/import] auth context", {
+        userId: user?.id ?? null,
+        sessionUserId: session?.user?.id ?? null,
+        hasSession: Boolean(session),
+        sessionError: sessionError?.message ?? null,
+      });
 
       const rawBody = await parseImportRequest(req);
       const parsedBody = ImportPayloadSchema.safeParse(rawBody);
@@ -114,6 +122,7 @@ export async function POST(req: NextRequest) {
       const parsedClients = await parseBankImportInput({ rawText, imageUrl });
 
       if (!parsedClients.length) {
+        console.warn("[clients/import] no clients detected", { userId: user.id });
         return NextResponse.json(
           { success: false, error: "No clients detected from provided document" },
           { status: 422 }
@@ -187,7 +196,16 @@ export async function POST(req: NextRequest) {
         },
       });
     } catch (error) {
-      return handleApiError(error);
+      console.error("[clients/import] request failed", {
+        userId: user?.id ?? null,
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+      const response = handleApiError(error);
+      return NextResponse.json({
+        success: false,
+        error: "Import failed",
+        details: error instanceof Error ? error.message : "Unknown error",
+      }, { status: response.status });
     }
   });
 }

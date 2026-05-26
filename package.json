@@ -12,7 +12,7 @@
     "lint": "node scripts/lint-check.mjs",
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke-validators.mjs",
-    "test": "npm run typecheck && npm run smoke",
+    "test": "pnpm typecheck && pnpm smoke",
     "checkup": "node scripts/system-check.mjs",
     "check:supabase": "node scripts/validate-supabase-setup.mjs",
     "worker": "tsx server/workers/osint.worker.ts"

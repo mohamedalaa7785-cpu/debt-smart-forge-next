@@ -3,7 +3,7 @@ import { clientPhones, clients, osintResults } from "@/server/db/schema";
 import { eq, ilike } from "drizzle-orm";
 import { normalizePhone } from "@/lib/utils";
 
-export type PhoneProvider = "local-intelligence" | "rapidapi-truecaller";
+export type PhoneProvider = "local-intelligence";
 
 export interface PhoneLookupResult {
   phone: string;
@@ -75,43 +75,6 @@ function buildLocalIntelligence(phone: string, normalized: string): Omit<PhoneLo
   };
 }
 
-async function tryRapidApiLookup(phone: string): Promise<Partial<PhoneLookupResult> | null> {
-  const rapidApiKey = process.env.RAPIDAPI_KEY?.trim();
-  if (!rapidApiKey) return null;
-
-  try {
-    const res = await fetch("https://truecaller-data2.p.rapidapi.com/search", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-rapidapi-key": rapidApiKey,
-        "x-rapidapi-host": "truecaller-data2.p.rapidapi.com",
-      },
-      body: JSON.stringify({ phone }),
-      cache: "no-store",
-    });
-
-    const text = await res.text();
-    if (!res.ok) return null;
-    const raw = text ? JSON.parse(text) : {};
-    const top = (raw as any)?.data || (raw as any)?.result || raw;
-
-    return {
-      name: typeof top?.name === "string" ? top.name : null,
-      risk_score: Number.isFinite(Number(top?.spamScore)) ? Number(top.spamScore) : undefined,
-      confidenceScore: Number.isFinite(Number(top?.confidenceScore)) ? Number(top.confidenceScore) : undefined,
-      tags: Array.isArray(top?.tags) ? top.tags : undefined,
-      whatsappAvailable: Boolean(top?.whatsapp || top?.isWhatsapp),
-      telegramAvailable: Boolean(top?.telegram || top?.isTelegram),
-      provider: "rapidapi-truecaller",
-      source: "external",
-      raw,
-    };
-  } catch {
-    return null;
-  }
-}
-
 export async function phoneLookup(phone: string): Promise<PhoneLookupResult> {
   const normalized = normalizePhone(phone);
   if (!normalized || normalized.length < 7) {
@@ -134,20 +97,13 @@ export async function phoneLookup(phone: string): Promise<PhoneLookupResult> {
     .then((rows) => rows[0] || null);
 
   const local = buildLocalIntelligence(phone, normalized);
-  const external = await tryRapidApiLookup(normalized);
-
   const merged: PhoneLookupResult = {
     ...local,
-    name: external?.name || internal?.clientName || null,
-    risk_score: Number.isFinite(Number(external?.risk_score)) ? Number(external?.risk_score) : local.risk_score,
-    confidenceScore: Number.isFinite(Number(external?.confidenceScore)) ? Number(external?.confidenceScore) : local.confidenceScore,
-    tags: Array.from(new Set([...(local.tags || []), ...((external?.tags as string[]) || [])])),
-    whatsappAvailable: typeof external?.whatsappAvailable === "boolean" ? external.whatsappAvailable : local.whatsappAvailable,
-    telegramAvailable: typeof external?.telegramAvailable === "boolean" ? external.telegramAvailable : local.telegramAvailable,
-    provider: (external?.provider as PhoneProvider) || "local-intelligence",
-    source: external ? (internal ? "mixed" : "external") : (internal ? "mixed" : "fallback"),
+    name: internal?.clientName || null,
+    source: internal ? "mixed" : "fallback",
     aliases: local.aliases,
-    raw: external?.raw,
+    tags: Array.from(new Set([...(local.tags || []), ...(internal?.osintSummary ? ["has-internal-osint"] : [])])),
+    notes: internal?.osintSummary ? `Local intelligence + internal OSINT context: ${internal.osintSummary}` : local.notes,
   };
 
   return merged;

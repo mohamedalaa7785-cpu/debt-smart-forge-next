@@ -1,21 +1,6 @@
--- Temporary broad RLS policy to unblock authenticated imports into public.clients.
+-- Safety patch: remove the temporary blanket clients policy.
+-- Keep RLS enabled and rely on the scoped clients_* policies defined in
+-- 20260502100000_schema_guardrails_and_rls.sql.
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'public'
-      AND tablename = 'clients'
-      AND policyname = 'clients_authenticated_full_access_temp'
-  ) THEN
-    CREATE POLICY clients_authenticated_full_access_temp
-      ON public.clients
-      FOR ALL
-      TO authenticated
-      USING (true)
-      WITH CHECK (true);
-  END IF;
-END
-$$;
+DROP POLICY IF EXISTS clients_authenticated_full_access_temp ON public.clients;

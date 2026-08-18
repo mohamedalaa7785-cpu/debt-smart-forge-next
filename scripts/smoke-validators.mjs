@@ -88,6 +88,13 @@ const publishPreviewSrc = read("app/api/autonomy/publish/preview/route.ts");
 assert("publish preview is protected", publishPreviewSrc.includes("withRole"));
 assert("publish preview never sends external request", publishPreviewSrc.includes("externalRequestSent: false"));
 
+const autonomyServiceSrc = read("server/services/autonomy.service.ts");
+assert("autonomy run starts as running", autonomyServiceSrc.includes('status: "running"'));
+assert("autonomy run records completed state", autonomyServiceSrc.includes('status: "completed"'));
+assert("autonomy run records failed state", autonomyServiceSrc.includes('status: "failed"'));
+const concurrencyMigration = read("supabase/20260818_autonomy_concurrency.sql");
+assert("autonomy concurrency index exists", concurrencyMigration.includes("autonomy_runs_one_active_per_owner_idx"));
+
 const imageServiceSrc = read("server/services/image-intelligence.service.ts");
 assert("image service uses signed URLs", imageServiceSrc.includes("createSignedUrl"));
 assert("image service persists storage path", imageServiceSrc.includes("storagePath"));

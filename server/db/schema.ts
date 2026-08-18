@@ -609,3 +609,131 @@ export const logs = pgTable(
     createdAtIdx: index("audit_logs_created_at_idx").on(table.createdAt),
   })
 );
+
+/* =========================
+   AUTONOMY CONTROL PLANE
+========================= */
+
+export const autonomyGoals = pgTable(
+  "autonomy_goals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: text("status").default("active").notNull(),
+    cadence: text("cadence").default("daily").notNull(),
+    riskLevel: text("risk_level").default("low").notNull(),
+    config: jsonb("config").default({}),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("autonomy_goals_owner_idx").on(table.ownerId),
+    statusIdx: index("autonomy_goals_status_idx").on(table.status),
+  })
+);
+
+export const autonomyRuns = pgTable(
+  "autonomy_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    goalId: uuid("goal_id").references(() => autonomyGoals.id, { onDelete: "cascade" }).notNull(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    status: text("status").default("queued").notNull(),
+    trigger: text("trigger").default("manual").notNull(),
+    summary: text("summary"),
+    findings: jsonb("findings").default([]),
+    requiresApproval: boolean("requires_approval").default(true).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("autonomy_runs_owner_idx").on(table.ownerId),
+    goalIdx: index("autonomy_runs_goal_idx").on(table.goalId),
+    createdIdx: index("autonomy_runs_created_idx").on(table.createdAt),
+  })
+);
+
+export const autonomyTasks = pgTable(
+  "autonomy_tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id").references(() => autonomyRuns.id, { onDelete: "cascade" }).notNull(),
+    type: text("type").notNull(),
+    title: text("title").notNull(),
+    status: text("status").default("proposed").notNull(),
+    priority: integer("priority").default(50).notNull(),
+    payload: jsonb("payload").default({}),
+    result: jsonb("result").default({}),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => ({
+    runIdx: index("autonomy_tasks_run_idx").on(table.runId),
+    statusIdx: index("autonomy_tasks_status_idx").on(table.status),
+  })
+);
+
+export const contentDrafts = pgTable(
+  "content_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    taskId: uuid("task_id").references(() => autonomyTasks.id, { onDelete: "set null" }),
+    platform: text("platform").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    status: text("status").default("draft").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("content_drafts_owner_idx").on(table.ownerId),
+    statusIdx: index("content_drafts_status_idx").on(table.status),
+    scheduleIdx: index("content_drafts_schedule_idx").on(table.scheduledFor),
+  })
+);
+
+export const autonomyApprovals = pgTable(
+  "autonomy_approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    runId: uuid("run_id").references(() => autonomyRuns.id, { onDelete: "cascade" }).notNull(),
+    taskId: uuid("task_id").references(() => autonomyTasks.id, { onDelete: "cascade" }),
+    reviewerId: uuid("reviewer_id").references(() => users.id),
+    status: text("status").default("pending").notNull(),
+    reason: text("reason"),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    runIdx: index("autonomy_approvals_run_idx").on(table.runId),
+    statusIdx: index("autonomy_approvals_status_idx").on(table.status),
+  })
+);
+
+export const autonomyMetrics = pgTable(
+  "autonomy_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    metric: text("metric").notNull(),
+    value: decimal("value", { precision: 14, scale: 4 }).notNull(),
+    source: text("source").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    windowEnd: timestamp("window_end", { withTimezone: true }).notNull(),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("autonomy_metrics_owner_idx").on(table.ownerId),
+    metricIdx: index("autonomy_metrics_metric_idx").on(table.metric),
+  })
+);

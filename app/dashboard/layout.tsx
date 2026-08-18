@@ -39,11 +39,14 @@ export default function DashboardLayout({
   ];
 
   const adminMenu = [{ name: "Admin Panel", href: "/dashboard/admin/users" }];
+  const autonomyMenu = [{ name: "Autonomy Center", href: "/dashboard/autonomy" }];
 
   let menu = [...baseMenu];
 
   if (user?.role === "admin" || user?.role === "hidden_admin" || user?.isSuperUser) {
-    menu = [...menu, ...adminMenu];
+    menu = [...menu, ...autonomyMenu, ...adminMenu];
+  } else if (user?.role === "supervisor") {
+    menu = [...menu, ...autonomyMenu];
   }
 
   return (

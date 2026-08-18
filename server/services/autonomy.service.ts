@@ -58,8 +58,29 @@ export async function getAutonomyOverview(ownerId: string) {
   return { goal, runs, tasks, drafts, metrics };
 }
 
+export async function setAutonomyStatus(ownerId: string, status: "active" | "paused") {
+  const goal = await ensureDefaultGoal(ownerId);
+  const [updated] = await db
+    .update(autonomyGoals)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(autonomyGoals.id, goal.id), eq(autonomyGoals.ownerId, ownerId)))
+    .returning();
+  return updated;
+}
+
 export async function startAutonomyRun(ownerId: string, trigger = "manual") {
   const goal = await ensureDefaultGoal(ownerId);
+  if (goal.status !== "active") {
+    throw new Error("AUTONOMY_PAUSED");
+  }
+
+  const recentRun = await db.query.autonomyRuns.findFirst({
+    where: and(eq(autonomyRuns.ownerId, ownerId), eq(autonomyRuns.status, "running")),
+    orderBy: [desc(autonomyRuns.createdAt)],
+  });
+  if (recentRun) {
+    throw new Error("AUTONOMY_RUN_IN_PROGRESS");
+  }
   const generatedContent = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", "linkedin");
   const contentQuality = validateContentDraft(generatedContent.title, generatedContent.body, generatedContent.callToAction);
   const [run] = await db
@@ -109,6 +130,11 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
   await db.insert(autonomyApprovals).values(
     tasks.map((task) => ({ runId: run.id, taskId: task.id, reason: "النشر أو التغيير الخارجي يتطلب موافقة بشرية." })),
   );
+  await db
+    .update(autonomyGoals)
+    .set({ lastRunAt: new Date(), updatedAt: new Date() })
+    .where(eq(autonomyGoals.id, goal.id));
+
   await db.insert(autonomyMetrics).values({
     ownerId,
     metric: "content_quality_score",

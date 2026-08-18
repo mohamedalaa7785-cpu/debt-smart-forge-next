@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 interface Overview {
-  goal: { name: string; description: string; cadence: string; riskLevel: string };
+  goal: { name: string; description: string; cadence: string; riskLevel: string; status: string; lastRunAt: string | null };
   runs: Array<{ id: string; status: string; trigger: string; summary: string | null; createdAt: string }>;
   tasks: Array<{ id: string; type: string; title: string; status: string; priority: number }>;
   drafts: Array<{ id: string; platform: string; title: string; status: string; body: string }>;
@@ -32,6 +32,17 @@ export default function AutonomyPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function updateControl(action: "pause" | "resume") {
+    const response = await fetch("/api/autonomy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const payload = await response.json();
+    setMessage(payload.success ? (action === "pause" ? "تم إيقاف التشغيل الآلي. ستبقى السجلات محفوظة ولن تبدأ دورات جديدة." : "تم استئناف التشغيل الآلي.") : "تعذر تغيير حالة التشغيل الآلي.");
+    await load();
+  }
+
   async function runCycle() {
     setRunning(true);
     setMessage("");
@@ -41,7 +52,7 @@ export default function AutonomyPage() {
       body: JSON.stringify({ trigger: "dashboard" }),
     });
     const payload = await response.json();
-    setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : "تعذر تشغيل الدورة.");
+    setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : (payload.error || "تعذر تشغيل الدورة."));
     setRunning(false);
     await load();
   }
@@ -69,18 +80,25 @@ export default function AutonomyPage() {
             <h1 className="text-3xl font-black">{overview.goal.name}</h1>
             <p className="mt-3 max-w-2xl text-slate-300">{overview.goal.description}</p>
           </div>
-          <button onClick={runCycle} disabled={running} className="rounded-xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-wait disabled:opacity-60">
-            {running ? "جاري التشغيل..." : "ابدأ دورة تحسين"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={runCycle} disabled={running || overview.goal.status !== "active"} className="rounded-xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60">
+              {running ? "جاري التشغيل..." : "ابدأ دورة تحسين"}
+            </button>
+            {overview.goal.status === "active" ? (
+              <button onClick={() => updateControl("pause")} className="rounded-xl border border-white/30 px-5 py-3 font-bold text-white transition hover:bg-white/10">إيقاف طارئ</button>
+            ) : (
+              <button onClick={() => updateControl("resume")} className="rounded-xl bg-emerald-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-emerald-300">استئناف التشغيل</button>
+            )}
+          </div>
         </div>
         {message && <p className="mt-5 rounded-xl bg-white/10 p-3 text-sm text-cyan-100">{message}</p>}
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <Metric title="الحالة" value="نشط" detail={`إيقاع المراجعة: ${overview.goal.cadence}`} />
+        <Metric title="الحالة" value={overview.goal.status === "active" ? "نشط" : "متوقف"} detail={`إيقاع المراجعة: ${overview.goal.cadence}`} />
         <Metric title="التشغيلات" value={String(overview.runs.length)} detail="آخر 10 تشغيلات محفوظة" />
         <Metric title="المقترحات" value={String(overview.tasks.length)} detail="كل تغيير حساس يحتاج موافقة" />
-        <Metric title="جودة المحتوى" value={`${overview.metrics.find((metric) => metric.metric === "content_quality_score")?.value ?? "—"}%`} detail="آخر فحص جودة محلي" />
+        <Metric title="جودة المحتوى" value={`${overview.metrics.find((metric) => metric.metric === "content_quality_score")?.value ?? "—"}%`} detail={overview.goal.lastRunAt ? `آخر دورة: ${new Date(overview.goal.lastRunAt).toLocaleString("ar-EG")}` : "لم تبدأ دورة بعد"} />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">

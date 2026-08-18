@@ -30,7 +30,7 @@ export async function ensureDefaultGoal(ownerId: string) {
 
 export async function getAutonomyOverview(ownerId: string) {
   const goal = await ensureDefaultGoal(ownerId);
-  const [runs, drafts] = await Promise.all([
+  const [runs, drafts, metrics] = await Promise.all([
     db.query.autonomyRuns.findMany({
       where: eq(autonomyRuns.ownerId, ownerId),
       orderBy: [desc(autonomyRuns.createdAt)],
@@ -39,6 +39,11 @@ export async function getAutonomyOverview(ownerId: string) {
     db.query.contentDrafts.findMany({
       where: eq(contentDrafts.ownerId, ownerId),
       orderBy: [desc(contentDrafts.createdAt)],
+      limit: 10,
+    }),
+    db.query.autonomyMetrics.findMany({
+      where: eq(autonomyMetrics.ownerId, ownerId),
+      orderBy: [desc(autonomyMetrics.createdAt)],
       limit: 10,
     }),
   ]);
@@ -50,7 +55,7 @@ export async function getAutonomyOverview(ownerId: string) {
         limit: 30,
       })
     : [];
-  return { goal, runs, tasks, drafts };
+  return { goal, runs, tasks, drafts, metrics };
 }
 
 export async function startAutonomyRun(ownerId: string, trigger = "manual") {

@@ -7,6 +7,7 @@ interface Overview {
   runs: Array<{ id: string; status: string; trigger: string; summary: string | null; createdAt: string }>;
   tasks: Array<{ id: string; type: string; title: string; status: string; priority: number }>;
   drafts: Array<{ id: string; platform: string; title: string; status: string; body: string }>;
+  metrics: Array<{ id: string; metric: string; value: string; source: string; createdAt: string }>;
 }
 
 const statusLabel: Record<string, string> = {
@@ -79,6 +80,7 @@ export default function AutonomyPage() {
         <Metric title="الحالة" value="نشط" detail={`إيقاع المراجعة: ${overview.goal.cadence}`} />
         <Metric title="التشغيلات" value={String(overview.runs.length)} detail="آخر 10 تشغيلات محفوظة" />
         <Metric title="المقترحات" value={String(overview.tasks.length)} detail="كل تغيير حساس يحتاج موافقة" />
+        <Metric title="جودة المحتوى" value={`${overview.metrics.find((metric) => metric.metric === "content_quality_score")?.value ?? "—"}%`} detail="آخر فحص جودة محلي" />
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">

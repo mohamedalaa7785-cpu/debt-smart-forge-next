@@ -12,6 +12,8 @@ interface Overview {
 
 const statusLabel: Record<string, string> = {
   completed: "مكتمل",
+  running: "قيد التنفيذ",
+  failed: "فشل ويحتاج مراجعة",
   queued: "في الانتظار",
   proposed: "مقترح",
   draft: "مسودة",
@@ -125,7 +127,7 @@ export default function AutonomyPage() {
 
       <Panel title="سجل التشغيلات">
         {overview.runs.length === 0 ? <Empty /> : overview.runs.map((run) => (
-          <div key={run.id} className="flex flex-col gap-1 border-b border-slate-100 py-4 last:border-0 md:flex-row md:items-center md:justify-between"><div><p className="font-bold text-slate-900">{run.summary || "دورة تحسين"}</p><p className="text-xs text-slate-500">المحفز: {run.trigger}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{statusLabel[run.status] || run.status}</span></div>
+          <div key={run.id} className="flex flex-col gap-1 border-b border-slate-100 py-4 last:border-0 md:flex-row md:items-center md:justify-between"><div><p className="font-bold text-slate-900">{run.summary || "دورة تحسين"}</p><p className="text-xs text-slate-500">المحفز: {run.trigger}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${run.status === "failed" ? "bg-rose-50 text-rose-700" : run.status === "running" ? "bg-cyan-50 text-cyan-700" : "bg-emerald-50 text-emerald-700"}`}>{statusLabel[run.status] || run.status}</span></div>
         ))}
       </Panel>
     </main>

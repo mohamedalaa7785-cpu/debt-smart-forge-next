@@ -25,6 +25,9 @@ const criticalRoutes = [
   "app/api/face-match/route.ts",
   "app/api/health/route.ts",
   "app/api/health/secure/route.ts",
+  "app/api/autonomy/route.ts",
+  "app/api/autonomy/approvals/route.ts",
+  "app/api/autonomy/publish/preview/route.ts",
 ];
 
 for (const route of criticalRoutes) {
@@ -76,6 +79,14 @@ assert("health route pinned to node runtime", healthSrc.includes('export const r
 const secureHealthSrc = read("app/api/health/secure/route.ts");
 assert("secure health route pinned to node runtime", secureHealthSrc.includes('export const runtime = "nodejs"'));
 assert("secure health route uses auth", secureHealthSrc.includes("withAuth"));
+
+const autonomySrc = read("app/api/autonomy/route.ts");
+assert("autonomy route supports pause/resume", autonomySrc.includes("setAutonomyStatus"));
+assert("autonomy route handles duplicate runs", autonomySrc.includes("AUTONOMY_RUN_IN_PROGRESS"));
+
+const publishPreviewSrc = read("app/api/autonomy/publish/preview/route.ts");
+assert("publish preview is protected", publishPreviewSrc.includes("withRole"));
+assert("publish preview never sends external request", publishPreviewSrc.includes("externalRequestSent: false"));
 
 const imageServiceSrc = read("server/services/image-intelligence.service.ts");
 assert("image service uses signed URLs", imageServiceSrc.includes("createSignedUrl"));

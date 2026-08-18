@@ -7,6 +7,7 @@ import {
   autonomyTasks,
   contentDrafts,
 } from "@/server/db/schema";
+import { generateGrowthContent } from "@/server/services/content.service";
 
 const defaultGoal = {
   name: "نمو Debt Smart Forge بأمان",
@@ -52,6 +53,7 @@ export async function getAutonomyOverview(ownerId: string) {
 
 export async function startAutonomyRun(ownerId: string, trigger = "manual") {
   const goal = await ensureDefaultGoal(ownerId);
+  const generatedContent = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", "linkedin");
   const [run] = await db
     .insert(autonomyRuns)
     .values({
@@ -104,10 +106,10 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
       ownerId,
       taskId: contentTask.id,
       platform: "linkedin",
-      title: "كيف ننتقل من مطاردة الديون إلى قرارات أذكى؟",
-      body: "المتابعة الفعالة لا تبدأ برسالة أكثر حدة، بل ببيانات أوضح وتوقيت أفضل وخطة تواصل تحترم العميل. Debt Smart Forge يجمع الإشارات في لوحة واحدة لمساعدة الفريق على اتخاذ قرار قابل للقياس.",
+      title: generatedContent.title,
+      body: `${generatedContent.body}\n\n${generatedContent.callToAction}`,
       status: "draft",
-      metadata: { generatedBy: "autonomy-run", approvalRequired: true },
+      metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: generatedContent.safetyNotes },
     });
   }
   return run;

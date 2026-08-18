@@ -3,11 +3,13 @@ import { db } from "@/server/db";
 import {
   autonomyApprovals,
   autonomyGoals,
+  autonomyMetrics,
   autonomyRuns,
   autonomyTasks,
   contentDrafts,
 } from "@/server/db/schema";
 import { generateGrowthContent } from "@/server/services/content.service";
+import { validateContentDraft } from "@/server/services/content-quality.service";
 
 const defaultGoal = {
   name: "نمو Debt Smart Forge بأمان",
@@ -54,6 +56,7 @@ export async function getAutonomyOverview(ownerId: string) {
 export async function startAutonomyRun(ownerId: string, trigger = "manual") {
   const goal = await ensureDefaultGoal(ownerId);
   const generatedContent = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", "linkedin");
+  const contentQuality = validateContentDraft(generatedContent.title, generatedContent.body, generatedContent.callToAction);
   const [run] = await db
     .insert(autonomyRuns)
     .values({
@@ -66,6 +69,7 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
         { code: "health_check", severity: "info", message: "فحص صحة المنتج مطلوب قبل أي نشر." },
         { code: "content_gap", severity: "medium", message: "إنشاء محتوى تعليمي عربي حول إدارة الديون." },
         { code: "growth_experiment", severity: "low", message: "اختبار صفحة تعريفية وقياس التحويل قبل زيادة الإنفاق." },
+        { code: "content_quality", severity: contentQuality.passed ? "info" : "high", message: contentQuality.passed ? "اجتازت المسودة فحوصات الجودة المحلية." : contentQuality.issues.join(" ") },
       ],
       requiresApproval: true,
       startedAt: new Date(),
@@ -93,13 +97,23 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
       type: "quality_gate",
       title: "تشغيل فحوصات النوع والبناء قبل النشر",
       priority: 100,
-      payload: { commands: ["pnpm typecheck", "pnpm smoke", "pnpm build"] },
+      payload: { commands: ["pnpm typecheck", "pnpm smoke", "pnpm build"], qualityGate: contentQuality },
     },
   ];
   const tasks = await db.insert(autonomyTasks).values(taskValues).returning();
   await db.insert(autonomyApprovals).values(
     tasks.map((task) => ({ runId: run.id, taskId: task.id, reason: "النشر أو التغيير الخارجي يتطلب موافقة بشرية." })),
   );
+  await db.insert(autonomyMetrics).values({
+    ownerId,
+    metric: "content_quality_score",
+    value: String(contentQuality.score),
+    source: "autonomy-run",
+    windowStart: new Date(),
+    windowEnd: new Date(),
+    metadata: { passed: contentQuality.passed, issues: contentQuality.issues, trigger },
+  });
+
   const contentTask = tasks.find((task) => task.type === "content_draft");
   if (contentTask) {
     await db.insert(contentDrafts).values({
@@ -109,7 +123,7 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
       title: generatedContent.title,
       body: `${generatedContent.body}\n\n${generatedContent.callToAction}`,
       status: "draft",
-      metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: generatedContent.safetyNotes },
+      metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: generatedContent.safetyNotes, quality: contentQuality },
     });
   }
   return run;

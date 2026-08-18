@@ -97,17 +97,25 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
     .returning();
 
   try {
-    const generatedContent = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", "linkedin");
-    const contentQuality = validateContentDraft(generatedContent.title, generatedContent.body, generatedContent.callToAction);
+    const topic = "التعامل الذكي مع الديون المتأخرة";
+    const platformNames = ["linkedin", "instagram", "x"] as const;
+    const generatedVariants = await Promise.all(
+      platformNames.map(async (platform) => {
+        const content = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", platform);
+        return { platform, content, quality: validateContentDraft(content.title, content.body, content.callToAction) };
+      }),
+    );
+    const primaryVariant = generatedVariants[0];
+    const contentQuality = primaryVariant.quality;
 
     const taskValues = [
-    {
+    ...generatedVariants.map(({ platform }) => ({
       runId: run.id,
       type: "content_draft",
-      title: "مسودة منشور تعليمي عربي",
+      title: `مسودة منشور تعليمي عربي - ${platform}`,
       priority: 80,
-      payload: { platform: "linkedin", topic: "التعامل الذكي مع الديون المتأخرة" },
-    },
+      payload: { platform, topic },
+    })),
     {
       runId: run.id,
       type: "product_improvement",
@@ -142,17 +150,23 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
     metadata: { passed: contentQuality.passed, issues: contentQuality.issues, trigger },
   });
 
-    const contentTask = tasks.find((task) => task.type === "content_draft");
-    if (contentTask) {
-      await db.insert(contentDrafts).values({
-      ownerId,
-      taskId: contentTask.id,
-      platform: "linkedin",
-      title: generatedContent.title,
-      body: `${generatedContent.body}\n\n${generatedContent.callToAction}`,
-      status: "draft",
-      metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: generatedContent.safetyNotes, quality: contentQuality },
-      });
+    const contentTasks = tasks.filter((task) => task.type === "content_draft");
+    if (contentTasks.length) {
+      await db.insert(contentDrafts).values(
+        contentTasks.map((task) => {
+          const platform = String((task.payload as { platform?: string } | null)?.platform || "linkedin");
+          const variant = generatedVariants.find((item) => item.platform === platform) || primaryVariant;
+          return {
+            ownerId,
+            taskId: task.id,
+            platform,
+            title: variant.content.title,
+            body: `${variant.content.body}\n\n${variant.content.callToAction}`,
+            status: "draft",
+            metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: variant.content.safetyNotes, quality: variant.quality },
+          };
+        }),
+      );
     }
 
     const findings = [

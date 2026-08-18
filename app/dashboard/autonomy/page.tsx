@@ -45,6 +45,17 @@ export default function AutonomyPage() {
     await load();
   }
 
+  async function reviewTask(taskId: string, status: "approved" | "rejected") {
+    const response = await fetch("/api/autonomy/approvals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ taskId, status }),
+    });
+    const payload = await response.json();
+    setMessage(payload.success ? (status === "approved" ? "تم اعتماد المقترح، ولم يتم النشر الخارجي." : "تم رفض المقترح.") : "تعذرت مراجعة المقترح.");
+    await load();
+  }
+
   if (loading) return <main dir="rtl" className="mx-auto max-w-6xl p-6">جاري تحميل مركز القيادة...</main>;
   if (!overview) return <main dir="rtl" className="mx-auto max-w-6xl p-6">لا يمكن تحميل مركز القيادة حالياً.</main>;
 
@@ -73,10 +84,11 @@ export default function AutonomyPage() {
       <section className="grid gap-6 lg:grid-cols-2">
         <Panel title="المهام المقترحة">
           {overview.tasks.length === 0 ? <Empty /> : overview.tasks.map((task) => (
-            <div key={task.id} className="flex items-center justify-between border-b border-slate-100 py-4 last:border-0">
+                          <div key={task.id} className="flex flex-col gap-3 border-b border-slate-100 py-4 last:border-0 md:flex-row md:items-center md:justify-between">
               <div><p className="font-bold text-slate-900">{task.title}</p><p className="text-xs text-slate-500">{task.type} · أولوية {task.priority}</p></div>
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">{statusLabel[task.status] || task.status}</span>
+              <div className="flex items-center gap-2"><span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">{statusLabel[task.status] || task.status}</span>{task.status === "proposed" && <><button onClick={() => reviewTask(task.id, "approved")} className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-bold text-white">اعتماد</button><button onClick={() => reviewTask(task.id, "rejected")} className="rounded-lg bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">رفض</button></>}</div>
             </div>
+
           ))}
         </Panel>
 

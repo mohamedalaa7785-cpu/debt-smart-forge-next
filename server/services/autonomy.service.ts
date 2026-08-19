@@ -4,6 +4,7 @@ import {
   autonomyApprovals,
   autonomyGoals,
   autonomyMetrics,
+  autonomyExperiments,
   autonomyRuns,
   autonomyTasks,
   contentDrafts,
@@ -30,7 +31,7 @@ export async function ensureDefaultGoal(ownerId: string) {
 
 export async function getAutonomyOverview(ownerId: string) {
   const goal = await ensureDefaultGoal(ownerId);
-  const [runs, drafts, metrics] = await Promise.all([
+  const [runs, drafts, metrics, experiments] = await Promise.all([
     db.query.autonomyRuns.findMany({
       where: eq(autonomyRuns.ownerId, ownerId),
       orderBy: [desc(autonomyRuns.createdAt)],
@@ -46,6 +47,11 @@ export async function getAutonomyOverview(ownerId: string) {
       orderBy: [desc(autonomyMetrics.createdAt)],
       limit: 10,
     }),
+    db.query.autonomyExperiments.findMany({
+      where: eq(autonomyExperiments.ownerId, ownerId),
+      orderBy: [desc(autonomyExperiments.createdAt)],
+      limit: 10,
+    }),
   ]);
   const runIds = runs.map((run) => run.id);
   const tasks = runIds.length
@@ -55,7 +61,7 @@ export async function getAutonomyOverview(ownerId: string) {
         limit: 30,
       })
     : [];
-  return { goal, runs, tasks, drafts, metrics };
+  return { goal, runs, tasks, drafts, metrics, experiments };
 }
 
 export async function setAutonomyStatus(ownerId: string, status: "active" | "paused") {
@@ -139,6 +145,19 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
       .update(autonomyGoals)
       .set({ lastRunAt: new Date(), updatedAt: new Date() })
       .where(eq(autonomyGoals.id, goal.id));
+
+    await db.insert(autonomyExperiments).values({
+      ownerId,
+      runId: run.id,
+      name: "اختبار تحويل صفحة التعريف",
+      hypothesis: "عرض نتيجة قابلة للقياس مع دعوة واضحة سيزيد طلبات العرض من جمهور شركات التحصيل.",
+      channel: "landing-page",
+      status: "proposed",
+      baselineMetric: "demo_request_rate",
+      targetMetric: "demo_request_rate",
+      notes: "تحتاج موافقة بشرية وتحديد خط أساس قبل التشغيل.",
+      metadata: { requiresApproval: true, source: "autonomy-run" },
+    });
 
     await db.insert(autonomyMetrics).values({
     ownerId,

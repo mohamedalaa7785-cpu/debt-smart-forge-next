@@ -768,6 +768,35 @@ export const autonomyApprovals = pgTable(
   })
 );
 
+export const autonomyExperiments = pgTable(
+  "autonomy_experiments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    runId: uuid("run_id").references(() => autonomyRuns.id, { onDelete: "set null" }),
+    name: text("name").notNull(),
+    hypothesis: text("hypothesis").notNull(),
+    channel: text("channel").notNull(),
+    status: text("status").default("proposed").notNull(),
+    baselineMetric: text("baseline_metric").notNull(),
+    targetMetric: text("target_metric").notNull(),
+    baselineValue: decimal("baseline_value", { precision: 14, scale: 4 }),
+    targetValue: decimal("target_value", { precision: 14, scale: 4 }),
+    actualValue: decimal("actual_value", { precision: 14, scale: 4 }),
+    startsAt: timestamp("starts_at", { withTimezone: true }),
+    endsAt: timestamp("ends_at", { withTimezone: true }),
+    notes: text("notes"),
+    metadata: jsonb("metadata").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("autonomy_experiments_owner_idx").on(table.ownerId),
+    statusIdx: index("autonomy_experiments_status_idx").on(table.status),
+    channelIdx: index("autonomy_experiments_channel_idx").on(table.channel),
+  }),
+);
+
 export const autonomyMetrics = pgTable(
   "autonomy_metrics",
   {

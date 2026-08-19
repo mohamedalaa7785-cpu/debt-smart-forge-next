@@ -29,6 +29,7 @@ const criticalRoutes = [
   "app/api/autonomy/approvals/route.ts",
   "app/api/autonomy/publish/preview/route.ts",
   "app/api/autonomy/experiments/route.ts",
+  "app/api/autonomy/social-channels/route.ts",
 ];
 
 for (const route of criticalRoutes) {
@@ -91,6 +92,10 @@ assert("publish preview never sends external request", publishPreviewSrc.include
 const experimentsRouteSrc = read("app/api/autonomy/experiments/route.ts");
 assert("experiments route validates payload", experimentsRouteSrc.includes("ExperimentSchema"));
 assert("experiments route is role protected", experimentsRouteSrc.includes("withRole"));
+const socialChannelsRouteSrc = read("app/api/autonomy/social-channels/route.ts");
+assert("social channels route validates platforms", socialChannelsRouteSrc.includes("ChannelSchema"));
+assert("social channels default to dry run", socialChannelsRouteSrc.includes('dryRunOnly: true') && socialChannelsRouteSrc.includes('status: "draft"'));
+assert("social channels block unapproved enablement", socialChannelsRouteSrc.includes("يتطلب التفعيل الخارجي"));
 
 const autonomyServiceSrc = read("server/services/autonomy.service.ts");
 assert("autonomy run starts as running", autonomyServiceSrc.includes('status: "running"'));
@@ -101,6 +106,9 @@ assert("autonomy concurrency index exists", concurrencyMigration.includes("auton
 assert("growth experiments are exposed in overview", autonomyServiceSrc.includes("autonomyExperiments") && autonomyServiceSrc.includes("experiments"));
 const experimentsMigration = read("supabase/20260819_autonomy_experiments.sql");
 assert("growth experiments migration exists", experimentsMigration.includes("create table if not exists public.autonomy_experiments"));
+const socialMigration = read("supabase/20260819_social_publishing_control.sql");
+assert("social channels migration exists", socialMigration.includes("create table if not exists public.social_channels"));
+assert("publish jobs migration exists", socialMigration.includes("create table if not exists public.publish_jobs"));
 
 const imageServiceSrc = read("server/services/image-intelligence.service.ts");
 assert("image service uses signed URLs", imageServiceSrc.includes("createSignedUrl"));

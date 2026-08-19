@@ -786,3 +786,28 @@ export const autonomyMetrics = pgTable(
     metricIdx: index("autonomy_metrics_metric_idx").on(table.metric),
   })
 );
+
+
+export const socialPublishRequests = pgTable(
+  "social_publish_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    draftId: uuid("draft_id").references(() => contentDrafts.id, { onDelete: "cascade" }).notNull(),
+    platform: text("platform").notNull(),
+    status: text("status").default("pending").notNull(),
+    requestedBy: uuid("requested_by").references(() => users.id).notNull(),
+    approvedBy: uuid("approved_by").references(() => users.id),
+    externalPostId: text("external_post_id"),
+    error: text("error"),
+    metadata: jsonb("metadata").default({}),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+  },
+  (table) => ({
+    ownerIdx: index("social_publish_requests_owner_idx").on(table.ownerId),
+    draftIdx: index("social_publish_requests_draft_idx").on(table.draftId),
+    statusIdx: index("social_publish_requests_status_idx").on(table.status),
+  })
+);

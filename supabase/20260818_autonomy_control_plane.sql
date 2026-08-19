@@ -99,3 +99,24 @@ alter table public.autonomy_tasks enable row level security;
 alter table public.content_drafts enable row level security;
 alter table public.autonomy_approvals enable row level security;
 alter table public.autonomy_metrics enable row level security;
+
+
+create table if not exists public.social_publish_requests (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references public.users(id),
+  draft_id uuid not null references public.content_drafts(id) on delete cascade,
+  platform text not null,
+  status text not null default 'pending',
+  requested_by uuid not null references public.users(id),
+  approved_by uuid references public.users(id),
+  external_post_id text,
+  error text,
+  metadata jsonb not null default '{}'::jsonb,
+  requested_at timestamptz not null default now(),
+  approved_at timestamptz,
+  published_at timestamptz
+);
+create index if not exists social_publish_requests_owner_idx on public.social_publish_requests(owner_id);
+create index if not exists social_publish_requests_draft_idx on public.social_publish_requests(draft_id);
+create index if not exists social_publish_requests_status_idx on public.social_publish_requests(status);
+alter table public.social_publish_requests enable row level security;

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 interface Overview {
-  goal: { name: string; description: string; cadence: string; riskLevel: string };
+  goal: { name: string; description: string; cadence: string; riskLevel: string; status: string; lastRunAt: string | null };
   runs: Array<{ id: string; status: string; trigger: string; summary: string | null; createdAt: string }>;
   tasks: Array<{ id: string; type: string; title: string; status: string; priority: number }>;
   drafts: Array<{ id: string; platform: string; title: string; status: string; body: string }>;
@@ -12,6 +12,8 @@ interface Overview {
 
 const statusLabel: Record<string, string> = {
   completed: "مكتمل",
+  running: "قيد التنفيذ",
+  failed: "فشل ويحتاج مراجعة",
   queued: "في الانتظار",
   proposed: "مقترح",
   draft: "مسودة",
@@ -22,6 +24,9 @@ export default function AutonomyPage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
+  const [topic, setTopic] = useState("إدارة الديون بذكاء واحترافية");
+  const [platform, setPlatform] = useState("linkedin");
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/autonomy", { cache: "no-store" });
@@ -32,6 +37,17 @@ export default function AutonomyPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function updateControl(action: "pause" | "resume") {
+    const response = await fetch("/api/autonomy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const payload = await response.json();
+    setMessage(payload.success ? (action === "pause" ? "تم إيقاف التشغيل الآلي. ستبقى السجلات محفوظة ولن تبدأ دورات جديدة." : "تم استئناف التشغيل الآلي.") : "تعذر تغيير حالة التشغيل الآلي.");
+    await load();
+  }
+
   async function runCycle() {
     setRunning(true);
     setMessage("");
@@ -41,8 +57,21 @@ export default function AutonomyPage() {
       body: JSON.stringify({ trigger: "dashboard" }),
     });
     const payload = await response.json();
-    setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : "تعذر تشغيل الدورة.");
+    setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : (payload.error || "تعذر تشغيل الدورة."));
     setRunning(false);
+    await load();
+  }
+
+  async function generateDraft() {
+    setGenerating(true);
+    const response = await fetch("/api/content/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ topic, platform, save: true }),
+    });
+    const payload = await response.json();
+    setMessage(payload.success ? "تم حفظ مسودة محتوى جديدة للمراجعة." : "تعذر إنشاء المسودة.");
+    setGenerating(false);
     await load();
   }
 
@@ -69,18 +98,34 @@ export default function AutonomyPage() {
             <h1 className="text-3xl font-black">{overview.goal.name}</h1>
             <p className="mt-3 max-w-2xl text-slate-300">{overview.goal.description}</p>
           </div>
-          <button onClick={runCycle} disabled={running} className="rounded-xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-wait disabled:opacity-60">
-            {running ? "جاري التشغيل..." : "ابدأ دورة تحسين"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={runCycle} disabled={running || overview.goal.status !== "active"} className="rounded-xl bg-cyan-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-60">
+              {running ? "جاري التشغيل..." : "ابدأ دورة تحسين"}
+            </button>
+            {overview.goal.status === "active" ? (
+              <button onClick={() => updateControl("pause")} className="rounded-xl border border-white/30 px-5 py-3 font-bold text-white transition hover:bg-white/10">إيقاف طارئ</button>
+            ) : (
+              <button onClick={() => updateControl("resume")} className="rounded-xl bg-emerald-400 px-5 py-3 font-bold text-slate-950 transition hover:bg-emerald-300">استئناف التشغيل</button>
+            )}
+          </div>
         </div>
         {message && <p className="mt-5 rounded-xl bg-white/10 p-3 text-sm text-cyan-100">{message}</p>}
       </section>
 
       <section className="grid gap-4 md:grid-cols-3">
-        <Metric title="الحالة" value="نشط" detail={`إيقاع المراجعة: ${overview.goal.cadence}`} />
+        <Metric title="الحالة" value={overview.goal.status === "active" ? "نشط" : "متوقف"} detail={`إيقاع المراجعة: ${overview.goal.cadence}`} />
         <Metric title="التشغيلات" value={String(overview.runs.length)} detail="آخر 10 تشغيلات محفوظة" />
         <Metric title="المقترحات" value={String(overview.tasks.length)} detail="كل تغيير حساس يحتاج موافقة" />
-        <Metric title="جودة المحتوى" value={`${overview.metrics.find((metric) => metric.metric === "content_quality_score")?.value ?? "—"}%`} detail="آخر فحص جودة محلي" />
+        <Metric title="جودة المحتوى" value={`${overview.metrics.find((metric) => metric.metric === "content_quality_score")?.value ?? "—"}%`} detail={overview.goal.lastRunAt ? `آخر دورة: ${new Date(overview.goal.lastRunAt).toLocaleString("ar-EG")}` : "لم تبدأ دورة بعد"} />
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
+          <label className="flex-1 text-sm font-bold text-slate-700">موضوع المحتوى<input value={topic} onChange={(event) => setTopic(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-cyan-500" /></label>
+          <label className="text-sm font-bold text-slate-700">المنصة<select value={platform} onChange={(event) => setPlatform(event.target.value)} className="mt-2 rounded-xl border border-slate-200 px-4 py-3 font-normal"><option value="linkedin">LinkedIn</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="x">X</option></select></label>
+          <button onClick={generateDraft} disabled={generating} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">{generating ? "جاري الإنشاء..." : "إنشاء مسودة"}</button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">المولد ينشئ مسودة فقط. لا يتم النشر الخارجي من هذه الشاشة.</p>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">
@@ -107,7 +152,7 @@ export default function AutonomyPage() {
 
       <Panel title="سجل التشغيلات">
         {overview.runs.length === 0 ? <Empty /> : overview.runs.map((run) => (
-          <div key={run.id} className="flex flex-col gap-1 border-b border-slate-100 py-4 last:border-0 md:flex-row md:items-center md:justify-between"><div><p className="font-bold text-slate-900">{run.summary || "دورة تحسين"}</p><p className="text-xs text-slate-500">المحفز: {run.trigger}</p></div><span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">{statusLabel[run.status] || run.status}</span></div>
+          <div key={run.id} className="flex flex-col gap-1 border-b border-slate-100 py-4 last:border-0 md:flex-row md:items-center md:justify-between"><div><p className="font-bold text-slate-900">{run.summary || "دورة تحسين"}</p><p className="text-xs text-slate-500">المحفز: {run.trigger}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${run.status === "failed" ? "bg-rose-50 text-rose-700" : run.status === "running" ? "bg-cyan-50 text-cyan-700" : "bg-emerald-50 text-emerald-700"}`}>{statusLabel[run.status] || run.status}</span></div>
         ))}
       </Panel>
     </main>

@@ -58,38 +58,64 @@ export async function getAutonomyOverview(ownerId: string) {
   return { goal, runs, tasks, drafts, metrics };
 }
 
+export async function setAutonomyStatus(ownerId: string, status: "active" | "paused") {
+  const goal = await ensureDefaultGoal(ownerId);
+  const [updated] = await db
+    .update(autonomyGoals)
+    .set({ status, updatedAt: new Date() })
+    .where(and(eq(autonomyGoals.id, goal.id), eq(autonomyGoals.ownerId, ownerId)))
+    .returning();
+  return updated;
+}
+
 export async function startAutonomyRun(ownerId: string, trigger = "manual") {
   const goal = await ensureDefaultGoal(ownerId);
-  const generatedContent = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", "linkedin");
-  const contentQuality = validateContentDraft(generatedContent.title, generatedContent.body, generatedContent.callToAction);
+  if (goal.status !== "active") {
+    throw new Error("AUTONOMY_PAUSED");
+  }
+
+  const recentRun = await db.query.autonomyRuns.findFirst({
+    where: and(eq(autonomyRuns.ownerId, ownerId), eq(autonomyRuns.status, "running")),
+    orderBy: [desc(autonomyRuns.createdAt)],
+  });
+  if (recentRun) {
+    throw new Error("AUTONOMY_RUN_IN_PROGRESS");
+  }
+  const startedAt = new Date();
   const [run] = await db
     .insert(autonomyRuns)
     .values({
       goalId: goal.id,
       ownerId,
       trigger,
-      status: "completed",
-      summary: "اكتملت دورة الفحص الأولية؛ تم إنشاء مقترحات تحتاج مراجعة بشرية.",
-      findings: [
-        { code: "health_check", severity: "info", message: "فحص صحة المنتج مطلوب قبل أي نشر." },
-        { code: "content_gap", severity: "medium", message: "إنشاء محتوى تعليمي عربي حول إدارة الديون." },
-        { code: "growth_experiment", severity: "low", message: "اختبار صفحة تعريفية وقياس التحويل قبل زيادة الإنفاق." },
-        { code: "content_quality", severity: contentQuality.passed ? "info" : "high", message: contentQuality.passed ? "اجتازت المسودة فحوصات الجودة المحلية." : contentQuality.issues.join(" ") },
-      ],
+      status: "running",
+      summary: "دورة الفحص قيد التنفيذ؛ لم يحدث نشر خارجي أو تغيير مالي.",
+      findings: [],
       requiresApproval: true,
-      startedAt: new Date(),
-      finishedAt: new Date(),
+      startedAt,
     })
     .returning();
 
-  const taskValues = [
-    {
+  try {
+    const topic = "التعامل الذكي مع الديون المتأخرة";
+    const platformNames = ["linkedin", "instagram", "x"] as const;
+    const generatedVariants = await Promise.all(
+      platformNames.map(async (platform) => {
+        const content = await generateGrowthContent("إدارة الديون ببيانات أوضح وتجارب نمو قابلة للقياس", platform);
+        return { platform, content, quality: validateContentDraft(content.title, content.body, content.callToAction) };
+      }),
+    );
+    const primaryVariant = generatedVariants[0];
+    const contentQuality = primaryVariant.quality;
+
+    const taskValues = [
+    ...generatedVariants.map(({ platform }) => ({
       runId: run.id,
       type: "content_draft",
-      title: "مسودة منشور تعليمي عربي",
+      title: `مسودة منشور تعليمي عربي - ${platform}`,
       priority: 80,
-      payload: { platform: "linkedin", topic: "التعامل الذكي مع الديون المتأخرة" },
-    },
+      payload: { platform, topic },
+    })),
     {
       runId: run.id,
       type: "product_improvement",
@@ -105,11 +131,16 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
       payload: { commands: ["pnpm typecheck", "pnpm smoke", "pnpm build"], qualityGate: contentQuality },
     },
   ];
-  const tasks = await db.insert(autonomyTasks).values(taskValues).returning();
-  await db.insert(autonomyApprovals).values(
-    tasks.map((task) => ({ runId: run.id, taskId: task.id, reason: "النشر أو التغيير الخارجي يتطلب موافقة بشرية." })),
-  );
-  await db.insert(autonomyMetrics).values({
+    const tasks = await db.insert(autonomyTasks).values(taskValues).returning();
+    await db.insert(autonomyApprovals).values(
+      tasks.map((task) => ({ runId: run.id, taskId: task.id, reason: "النشر أو التغيير الخارجي يتطلب موافقة بشرية." })),
+    );
+    await db
+      .update(autonomyGoals)
+      .set({ lastRunAt: new Date(), updatedAt: new Date() })
+      .where(eq(autonomyGoals.id, goal.id));
+
+    await db.insert(autonomyMetrics).values({
     ownerId,
     metric: "content_quality_score",
     value: String(contentQuality.score),
@@ -119,17 +150,43 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
     metadata: { passed: contentQuality.passed, issues: contentQuality.issues, trigger },
   });
 
-  const contentTask = tasks.find((task) => task.type === "content_draft");
-  if (contentTask) {
-    await db.insert(contentDrafts).values({
-      ownerId,
-      taskId: contentTask.id,
-      platform: "linkedin",
-      title: generatedContent.title,
-      body: `${generatedContent.body}\n\n${generatedContent.callToAction}`,
-      status: "draft",
-      metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: generatedContent.safetyNotes, quality: contentQuality },
-    });
+    const contentTasks = tasks.filter((task) => task.type === "content_draft");
+    if (contentTasks.length) {
+      await db.insert(contentDrafts).values(
+        contentTasks.map((task) => {
+          const platform = String((task.payload as { platform?: string } | null)?.platform || "linkedin");
+          const variant = generatedVariants.find((item) => item.platform === platform) || primaryVariant;
+          return {
+            ownerId,
+            taskId: task.id,
+            platform,
+            title: variant.content.title,
+            body: `${variant.content.body}\n\n${variant.content.callToAction}`,
+            status: "draft",
+            metadata: { generatedBy: "autonomy-run", approvalRequired: true, safetyNotes: variant.content.safetyNotes, quality: variant.quality },
+          };
+        }),
+      );
+    }
+
+    const findings = [
+      { code: "health_check", severity: "info", message: "فحص صحة المنتج مطلوب قبل أي نشر." },
+      { code: "content_gap", severity: "medium", message: "إنشاء محتوى تعليمي عربي حول إدارة الديون." },
+      { code: "growth_experiment", severity: "low", message: "اختبار صفحة تعريفية وقياس التحويل قبل زيادة الإنفاق." },
+      { code: "content_quality", severity: contentQuality.passed ? "info" : "high", message: contentQuality.passed ? "اجتازت المسودة فحوصات الجودة المحلية." : contentQuality.issues.join(" ") },
+    ];
+    const [completedRun] = await db
+      .update(autonomyRuns)
+      .set({ status: "completed", summary: "اكتملت دورة الفحص الأولية؛ تم إنشاء مقترحات تحتاج مراجعة بشرية.", findings, finishedAt: new Date() })
+      .where(eq(autonomyRuns.id, run.id))
+      .returning();
+    return completedRun;
+  } catch (error) {
+    const [failedRun] = await db
+      .update(autonomyRuns)
+      .set({ status: "failed", summary: "فشلت دورة التشغيل قبل اكتمالها.", findings: [{ code: "run_failed", severity: "high", message: error instanceof Error ? error.message : "Unknown error" }], finishedAt: new Date() })
+      .where(eq(autonomyRuns.id, run.id))
+      .returning();
+    throw Object.assign(new Error("AUTONOMY_RUN_FAILED"), { cause: failedRun });
   }
-  return run;
 }

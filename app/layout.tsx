@@ -11,7 +11,8 @@ import { Metadata } from "next";
 import { validateRuntimeEnv } from "@/lib/env";
 
 const publicAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-const metadataBase = publicAppUrl ? new URL(publicAppUrl) : undefined;
+const deploymentUrl = process.env.VERCEL_URL?.trim();
+const metadataBase = new URL(publicAppUrl || (deploymentUrl ? `https://${deploymentUrl}` : "http://localhost:3000"));
 
 export const metadata: Metadata = {
   metadataBase,

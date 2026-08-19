@@ -24,6 +24,9 @@ export default function AutonomyPage() {
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState("");
+  const [topic, setTopic] = useState("إدارة الديون بذكاء واحترافية");
+  const [platform, setPlatform] = useState("linkedin");
+  const [generating, setGenerating] = useState(false);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/autonomy", { cache: "no-store" });
@@ -56,6 +59,19 @@ export default function AutonomyPage() {
     const payload = await response.json();
     setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : (payload.error || "تعذر تشغيل الدورة."));
     setRunning(false);
+    await load();
+  }
+
+  async function generateDraft() {
+    setGenerating(true);
+    const response = await fetch("/api/content/generate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ topic, platform, save: true }),
+    });
+    const payload = await response.json();
+    setMessage(payload.success ? "تم حفظ مسودة محتوى جديدة للمراجعة." : "تعذر إنشاء المسودة.");
+    setGenerating(false);
     await load();
   }
 
@@ -101,6 +117,15 @@ export default function AutonomyPage() {
         <Metric title="التشغيلات" value={String(overview.runs.length)} detail="آخر 10 تشغيلات محفوظة" />
         <Metric title="المقترحات" value={String(overview.tasks.length)} detail="كل تغيير حساس يحتاج موافقة" />
         <Metric title="جودة المحتوى" value={`${overview.metrics.find((metric) => metric.metric === "content_quality_score")?.value ?? "—"}%`} detail={overview.goal.lastRunAt ? `آخر دورة: ${new Date(overview.goal.lastRunAt).toLocaleString("ar-EG")}` : "لم تبدأ دورة بعد"} />
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
+          <label className="flex-1 text-sm font-bold text-slate-700">موضوع المحتوى<input value={topic} onChange={(event) => setTopic(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 font-normal outline-none focus:border-cyan-500" /></label>
+          <label className="text-sm font-bold text-slate-700">المنصة<select value={platform} onChange={(event) => setPlatform(event.target.value)} className="mt-2 rounded-xl border border-slate-200 px-4 py-3 font-normal"><option value="linkedin">LinkedIn</option><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="x">X</option></select></label>
+          <button onClick={generateDraft} disabled={generating} className="rounded-xl bg-slate-900 px-5 py-3 font-bold text-white disabled:opacity-50">{generating ? "جاري الإنشاء..." : "إنشاء مسودة"}</button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">المولد ينشئ مسودة فقط. لا يتم النشر الخارجي من هذه الشاشة.</p>
       </section>
 
       <section className="grid gap-6 lg:grid-cols-2">

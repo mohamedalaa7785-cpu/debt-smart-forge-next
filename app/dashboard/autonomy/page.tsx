@@ -8,6 +8,7 @@ interface Overview {
   tasks: Array<{ id: string; type: string; title: string; status: string; priority: number }>;
   drafts: Array<{ id: string; platform: string; title: string; status: string; body: string }>;
   metrics: Array<{ id: string; metric: string; value: string; source: string; createdAt: string }>;
+  experiments: Array<{ id: string; name: string; hypothesis: string; channel: string; status: string; baselineMetric: string; targetMetric: string }>;
 }
 
 const statusLabel: Record<string, string> = {
@@ -153,6 +154,16 @@ export default function AutonomyPage() {
       <Panel title="سجل التشغيلات">
         {overview.runs.length === 0 ? <Empty /> : overview.runs.map((run) => (
           <div key={run.id} className="flex flex-col gap-1 border-b border-slate-100 py-4 last:border-0 md:flex-row md:items-center md:justify-between"><div><p className="font-bold text-slate-900">{run.summary || "دورة تحسين"}</p><p className="text-xs text-slate-500">المحفز: {run.trigger}</p></div><span className={`rounded-full px-3 py-1 text-xs font-bold ${run.status === "failed" ? "bg-rose-50 text-rose-700" : run.status === "running" ? "bg-cyan-50 text-cyan-700" : "bg-emerald-50 text-emerald-700"}`}>{statusLabel[run.status] || run.status}</span></div>
+        ))}
+      </Panel>
+
+      <Panel title="تجارب النمو المقترحة">
+        {overview.experiments.length === 0 ? <Empty /> : overview.experiments.map((experiment) => (
+          <article key={experiment.id} className="border-b border-slate-100 py-4 last:border-0">
+            <div className="flex flex-col justify-between gap-2 md:flex-row"><h3 className="font-bold text-slate-900">{experiment.name}</h3><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700">{experiment.status}</span></div>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{experiment.hypothesis}</p>
+            <p className="mt-2 text-xs text-slate-500">القناة: {experiment.channel} · خط الأساس: {experiment.baselineMetric} · الهدف: {experiment.targetMetric}</p>
+          </article>
         ))}
       </Panel>
     </main>

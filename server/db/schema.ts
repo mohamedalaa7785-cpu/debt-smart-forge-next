@@ -701,6 +701,55 @@ export const contentDrafts = pgTable(
   })
 );
 
+export const socialChannels = pgTable(
+  "social_channels",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    platform: text("platform").notNull(),
+    displayName: text("display_name").notNull(),
+    externalAccountId: text("external_account_id"),
+    secretRef: text("secret_ref"),
+    status: text("status").default("draft").notNull(),
+    dryRunOnly: boolean("dry_run_only").default(true).notNull(),
+    config: jsonb("config").default({}),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("social_channels_owner_idx").on(table.ownerId),
+    platformIdx: index("social_channels_platform_idx").on(table.platform),
+    statusIdx: index("social_channels_status_idx").on(table.status),
+  })
+);
+
+export const publishJobs = pgTable(
+  "publish_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: uuid("owner_id").references(() => users.id).notNull(),
+    channelId: uuid("channel_id").references(() => socialChannels.id, { onDelete: "cascade" }).notNull(),
+    draftId: uuid("draft_id").references(() => contentDrafts.id, { onDelete: "cascade" }).notNull(),
+    approvalId: uuid("approval_id").references(() => autonomyApprovals.id),
+    status: text("status").default("preview").notNull(),
+    scheduledFor: timestamp("scheduled_for", { withTimezone: true }),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    externalPostId: text("external_post_id"),
+    attempts: integer("attempts").default(0).notNull(),
+    error: text("error"),
+    previewPayload: jsonb("preview_payload").default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index("publish_jobs_owner_idx").on(table.ownerId),
+    channelIdx: index("publish_jobs_channel_idx").on(table.channelId),
+    statusIdx: index("publish_jobs_status_idx").on(table.status),
+    scheduleIdx: index("publish_jobs_schedule_idx").on(table.scheduledFor),
+  })
+);
+
 export const autonomyApprovals = pgTable(
   "autonomy_approvals",
   {

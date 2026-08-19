@@ -39,7 +39,10 @@ export default function DashboardLayout({
   ];
 
   const adminMenu = [{ name: "Admin Panel", href: "/dashboard/admin/users" }];
-  const autonomyMenu = [{ name: "Autonomy Center", href: "/dashboard/autonomy" }];
+  const autonomyMenu = [
+    { name: "Autonomy Center", href: "/dashboard/autonomy" },
+    { name: "Publishing Center", href: "/dashboard/publishing" },
+  ];
 
   let menu = [...baseMenu];
 

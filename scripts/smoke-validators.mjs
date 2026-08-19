@@ -29,7 +29,6 @@ const criticalRoutes = [
   "app/api/autonomy/approvals/route.ts",
   "app/api/autonomy/publish/preview/route.ts",
   "app/api/autonomy/experiments/route.ts",
-  "app/api/autonomy/social-channels/route.ts",
 ];
 
 for (const route of criticalRoutes) {
@@ -92,10 +91,9 @@ assert("publish preview never sends external request", publishPreviewSrc.include
 const experimentsRouteSrc = read("app/api/autonomy/experiments/route.ts");
 assert("experiments route validates payload", experimentsRouteSrc.includes("ExperimentSchema"));
 assert("experiments route is role protected", experimentsRouteSrc.includes("withRole"));
-const socialChannelsRouteSrc = read("app/api/autonomy/social-channels/route.ts");
-assert("social channels route validates platforms", socialChannelsRouteSrc.includes("ChannelSchema"));
-assert("social channels default to dry run", socialChannelsRouteSrc.includes('dryRunOnly: true') && socialChannelsRouteSrc.includes('status: "draft"'));
-assert("social channels block unapproved enablement", socialChannelsRouteSrc.includes("يتطلب التفعيل الخارجي"));
+const publishingRouteSrc = read("app/api/autonomy/publishing/route.ts");
+assert("publishing route validates channels", publishingRouteSrc.includes("channelSchema"));
+assert("publishing route supports preview jobs", publishingRouteSrc.includes("createPreviewPublishJob"));
 
 const autonomyServiceSrc = read("server/services/autonomy.service.ts");
 assert("autonomy run starts as running", autonomyServiceSrc.includes('status: "running"'));

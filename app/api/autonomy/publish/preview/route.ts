@@ -6,7 +6,7 @@ import { withRole } from "@/server/lib/auth";
 
 export const dynamic = "force-dynamic";
 
-const supportedPlatforms = new Set(["linkedin", "instagram", "x"]);
+const supportedPlatforms = new Set(["linkedin", "facebook", "instagram", "x"]);
 
 export async function POST(request: NextRequest) {
   return withRole(["admin", "supervisor", "hidden_admin"], async (user) => {

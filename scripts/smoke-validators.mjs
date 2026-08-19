@@ -94,6 +94,9 @@ assert("autonomy run records completed state", autonomyServiceSrc.includes('stat
 assert("autonomy run records failed state", autonomyServiceSrc.includes('status: "failed"'));
 const concurrencyMigration = read("supabase/20260818_autonomy_concurrency.sql");
 assert("autonomy concurrency index exists", concurrencyMigration.includes("autonomy_runs_one_active_per_owner_idx"));
+assert("growth experiments are exposed in overview", autonomyServiceSrc.includes("autonomyExperiments") && autonomyServiceSrc.includes("experiments"));
+const experimentsMigration = read("supabase/20260819_autonomy_experiments.sql");
+assert("growth experiments migration exists", experimentsMigration.includes("create table if not exists public.autonomy_experiments"));
 
 const imageServiceSrc = read("server/services/image-intelligence.service.ts");
 assert("image service uses signed URLs", imageServiceSrc.includes("createSignedUrl"));

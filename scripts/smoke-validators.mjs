@@ -28,6 +28,7 @@ const criticalRoutes = [
   "app/api/autonomy/route.ts",
   "app/api/autonomy/approvals/route.ts",
   "app/api/autonomy/publish/preview/route.ts",
+  "app/api/autonomy/experiments/route.ts",
 ];
 
 for (const route of criticalRoutes) {
@@ -87,6 +88,9 @@ assert("autonomy route handles duplicate runs", autonomySrc.includes("AUTONOMY_R
 const publishPreviewSrc = read("app/api/autonomy/publish/preview/route.ts");
 assert("publish preview is protected", publishPreviewSrc.includes("withRole"));
 assert("publish preview never sends external request", publishPreviewSrc.includes("externalRequestSent: false"));
+const experimentsRouteSrc = read("app/api/autonomy/experiments/route.ts");
+assert("experiments route validates payload", experimentsRouteSrc.includes("ExperimentSchema"));
+assert("experiments route is role protected", experimentsRouteSrc.includes("withRole"));
 
 const autonomyServiceSrc = read("server/services/autonomy.service.ts");
 assert("autonomy run starts as running", autonomyServiceSrc.includes('status: "running"'));

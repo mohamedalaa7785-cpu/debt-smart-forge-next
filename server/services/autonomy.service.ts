@@ -89,7 +89,7 @@ export async function startAutonomyRun(ownerId: string, trigger = "manual") {
       ownerId,
       trigger,
       status: "running",
-      summary: "دورة الفحص قيد التنفيذ؛ لم يحدث نشر خارجي أو تغيير مالي.",
+      summary: "بدأت دورة الفحص؛ سيتم إنشاء مقترحات تحتاج مراجعة بشرية.",
       findings: [],
       requiresApproval: true,
       startedAt,

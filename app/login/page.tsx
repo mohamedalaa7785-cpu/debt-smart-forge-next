@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase";
 
 export default function LoginPage() {
@@ -104,6 +105,7 @@ export default function LoginPage() {
             <span className="bg-white px-2 text-gray-500">Or with email</span>
           </div>
           <p className="text-sm text-gray-500">Sign in using your email and password.</p>
+          <Link href="/pricing" className="block text-center text-sm font-bold text-blue-600 hover:text-blue-800">عرض الباقات التجارية</Link>
         </div>
 
         <form onSubmit={onSubmit} className="space-y-4">

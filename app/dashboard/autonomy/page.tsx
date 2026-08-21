@@ -52,28 +52,38 @@ export default function AutonomyPage() {
   async function runCycle() {
     setRunning(true);
     setMessage("");
-    const response = await fetch("/api/autonomy", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ trigger: "dashboard" }),
-    });
-    const payload = await response.json();
-    setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : (payload.error || "تعذر تشغيل الدورة."));
-    setRunning(false);
-    await load();
+    try {
+      const response = await fetch("/api/autonomy", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ trigger: "dashboard" }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      setMessage(payload.success ? "تم إنشاء دورة جديدة. لا يوجد نشر خارجي قبل المراجعة." : (payload.error || "تعذر تشغيل الدورة."));
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. لم يتم إنشاء دورة جديدة.");
+    } finally {
+      setRunning(false);
+      await load();
+    }
   }
 
   async function generateDraft() {
     setGenerating(true);
-    const response = await fetch("/api/content/generate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ topic, platform, save: true }),
-    });
-    const payload = await response.json();
-    setMessage(payload.success ? "تم حفظ مسودة محتوى جديدة للمراجعة." : "تعذر إنشاء المسودة.");
-    setGenerating(false);
-    await load();
+    try {
+      const response = await fetch("/api/content/generate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ topic, platform, save: true }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      setMessage(payload.success ? "تم حفظ مسودة محتوى جديدة للمراجعة." : (payload.error || "تعذر إنشاء المسودة."));
+    } catch {
+      setMessage("تعذر الاتصال بالخادم. لم يتم حفظ مسودة.");
+    } finally {
+      setGenerating(false);
+      await load();
+    }
   }
 
   async function reviewTask(taskId: string, status: "approved" | "rejected") {

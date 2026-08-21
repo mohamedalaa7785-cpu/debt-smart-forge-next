@@ -29,6 +29,7 @@ const criticalRoutes = [
   "app/api/autonomy/approvals/route.ts",
   "app/api/autonomy/publish/preview/route.ts",
   "app/api/autonomy/experiments/route.ts",
+  "app/api/autonomy/health/route.ts",
 ];
 
 for (const route of criticalRoutes) {
@@ -91,6 +92,9 @@ assert("publish preview never sends external request", publishPreviewSrc.include
 const experimentsRouteSrc = read("app/api/autonomy/experiments/route.ts");
 assert("experiments route validates payload", experimentsRouteSrc.includes("ExperimentSchema"));
 assert("experiments route is role protected", experimentsRouteSrc.includes("withRole"));
+const autonomyHealthSrc = read("app/api/autonomy/health/route.ts");
+assert("autonomy health detects stale runs", autonomyHealthSrc.includes("STALE_RUN_MS") && autonomyHealthSrc.includes("staleRun"));
+assert("autonomy health is role protected", autonomyHealthSrc.includes("withRole"));
 const publishingRouteSrc = read("app/api/autonomy/publishing/route.ts");
 assert("publishing route validates channels", publishingRouteSrc.includes("channelSchema"));
 assert("publishing route supports preview jobs", publishingRouteSrc.includes("createPreviewPublishJob"));

@@ -21,7 +21,7 @@ const defaultGoal = {
 
 export async function ensureDefaultGoal(ownerId: string) {
   const existing = await db.query.autonomyGoals.findFirst({
-    where: and(eq(autonomyGoals.ownerId, ownerId), eq(autonomyGoals.status, "active")),
+    where: eq(autonomyGoals.ownerId, ownerId),
     orderBy: [desc(autonomyGoals.createdAt)],
   });
   if (existing) return existing;

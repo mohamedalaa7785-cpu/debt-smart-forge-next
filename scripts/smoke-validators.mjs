@@ -100,6 +100,7 @@ assert("publishing route validates channels", publishingRouteSrc.includes("chann
 assert("publishing route supports preview jobs", publishingRouteSrc.includes("createPreviewPublishJob"));
 
 const autonomyServiceSrc = read("server/services/autonomy.service.ts");
+assert("autonomy goal preserves paused state", autonomyServiceSrc.includes("where: eq(autonomyGoals.ownerId, ownerId)") && autonomyServiceSrc.includes("if (existing) return existing"));
 assert("autonomy run starts as running", autonomyServiceSrc.includes('status: "running"'));
 assert("autonomy run records completed state", autonomyServiceSrc.includes('status: "completed"'));
 assert("autonomy run records failed state", autonomyServiceSrc.includes('status: "failed"'));
